@@ -1,0 +1,140 @@
+import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { FilledTextField } from "../components/md";
+import EntryCard from "./EntryCard";
+import { POWER_CATEGORIES, powerCategory, type PowerCategoryKey } from "../lib/colors";
+import { baseClassName } from "./character";
+import type { Entry } from "../data/types";
+
+const LEVEL_MODES = [
+  { key: "current", label: "当前及以下" },
+  { key: "range", label: "指定等级" },
+  { key: "all", label: "全部等级" },
+] as const;
+
+interface Props {
+  entries: Entry[];
+  relations: { powerByGrantedBy: Record<string, string[]> };
+  classEntry?: Entry;
+  raceEntry?: Entry;
+  category: PowerCategoryKey;
+  currentLevel: number;
+  currentId?: string;
+  onSelect: (id: string) => void;
+  onClear?: () => void;
+  onClose: () => void;
+}
+
+function lv(e: Entry): number {
+  return parseInt(String(e.level ?? "0"), 10) || 0;
+}
+
+export default function PowerSlotPicker({ entries, relations, classEntry, raceEntry, category, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
+  const [cat, setCat] = useState<PowerCategoryKey>(category);
+  const [levelMode, setLevelMode] = useState<"current" | "range" | "all">("current");
+  const [minLevel, setMinLevel] = useState(Math.max(1, currentLevel));
+  const [maxLevel, setMaxLevel] = useState(Math.max(1, currentLevel));
+  const [sourceMode, setSourceMode] = useState<"default" | "class" | "race" | "all">("default");
+  const [query, setQuery] = useState("");
+
+  const conf = POWER_CATEGORIES.find((c) => c.key === cat);
+
+  const classIds = useMemo(() => {
+    if (!classEntry) return null;
+    return new Set(relations.powerByGrantedBy[baseClassName(classEntry.name)] ?? []);
+  }, [classEntry, relations]);
+
+  const raceIds = useMemo(() => {
+    if (!raceEntry) return null;
+    const ids = new Set<string>(raceEntry.wiki.transclusions);
+    for (const id of relations.powerByGrantedBy[raceEntry.name] ?? []) ids.add(id);
+    return ids;
+  }, [raceEntry, relations]);
+
+  const hasSourceFilter = !!classIds || !!raceIds;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return entries
+      .filter((p) => {
+        if (powerCategory(p.usage, p.powerKind) !== cat) return false;
+        const level = lv(p);
+        if (levelMode === "current" && level > currentLevel) return false;
+        if (levelMode === "range" && (level < minLevel || level > maxLevel)) return false;
+        if (sourceMode !== "all") {
+          const inClass = classIds ? classIds.has(p.id) : false;
+          const inRace = raceIds ? raceIds.has(p.id) : false;
+          if (sourceMode === "class" && !inClass) return false;
+          if (sourceMode === "race" && !inRace) return false;
+          if (sourceMode === "default") {
+            const wantClass = !!classIds;
+            const wantRace = !!raceIds;
+            if (wantClass && wantRace && !inClass && !inRace) return false;
+            if (wantClass && !wantRace && !inClass) return false;
+            if (!wantClass && wantRace && !inRace) return false;
+          }
+        }
+        if (q && !(p.name + " " + (p.nameEn ?? "")).toLowerCase().includes(q)) return false;
+        return true;
+      })
+      .sort((a, b) => lv(a) - lv(b));
+  }, [entries, cat, levelMode, minLevel, maxLevel, currentLevel, sourceMode, classIds, raceIds, query]);
+
+  return createPortal(
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-head">
+          <span className="picker-title">选择{conf?.label ?? "威能"}</span>
+          <div className="picker-head-btns">
+            {currentId && onClear && <button type="button" className="crop-btn" onClick={() => { onClear(); onClose(); }}>清空槽位</button>}
+            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
+          </div>
+        </div>
+        <div className="slot-filter">
+          <div className="slot-filter-row">
+            <span className="sf-label">类别</span>
+            {POWER_CATEGORIES.map((c) => (
+              <button key={c.key} type="button" className={cat === c.key ? "sf-chip active" : "sf-chip"} onClick={() => setCat(c.key)}>{c.label}</button>
+            ))}
+          </div>
+          <div className="slot-filter-row">
+            <span className="sf-label">来源</span>
+            {hasSourceFilter && (
+              <button type="button" className={sourceMode === "default" ? "sf-chip active" : "sf-chip"} onClick={() => setSourceMode("default")}>
+                {classIds && raceIds ? "职业+种族（默认）" : classIds ? "本职业（默认）" : "种族威能（默认）"}
+              </button>
+            )}
+            {classIds && <button type="button" className={sourceMode === "class" ? "sf-chip active" : "sf-chip"} onClick={() => setSourceMode("class")}>仅职业</button>}
+            {raceIds && <button type="button" className={sourceMode === "race" ? "sf-chip active" : "sf-chip"} onClick={() => setSourceMode("race")}>仅种族</button>}
+            <button type="button" className={sourceMode === "all" ? "sf-chip active" : "sf-chip"} onClick={() => setSourceMode("all")}>全部</button>
+            {!hasSourceFilter && <span className="sf-hint">未选择职业/种族</span>}
+          </div>
+          <div className="slot-filter-row">
+            <span className="sf-label">等级</span>
+            {LEVEL_MODES.map((m) => (
+              <button key={m.key} type="button" className={levelMode === m.key ? "sf-chip active" : "sf-chip"} onClick={() => setLevelMode(m.key)}>{m.label}</button>
+            ))}
+            {levelMode === "range" && (
+              <span className="sf-range">
+                <input type="number" min={1} max={30} value={minLevel} onChange={(e) => setMinLevel(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} />
+                <span>—</span>
+                <input type="number" min={1} max={30} value={maxLevel} onChange={(e) => setMaxLevel(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} />
+              </span>
+            )}
+          </div>
+        </div>
+        <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
+        <div className="meta">显示 {filtered.length} 条</div>
+        <div className="picker-cards">
+          {filtered.map((p) => (
+            <button key={p.id} type="button" className={p.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => { onSelect(p.id); onClose(); }}>
+              <EntryCard entry={p} />
+            </button>
+          ))}
+          {filtered.length === 0 && <p className="hint">无匹配威能。</p>}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}

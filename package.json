@@ -1,0 +1,25 @@
+{
+  "name": "dnd4e-kcc",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "type": "module",
+  "description": "D&D 4E 中文社区车卡器 - 数据管线（TiddlyWiki HTML -> 规范化 JSON）",
+  "scripts": {
+    "build": "tsc",
+    "extract": "tsc && node dist/cli.js extract",
+    "profile": "tsc && node dist/cli.js profile",
+    "classify": "tsc && node dist/cli.js classify",
+    "normalize": "tsc && node dist/cli.js normalize",
+    "index": "tsc && node dist/cli.js index",
+    "pipeline": "tsc && node dist/cli.js all"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
