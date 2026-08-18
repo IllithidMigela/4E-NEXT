@@ -1,13 +1,7 @@
-# D&D 4E 车卡器（KCC）· 技术使用说明
+# 4E NEXT
 
-面向 D&D 4E 中文社区（4e Wiki 数据）的网页端车卡器：一条 TypeScript 数据管线把
-TiddlyWiki 单文件 HTML 清洗为规范化 JSON，一个 React 前端提供车卡编辑、词条检索、
-规则速查与规则书阅读，视觉与交互全面对齐 **Google Material Design 3（MD3 / Material You）**。
-
-> 历史说明：本项目早期只有数据管线、前端处于规划阶段（见 archive/ 内归档的旧 README），
-> 当前 web/ 前端已完整落地，本文件为合并梳理后的最新技术说明。
-
----
+面向 D&D 4E 中文社区，基于4e Wiki 数据的网页端车卡器：
+完全的 **Google Material Design 3** 设计风格支持
 
 ## 1. 仓库结构（pnpm monorepo）
 
@@ -196,13 +190,7 @@ pnpm --filter dnd4e-kcc-web preview        # 本地预览构建产物
 2. `pnpm --filter dnd4e-kcc-web build` → 产物在 web/dist/（数据已内嵌 public/data/）
 3. 部署 web/dist/ 到任意静态托管即可（相对路径，无服务端依赖；localStorage 数据存于用户浏览器）
 
-## 9. 归档
 
-- `archive/README-2026-08-18-root-data-pipeline.md` —— 早期仅数据管线阶段的 README
-  （含「前端暂不实现」的过期约定、分类与输出结构说明）。
-- `archive/README-2026-08-18-web-frontend.md` —— 前端初版 README（动态取色说明与当时的待办）。
+## 9. 致谢
 
-## 10. 致谢
-
-数据来源：[4e Wiki](https://4e-wiki.netlify.app/)（现任维护者：风之守护），
-源码仓库：github.com/NorthOpen/4E-NEXT。作者：KitaAkeru。
+数据来源：[4e Wiki](https://4e-wiki.netlify.app/)（现任维护者：风之守护）
