@@ -10,6 +10,8 @@ import { MdOutlinedTextField } from "@material/web/textfield/outlined-text-field
 import { MdFilledSelect } from "@material/web/select/filled-select.js";
 import { MdOutlinedSelect } from "@material/web/select/outlined-select.js";
 import { MdSelectOption } from "@material/web/select/select-option.js";
+import { MdMenu } from "@material/web/menu/menu.js";
+import { MdMenuItem } from "@material/web/menu/menu-item.js";
 import { MdList } from "@material/web/list/list.js";
 import { MdListItem } from "@material/web/list/list-item.js";
 import { MdSwitch } from "@material/web/switch/switch.js";
@@ -27,6 +29,8 @@ export const OutlinedTextField = createComponent({ tagName: "md-outlined-text-fi
 export const FilledSelect = createComponent({ tagName: "md-filled-select", elementClass: MdFilledSelect, react: React, events: { onChange: "change", onInput: "input" } });
 export const OutlinedSelect = createComponent({ tagName: "md-outlined-select", elementClass: MdOutlinedSelect, react: React, events: { onChange: "change", onInput: "input" } });
 export const SelectOption = createComponent({ tagName: "md-select-option", elementClass: MdSelectOption, react: React });
+export const Menu = createComponent({ tagName: "md-menu", elementClass: MdMenu, react: React, events: { onClose: "close", onClosed: "closed", onOpen: "open", onOpened: "opened" } });
+export const MenuItem = createComponent({ tagName: "md-menu-item", elementClass: MdMenuItem, react: React, events: { onClick: "click" } });
 export const List = createComponent({ tagName: "md-list", elementClass: MdList, react: React });
 export const ListItem = createComponent({ tagName: "md-list-item", elementClass: MdListItem, react: React, events: { onClick: "click" } });
 export const Switch = createComponent({ tagName: "md-switch", elementClass: MdSwitch, react: React, events: { onChange: "change" } });

@@ -294,6 +294,18 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .layout-double .defense-item { padding: 6px 4px; }
 .layout-double .defense-value, .layout-double .ac-score { font-size: 17px; }
 .layout-double .ac-head { font-size: 12px; }
+/* 攻击/伤害面板：双栏布局下通栏并排、更紧凑 */
+.layout-double .combat-row { grid-column: 1 / -1; margin: 0; }
+.layout-double .combat-panel { margin: 0; }
+.layout-double .ct-head span { font-size: 10px; }
+.layout-double .ct-cell { min-height: 26px; padding: 1px 2px; }
+.layout-double .ct-total { font-size: 16px; }
+.layout-double .ct-auto { font-size: 13px; }
+.layout-double .ct-cell input { max-width: 40px; font-size: 12px; }
+.layout-double .ct-pick { gap: 4px; }
+.layout-double .ct-dice-row { font-size: 11px; padding: 2px 4px; }
+.layout-double .ct-dice-row code { font-size: 11px; }
+.layout-double .combat-head .mode-chip { height: 28px; padding: 0 10px; font-size: 12px; }
 
 /* 角色信息（topbar 归入左栏） */
 .lt-cell .topbar { padding: 14px 16px; }
@@ -461,6 +473,38 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 /* 双栏：竖着排一排 */
 .layout-double .def-bonus { display: flex; flex-direction: column; gap: 5px; }
 .def-bonus-total { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); margin-top: 2px; }
+
+/* 攻击/伤害面板：数据面板下方并排一行（攻击在左、伤害在右），表格式网格（攻击 8 列 / 伤害 7 列） */
+.combat-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
+.combat-panel { margin: 0; }
+.combat-head { display: flex; align-items: center; gap: 8px; }
+.combat-head .combat-actions { display: inline-flex; gap: 4px; }
+.combat-head .mode-chip { margin-left: auto; }
+.combat-table { display: flex; flex-direction: column; gap: 6px; }
+.ct-head, .ct-row { display: grid; gap: 6px; align-items: stretch; }
+.combat-table.attack .ct-head, .combat-table.attack .ct-row { grid-template-columns: 1.3fr 0.8fr 2fr repeat(3, 1fr) 1.6fr 1fr; }
+.combat-table.damage .ct-head, .combat-table.damage .ct-row { grid-template-columns: 1.3fr 1.5fr 2fr 1fr 1.6fr 1fr 1fr; }
+.ct-head span { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); text-align: center; padding: 2px 0; }
+/* 骰子指令行（显示在对应栏位下方）：.r d20+总加值 / .r 伤害骰+总加值；点击复制 */
+.ct-dice-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border: 1px dashed var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container-low); font-size: 12px; color: var(--md-sys-color-on-surface-variant); cursor: pointer; }
+.ct-dice-row:hover { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container); }
+.ct-dice-row code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--md-sys-color-primary); background: transparent; user-select: all; }
+/* 居中提示（复制成功） */
+.ct-toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 999; display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); font-size: 14px; box-shadow: var(--md-sys-elevation-shadow-level3); animation: ct-toast-in 0.18s ease-out; pointer-events: none; }
+.ct-toast .material-symbols-outlined { font-size: 18px; }
+@keyframes ct-toast-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.ct-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 28px; padding: 2px 3px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); }
+/* 属性/增强来源单元格：文字与数值同在一个框内，点击弹出 Material 菜单 */
+.ct-pick { position: relative; flex-direction: row; gap: 6px; cursor: pointer; }
+.ct-pick .ct-auto { min-width: 22px; text-align: center; }
+.ct-pick md-menu { position: absolute; display: none; }
+.ct-pick md-menu[open] { display: block; }
+.ct-total { font-size: 18px; font-weight: 700; color: var(--md-sys-color-primary); }
+.ct-auto { font-size: 14px; font-weight: 600; }
+.ct-ability-name { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
+.ct-cell input { width: 100%; max-width: 46px; padding: 2px 0; border: none; background: transparent; color: var(--md-sys-color-on-surface); font-size: 12.5px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
+.ct-cell input::-webkit-outer-spin-button, .ct-cell input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.ct-cell input:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
 .health-list { display: flex; flex-direction: column; gap: 8px; }
 .health-main { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container); }
 .health-main-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
