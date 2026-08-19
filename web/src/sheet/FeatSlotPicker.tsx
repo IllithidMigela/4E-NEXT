@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
+import { useIncremental } from "../lib/incremental";
 import { baseClassName, cleanDisplayName } from "./character";
 import type { Entry } from "../data/types";
 
@@ -30,10 +31,12 @@ function containsWord(text: string, word: string): boolean {
 
 interface Props {
   entries: Entry[];
+  loading?: boolean;
   allRaces: Entry[];
   allClasses: Entry[];
   raceEntry?: Entry;
   classEntry?: Entry;
+  classEntry2?: Entry;
   currentLevel: number;
   currentId?: string;
   onSelect: (id: string) => void;
@@ -41,23 +44,24 @@ interface Props {
   onClose: () => void;
 }
 
-export default function FeatSlotPicker({ entries, allRaces, allClasses, raceEntry, classEntry, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
+export default function FeatSlotPicker({ entries, loading, allRaces, allClasses, raceEntry, classEntry, classEntry2, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
   const [tier, setTier] = useState<string>(defaultTier(currentLevel));
   const [restrict, setRestrict] = useState(true);
   const [type, setType] = useState("");
   const [query, setQuery] = useState("");
 
-  // 当前角色名称集合（种族 + 职业，含去括号变体名与基础职业名）
+  // 当前角色名称集合（种族 + 职业[含混职双职业]，含去括号变体名与基础职业名）
   const myNames = useMemo(() => {
     const set = new Set<string>();
     if (raceEntry) set.add(raceEntry.name);
-    if (classEntry) {
-      set.add(classEntry.name);
-      set.add(cleanDisplayName(classEntry.name));
-      set.add(baseClassName(classEntry.name));
+    for (const ce of [classEntry, classEntry2]) {
+      if (!ce) continue;
+      set.add(ce.name);
+      set.add(cleanDisplayName(ce.name));
+      set.add(baseClassName(ce.name));
     }
     return set;
-  }, [raceEntry, classEntry]);
+  }, [raceEntry, classEntry, classEntry2]);
 
   // 全量种族/职业名称（去括号变体名），用于识别专长前置条件里的种族/职业要求
   const knownRaces = useMemo(() => {
@@ -117,6 +121,8 @@ export default function FeatSlotPicker({ entries, allRaces, allClasses, raceEntr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, tier, type, restrict, query, knownRaces, knownClasses, myNames]);
 
+
+  const { visible, sentinelRef, done } = useIncremental(filtered, 90);
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog" onClick={(e) => e.stopPropagation()}>
@@ -151,12 +157,14 @@ export default function FeatSlotPicker({ entries, allRaces, allClasses, raceEntr
         <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
         <div className="meta">显示 {filtered.length} 条{restrict && restrictedCount > 0 ? "（已按种族/职业排除 " + restrictedCount + " 条）" : ""}</div>
         <div className="picker-cards">
-          {filtered.map((f) => (
+          {loading && entries.length === 0 && <p className="hint">正在加载专长数据…</p>}
+          {!loading && visible.map((f) => (
             <button key={f.id} type="button" className={f.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => { onSelect(f.id); onClose(); }}>
               <EntryCard entry={f} />
             </button>
           ))}
-          {filtered.length === 0 && <p className="hint">无匹配专长。</p>}
+          {!loading && filtered.length === 0 && <p className="hint">无匹配专长。</p>}
+          {!done && !loading && <div ref={sentinelRef} className="incremental-sentinel">滚动加载更多…</div>}
         </div>
       </div>
     </div>,

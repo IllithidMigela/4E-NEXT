@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, Switch } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots, CREATION_FIELDS } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import PowerSlotPicker from "./PowerSlotPicker";
 import FeatSlotPicker from "./FeatSlotPicker";
@@ -10,11 +11,10 @@ import ItemSlotPicker from "./ItemSlotPicker";
 import EntryCard from "./EntryCard";
 import PortraitFrame from "./PortraitFrame";
 import { stripWiki } from "../lib/text";
-import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml } from "../lib/wikirender";
+import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, paragonFeaturesHtml, paragonBodyHtml, epicFeaturesHtml, epicBodyHtml } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_SHIELDS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
-import { mdToHtml } from "../lib/markdown";
-import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR } from "../lib/colors";
+import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import PickerModal from "./PickerModal";
 import ClassPickerModal from "./ClassPickerModal";
 import SheetDialog from "../components/SheetDialog";
@@ -109,9 +109,15 @@ const ARMOR_BASES: { name: string; cat: string }[] = [
   { name: "布甲", cat: "轻甲" },
   { name: "皮甲", cat: "轻甲" },
   { name: "革甲", cat: "轻甲" },
+  { name: "镶嵌皮甲", cat: "轻甲" },
+  { name: "环甲", cat: "轻甲" },
   { name: "链甲", cat: "重甲" },
   { name: "鳞甲", cat: "重甲" },
   { name: "板甲", cat: "重甲" },
+  { name: "镶钢链甲", cat: "重甲" },
+  { name: "板条甲", cat: "重甲" },
+  { name: "钉板甲", cat: "重甲" },
+  { name: "全身板甲", cat: "重甲" },
 ];
 
 function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; baseId?: string; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
@@ -131,8 +137,18 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
     </button>
   );
 
-  // 武器分组：分类名 + 法器 + 副手；护甲分组：未勾选精制品=轻甲/重甲，勾选后细分基础类
-  const weaponCats = [...new Set(BASE_WEAPONS.map((w) => w.category))];
+  // 武器：二分法过滤（左：简易-优异/双头/法器/护盾；上：单手/双手/远程/弹药）
+  const [wcat, setWcat] = useState("");
+  const [whand, setWhand] = useState("");
+  const visibleWeapons = BASE_WEAPONS.filter((w) => {
+    if (wcat === "双头") { if (!w.category.includes("双头")) return false; }
+    else if (wcat) { if (!w.category.startsWith(wcat)) return false; }
+    if (whand === "单手") { if (!w.category.includes("·单手")) return false; }
+    else if (whand === "双手") { if (!w.category.includes("·双手") && !w.category.includes("双头")) return false; }
+    else if (whand === "远程") { if (!w.category.includes("远程")) return false; }
+    else if (whand === "弹药") { if (!w.category.includes("·弹药")) return false; }
+    return true;
+  });
   const armorGroups = masterwork
     ? ARMOR_BASES.map((b) => ({ label: b.cat + "-" + b.name, items: BASE_ARMORS.filter((a) => a.name.includes(b.name)) }))
     : [{ label: "轻甲", items: BASE_ARMORS.filter((a) => a.category === "轻甲" && !a.masterwork) }, { label: "重甲", items: BASE_ARMORS.filter((a) => a.category === "重甲" && !a.masterwork) }];
@@ -144,76 +160,79 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
       : currentBase.implement!.name)
     : undefined;
 
-  return (
-    <SheetDialog
-      open
-      xwide
-      headline={"选择基础" + (props.kind === "weapon" ? "武器" : "护甲")}
-      sub={currentBaseName ? "当前：" + currentBaseName : undefined}
-      headColor={ITEM_COLOR}
-      onClose={props.onClose}
-      actions={<TextButton onClick={props.onClear}>清除基础物品</TextButton>}
-    >
-      {props.kind === "armor" && (
-        <label className="base-mw-toggle">
-          <Switch selected={masterwork} onChange={(e) => setMasterwork((e.target as any).selected)} />
-          <span>精制品</span>
-        </label>
-      )}
-      <div className="equip-layout base-dialog-layout">
-          <nav className="equip-nav">
-            {props.kind === "weapon" ? (
-              <>
-                {weaponCats.map((c) => (
-                  <button key={c} type="button" className="equip-nav-btn" title={c} onClick={() => jump("base-g-" + c)}>{c}</button>
-                ))}
-                <button type="button" className="equip-nav-btn" title="法器" onClick={() => jump("base-g-法器")}>法器</button>
-                <button type="button" className="equip-nav-btn" title="副手·护盾" onClick={() => jump("base-g-副手")}>护盾</button>
-              </>
-            ) : (
-              armorGroups.map((g) => (
-                <button key={g.label} type="button" className="equip-nav-btn" title={g.label} onClick={() => jump("base-g-" + g.label)}>{g.label}</button>
-              ))
-            )}
-          </nav>
-          <div className="equip-groups">
-            {props.kind === "weapon" ? (
-              <>
-                {weaponCats.map((c) => (
-                  <div key={c} id={"base-g-" + c} className="base-cat">
-                    <div className="base-cat-title">{c.split("·")[0]}<span className="base-cat-sub">{c.includes("·") ? " · " + c.split("·")[1] : ""}</span></div>
-                    <div className="picker-cards">
-                      {BASE_WEAPONS.filter((w) => w.category === c).map((w) => card(w.name, baseItemId("weapon", w.name), w.dice, w.traits && w.traits !== "—" ? w.traits : w.group))}
-                    </div>
-                  </div>
-                ))}
-                <div id="base-g-法器" className="base-cat">
-                  <div className="base-cat-title">法器<span className="base-cat-sub"> · 施法用具</span></div>
-                  <div className="picker-cards">
-                    {BASE_IMPLEMENTS.map((im) => card(im.name, baseItemId("implement", im.name), "—", im.category + "法器"))}
-                  </div>
-                </div>
-                <div id="base-g-副手" className="base-cat">
-                  <div className="base-cat-title">副手<span className="base-cat-sub"> · 护盾</span></div>
-                  <div className="picker-cards">
-                    {BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits))}
-                  </div>
-                </div>
-              </>
-            ) : (
-              armorGroups.map((g) => (
-                <div key={g.label} id={"base-g-" + g.label} className="base-cat">
-                  <div className="base-cat-title">{g.label}</div>
-                  <div className="picker-cards">
-                    {g.items.filter((a) => !a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, a.category))}
-                    {masterwork && g.items.filter((a) => a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, "最小增强 +" + a.minEnhance + (a.special ? " · " + a.special : ""), true))}
-                  </div>
-                </div>
-              ))
-            )}
+  return createPortal(
+    <div className="picker-overlay" onClick={props.onClose}>
+      <div className="picker-dialog class-dialog base-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-head">
+          <span className="picker-title">选择基础{props.kind === "weapon" ? "武器" : "护甲"}{currentBaseName ? "（当前：" + currentBaseName + "）" : ""}</span>
+          <div className="base-dialog-actions">
+            <TextButton onClick={props.onClear}>清除基础物品</TextButton>
+            <button type="button" className="crop-btn" onClick={props.onClose}>关闭</button>
           </div>
         </div>
-    </SheetDialog>
+        {props.kind === "armor" && (
+          <label className="base-mw-toggle">
+            <Switch selected={masterwork} onChange={(e) => setMasterwork((e.target as any).selected)} />
+            <span>精制品</span>
+          </label>
+        )}
+      {props.kind === "weapon" ? (
+        <div className="class-layout base-class-layout">
+          <div className="class-sources">
+            <button type="button" className={wcat === "" ? "cl-item active" : "cl-item"} onClick={() => setWcat("")}>全部</button>
+            {["简易", "军用", "优异", "双头"].map((c) => (
+              <button key={c} type="button" className={wcat === c ? "cl-item active" : "cl-item"} onClick={() => setWcat(c)}>{c}</button>
+            ))}
+            <button type="button" className={"cl-item" + (wcat === "法器" ? " active" : "")} onClick={() => setWcat("法器")}>法器</button>
+            <button type="button" className={"cl-item" + (wcat === "护盾" ? " active" : "")} onClick={() => setWcat("护盾")}>护盾</button>
+          </div>
+          <div className="class-main">
+            <div className="class-roles">
+              <button type="button" className={whand === "" ? "cr-item active" : "cr-item"} onClick={() => setWhand("")}>全部持握</button>
+              {["单手", "双手", "远程", "弹药"].map((h) => (
+                <button key={h} type="button" className={whand === h ? "cr-item active" : "cr-item"} onClick={() => setWhand(h)}>{h}</button>
+              ))}
+            </div>
+            <div className="class-grid">
+              {wcat === "法器" ? (
+                <>
+                  {BASE_IMPLEMENTS.filter((im) => !im.superior).map((im) => card(im.name, baseItemId("implement", im.name), "—", im.category + "法器"))}
+                  {BASE_IMPLEMENTS.filter((im) => im.superior).map((im) => card(im.name, baseItemId("implement", im.name), "—", (im.properties ? "优异 · " + im.properties : "优异") + " · " + im.category + "法器", true))}
+                </>
+              ) : wcat === "护盾" ? (
+                BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits))
+              ) : (
+                <>
+                  {visibleWeapons.map((w) => card(w.name, baseItemId("weapon", w.name), w.dice, w.traits && w.traits !== "—" ? w.traits : w.group))}
+                  {visibleWeapons.length === 0 && <p className="hint">无匹配武器。</p>}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="equip-layout base-dialog-layout">
+          <nav className="equip-nav">
+            {armorGroups.map((g) => (
+              <button key={g.label} type="button" className="equip-nav-btn" title={g.label} onClick={() => jump("base-g-" + g.label)}>{g.label}</button>
+            ))}
+          </nav>
+          <div className="equip-groups">
+            {armorGroups.map((g) => (
+              <div key={g.label} id={"base-g-" + g.label} className="base-cat">
+                <div className="base-cat-title">{g.label}</div>
+                <div className="picker-cards">
+                  {g.items.filter((a) => !a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, a.category))}
+                  {masterwork && g.items.filter((a) => a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, "最小增强 +" + a.minEnhance + (a.special ? " · " + a.special : ""), true))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      </div>
+    </div>,
+    document.body
   );
 }
 function EquipGroupSlots(props: {
@@ -223,6 +242,7 @@ function EquipGroupSlots(props: {
   items: (i: number) => Entry | undefined;
   picker: (i: number) => void;
   clear: (i: number) => void;
+  usedOf?: (i: number) => boolean;
   baseKind?: "weapon" | "armor";
   baseOf?: (i: number) => string | undefined;
   onBaseClick?: (i: number) => void;
@@ -241,13 +261,14 @@ function EquipGroupSlots(props: {
             return f ? (f.kind === "weapon" ? f.weapon!.name : f.kind === "armor" ? f.armor!.name : f.kind === "shield" ? f.shield!.name : f.implement!.name) : undefined;
           })() : undefined;
           if (item) {
+            const used = !!props.usedOf?.(i);
             return (
-              <div key={i} className="compact-row" onClick={() => props.picker(i)} title="点击更换">
+              <div key={i} className={"compact-row" + (used ? " slot-used" : "")} onClick={() => props.picker(i)} title={used ? "已标记使用（锁定）" : "点击更换"}>
                 <span className="cr-dot" style={{ background: ITEM_COLOR }} />
                 {baseName && <span className="compact-base" onClick={(e) => { e.stopPropagation(); props.onBaseClick?.(i); }}>{baseName}</span>}
                 <span className="cr-name">{item.name}{item.nameEn ? " " + item.nameEn : ""}</span>
                 <span className="cr-sub">{item.rarity}{item.itemLevel ? " · L" + item.itemLevel : ""}</span>
-                <IconButton className="slot-x" title="清空槽位" aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); props.clear(i); }}><span className="material-symbols-outlined">close</span></IconButton>
+                <IconButton className="slot-x" title={used ? "已标记使用（锁定）" : "清空槽位"} aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); if (used) return; props.clear(i); }}><span className="material-symbols-outlined">close</span></IconButton>
                 <div className="compact-pop"><EntryCard entry={item} /></div>
               </div>
             );
@@ -289,7 +310,7 @@ function EquipGroupSlots(props: {
                 }
                 return null;
               })()}
-              <div className="slot-filled" onClick={() => props.picker(i)} title="点击更换">
+              <div className={"slot-filled" + (props.usedOf?.(i) ? " slot-used" : "")} onClick={() => props.picker(i)} title={props.usedOf?.(i) ? "已标记使用（锁定）" : "点击更换"}>
                 <EntryCard entry={item} />
               </div>
             </div>
@@ -345,15 +366,26 @@ function ModInputs(props: {
   sources: { key: string; label: string }[];
   mods: Record<string, number>;
   onChange: (k: string, v: string) => void;
+  neg?: Set<string>;
 }) {
   return (
     <div className="def-bonus">
-      {props.sources.map((s) => (
-        <label key={s.key} className="def-bonus-item">
-          <span>{s.label}</span>
-          <input type="number" min={-20} max={50} value={props.mods[s.key] ?? 0} onChange={(e) => props.onChange(s.key, e.target.value)} />
-        </label>
-      ))}
+      {props.sources.map((s) => {
+        const isNeg = !!props.neg?.has(s.key);
+        return (
+          <label key={s.key} className="def-bonus-item">
+            <span>{s.label}</span>
+            {isNeg ? (
+              <span className="def-bonus-neg">
+                <span className="def-bonus-minus">−</span>
+                <input type="number" min={0} max={50} value={props.mods[s.key] ?? 0} onChange={(e) => props.onChange(s.key, e.target.value.replace(/[^0-9]/g, ""))} />
+              </span>
+            ) : (
+              <input type="number" min={-20} max={50} value={props.mods[s.key] ?? 0} onChange={(e) => props.onChange(s.key, e.target.value)} />
+            )}
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -503,14 +535,19 @@ export default function CharacterSheet({
   const [earnInput, setEarnInput] = useState("");
   const [spendInput, setSpendInput] = useState("");
   const [autoCostOpen, setAutoCostOpen] = useState(false);
+  const [slotMode, setSlotMode] = useState<null | "mark" | "swap">(null);
+  const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: "fixed" | "other" | "consumable"; index: number }>(null);
   const [basePicker, setBasePicker] = useState<null | { kind: "weapon" | "armor"; index: number }>(null);
   const [skillDetail, setSkillDetail] = useState(true);
   const [raceDetail, setRaceDetail] = useState(true);
+  const [pathDetail, setPathDetail] = useState(true);
+  const [destinyDetail, setDestinyDetail] = useState(true);
   const [presetOrder, setPresetOrder] = useState<AbilityKey[]>([...ABILITIES]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
   useEffect(() => {
+    // 数据全量读取（loaders 缓存保证只请求一次）；渲染层用增量加载避免卡顿
     void loadCategory("race").then(setRaces).catch(console.error);
     void loadCategory("class").then(setClasses).catch(console.error);
     void loadCategory("paragon-path").then(setParagonPaths).catch(console.error);
@@ -521,10 +558,123 @@ export default function CharacterSheet({
     void loadRelations().then(setRelations).catch(console.error);
   }, []);
 
+  function openPowerPicker(cat: keyof PowerSlots, index: number) {
+    setSlotPicker({ kind: "power", cat, index });
+  }
+  function openFeatPicker(index: number) {
+    setSlotPicker({ kind: "feat", index });
+  }
+  function openEquipPicker(kind: "fixed" | "other" | "consumable", index: number) {
+    setEquipPicker({ kind, index });
+  }
+  // —— 使用标记（斜线遮罩）与储备交换 ——
+  const powerUsedKey = (cat: keyof PowerSlots, index: number) => cat + "-" + index;
+  const equipUsedKey = (kind: "fixed" | "other" | "consumable", index: number) => (kind === "fixed" ? "e" : kind === "other" ? "o" : "c") + "-" + index;
+  const isPowerUsed = (cat: keyof PowerSlots, index: number) => !!char.powerUsed?.[powerUsedKey(cat, index)];
+  const isEquipUsed = (kind: "fixed" | "other" | "consumable", index: number) => !!char.equipmentUsed?.[equipUsedKey(kind, index)];
+  function togglePowerUsed(cat: keyof PowerSlots, index: number) {
+    const key = powerUsedKey(cat, index);
+    setChar((p) => {
+      const used = { ...(p.powerUsed ?? {}) };
+      if (used[key]) delete used[key]; else used[key] = true;
+      return { ...p, powerUsed: used };
+    });
+  }
+  function toggleEquipUsed(kind: "fixed" | "other" | "consumable", index: number) {
+    const key = equipUsedKey(kind, index);
+    setChar((p) => {
+      const used = { ...(p.equipmentUsed ?? {}) };
+      if (used[key]) delete used[key]; else used[key] = true;
+      return { ...p, equipmentUsed: used };
+    });
+  }
+  // 交换弹窗：点击储备项 → 与槽位内容对调（空槽则仅移入并清空储备位）；不自动新建槽位，避免反复点击产生混乱
+  function swapReserveItem(pick: NonNullable<typeof swapPicker>, reserveIndex: number) {
+    setChar((p) => {
+      const reserve = pick.kind === "power" ? p.spellbook : p.backpack;
+      const old = reserve[reserveIndex];
+      if (!old) return p;
+      let slotOld: string | undefined;
+      let powerSlots = p.powerSlots;
+      let equipmentSlots = p.equipmentSlots;
+      let otherSlots = p.otherSlots;
+      let consumableSlots = p.consumableSlots;
+      if (pick.kind === "power") {
+        slotOld = p.powerSlots[pick.cat][pick.index];
+        powerSlots = setPowerSlot(powerSlots, pick.cat, pick.index, old);
+      } else {
+        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : p.consumableSlots;
+        slotOld = arr[pick.index];
+        const nextArr = setEquipmentSlot(arr, pick.index, old);
+        if (pick.ekind === "fixed") equipmentSlots = nextArr;
+        else if (pick.ekind === "other") otherSlots = nextArr;
+        else consumableSlots = nextArr;
+      }
+      const nextReserve = reserve.map((s, i) => (i === reserveIndex ? (slotOld ?? "") : s));
+      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots };
+    });
+    setSwapPicker(null);
+  }
+  // 仅收入储备：槽位内容存入储备（无空槽自动新建），槽位清空
+  function collectToReserve(pick: NonNullable<typeof swapPicker>) {
+    setChar((p) => {
+      let slotOld: string | undefined;
+      let powerSlots = p.powerSlots;
+      let equipmentSlots = p.equipmentSlots;
+      let otherSlots = p.otherSlots;
+      let consumableSlots = p.consumableSlots;
+      if (pick.kind === "power") {
+        slotOld = p.powerSlots[pick.cat][pick.index];
+        powerSlots = clearPowerSlot(powerSlots, pick.cat, pick.index);
+      } else {
+        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : p.consumableSlots;
+        slotOld = arr[pick.index];
+        const nextArr = clearEquipmentSlot(arr, pick.index);
+        if (pick.ekind === "fixed") equipmentSlots = nextArr;
+        else if (pick.ekind === "other") otherSlots = nextArr;
+        else consumableSlots = nextArr;
+      }
+      if (!slotOld) return p;
+      const reserve = pick.kind === "power" ? p.spellbook : p.backpack;
+      const emptyIdx = reserve.findIndex((s) => !s);
+      const nextReserve = emptyIdx >= 0 ? reserve.map((s, i) => (i === emptyIdx ? slotOld : s)) : [...reserve, slotOld];
+      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots };
+    });
+    setSwapPicker(null);
+  }
+  // 槽位点击总入口：优先响应标记/交换模式；遮罩槽位锁定（不可更换/交换）
+  function onPowerSlotClick(cat: keyof PowerSlots, index: number) {
+    const id = char.powerSlots[cat][index] ?? "";
+    if (slotMode === "mark") { if (id) togglePowerUsed(cat, index); return; }
+    if (slotMode === "swap") {
+      if (char.powerUsed?.[powerUsedKey(cat, index)]) return;
+      setSwapPicker({ kind: "power", cat, index });
+      return;
+    }
+    if (char.powerUsed?.[powerUsedKey(cat, index)]) return;
+    openPowerPicker(cat, index);
+  }
+  function onEquipSlotClick(kind: "fixed" | "other" | "consumable", index: number) {
+    const arr = kind === "fixed" ? char.equipmentSlots : kind === "other" ? char.otherSlots : char.consumableSlots;
+    const id = arr[index];
+    if (slotMode === "mark") { if (id) toggleEquipUsed(kind, index); return; }
+    if (slotMode === "swap") {
+      if (char.equipmentUsed?.[equipUsedKey(kind, index)]) return;
+      setSwapPicker({ kind: "equip", ekind: kind, index });
+      return;
+    }
+    if (char.equipmentUsed?.[equipUsedKey(kind, index)]) return;
+    openEquipPicker(kind, index);
+  }
+
   const raceEntry = useMemo(() => races.find((r) => r.id === char.raceId), [races, char.raceId]);
   const classEntry = useMemo(() => classes.find((c) => c.id === char.classId), [classes, char.classId]);
   const paragonPathEntry = useMemo(() => paragonPaths.find((p) => p.id === char.paragonPathId), [paragonPaths, char.paragonPathId]);
   const epicDestinyEntry = useMemo(() => epicDestinies.find((d) => d.id === char.epicDestinyId), [epicDestinies, char.epicDestinyId]);
+  const pathTrait = paragonPathEntry ? paragonFeaturesHtml(paragonPathEntry.sourceText) : undefined;
+  const pathBody = paragonPathEntry ? paragonBodyHtml(paragonPathEntry.sourceText) : undefined;
+  const destinyTrait = epicDestinyEntry ? epicFeaturesHtml(epicDestinyEntry.sourceText) : undefined;
+  const destinyBody = epicDestinyEntry ? epicBodyHtml(epicDestinyEntry.sourceText) : undefined;
   const classDisplay = useMemo(() => {
     const n1 = classEntry ? cleanDisplayName(classEntry.name) : undefined;
     if (!char.hybrid) return n1;
@@ -587,18 +737,45 @@ export default function CharacterSheet({
     const n = raw.trim() === "" ? undefined : Math.max(0, Math.floor(Number(raw) || 0));
     setChar((p) => ({ ...p, hpNow: { ...(p.hpNow ?? {}), [k]: n } }));
   };
-  const speedTotal = char.speedMods.power + char.speedMods.feat + char.speedMods.armor + char.speedMods.item + char.speedMods.other;
+  const speedTotal = char.speedMods.power + char.speedMods.feat - char.speedMods.armor + char.speedMods.item + char.speedMods.other;
   const speedNum = parseInt(raceEntry?.speed ?? "", 10);
   const speedDisplay = Number.isNaN(speedNum) ? (raceEntry?.speed ?? "—") : speedNum + speedTotal + " 格";
 
   const powerMap = useMemo(() => new Map(powers.map((p) => [p.id, p])), [powers]);
   const featMap = useMemo(() => new Map(feats.map((f) => [f.id, f])), [feats]);
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  const swapList = swapPicker
+    ? (() => {
+        const reserve = swapPicker.kind === "power" ? char.spellbook : char.backpack;
+        const out: { ri: number; id: string; name: string; sub: string; color: string }[] = [];
+        reserve.forEach((id, ri) => {
+          if (!id) return;
+          if (swapPicker.kind === "power") {
+            const e = powerMap.get(id);
+            out.push({ ri, id, name: e?.name ?? id, sub: (e?.usage ?? "") + (e?.level ? " · L" + e.level : ""), color: e ? (e.usage === "at-will" ? POWER_COLORS.atWill : e.usage === "encounter" ? POWER_COLORS.encounter : e.usage === "daily" ? POWER_COLORS.daily : POWER_COLORS.utility) : "#8a8a8a" });
+          } else {
+            const e = itemMap.get(id);
+            out.push({ ri, id, name: e?.name ?? id, sub: (e?.itemCategory ?? "") + (e?.itemLevel ? " · L" + e.itemLevel : ""), color: ITEM_COLOR });
+          }
+        });
+        return out;
+      })()
+    : [];
+  const swapCurId = swapPicker
+    ? (swapPicker.kind === "power" ? char.powerSlots[swapPicker.cat][swapPicker.index] ?? "" : ((swapPicker.ekind === "fixed" ? char.equipmentSlots : swapPicker.ekind === "other" ? char.otherSlots : char.consumableSlots)[swapPicker.index] ?? ""))
+    : "";
+  const swapCurName = swapCurId ? ((swapPicker?.kind === "power" ? powerMap.get(swapCurId)?.name : itemMap.get(swapCurId)?.name) ?? swapCurId) : "";
   // 自动花销：基础物品 + 魔法装备（增强档位对应等级价格）+ 冒险装备手动价格
   const autoCosts = useMemo(() => {
     const list: { label: string; cost: number }[] = [];
     for (const idxStr of Object.keys(char.baseItems)) {
       const idx = parseInt(idxStr, 10);
+      // 已附魔（该槽位装备了有等级表的魔法物品）：基础武器/护甲价格不再计入（附魔价含基础物）
+      const mag = char.equipmentSlots[idx];
+      if (mag) {
+        const me = itemMap.get(mag);
+        if (me && itemLevels(me.itemLevel).length) continue;
+      }
       const f = findBaseItem(char.baseItems[idx]);
       if (!f) continue;
       const name = f.weapon?.name ?? f.armor?.name ?? f.shield?.name ?? f.implement?.name ?? "";
@@ -708,8 +885,10 @@ export default function CharacterSheet({
   }
 
   function setSpeedMod(k: keyof SpeedMods, v: string) {
-    const n = parseInt(v, 10);
-    const val = Number.isNaN(n) ? 0 : Math.max(-20, Math.min(50, n));
+    // 盔甲减值为负向加值：只填数字，计入时取负
+    const raw = k === "armor" ? v.replace(/[^0-9]/g, "") : v;
+    const n = parseInt(raw, 10);
+    const val = Number.isNaN(n) ? 0 : k === "armor" ? Math.max(0, Math.min(50, n)) : Math.max(-20, Math.min(50, n));
     setChar((p) => ({ ...p, speedMods: { ...p.speedMods, [k]: val } }));
   }
 
@@ -828,11 +1007,45 @@ export default function CharacterSheet({
               {layout === "single" && <VisionField value={char.vision} mode={mode} onChange={(v) => setChar({ ...char, vision: v })} />}
               <TextField label="冒险团队与组织" value={char.organization ?? ""} onChange={(v) => setChar({ ...char, organization: v })} wide mode={mode} />
             </div>
+            <div className="info-row row-lang">
+              <span className="field-label">语言</span>
+              <span className="lang-chip fixed">通用语</span>
+              {char.languages.map((v, i) => (
+                mode === "render" ? (v ? <span key={i} className="lang-chip">{v}</span> : null)
+                : <input key={i} className="lang-input" value={v} placeholder={"语言 " + (i + 1)} onChange={(e) => setLang(i, e.target.value)} />
+              ))}
+              {mode === "edit" && (
+                <span className="lang-steps">
+                  <button type="button" className="sg-step" title="减少语言槽" onClick={() => setChar((p) => ({ ...p, languages: p.languages.slice(0, -1) }))}>−</button>
+                  <button type="button" className="sg-step" title="增加语言槽" onClick={() => setChar((p) => ({ ...p, languages: [...p.languages, ""] }))}>+</button>
+                </span>
+              )}
+              <span className="field-label">行动点</span>
+              {mode === "render" ? (
+                <span className="level-value">{char.actionPoints}</span>
+              ) : (
+                <div className="stepper">
+                  <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.max(0, char.actionPoints - 1) })}>−</button>
+                  <span className="level-value">{char.actionPoints}</span>
+                  <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.min(5, char.actionPoints + 1) })}>+</button>
+                </div>
+              )}
+              <span className="field-label">里程碑</span>
+              {mode === "render" ? (
+                <span className="level-value">{char.milestones ?? 0}</span>
+              ) : (
+                <div className="stepper">
+                  <button type="button" className="step" onClick={() => setChar({ ...char, milestones: Math.max(0, (char.milestones ?? 0) - 1) })}>−</button>
+                  <span className="level-value">{char.milestones ?? 0}</span>
+                  <button type="button" className="step" onClick={() => setChar({ ...char, milestones: Math.min(99, (char.milestones ?? 0) + 1) })}>+</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
     </section>
   );
-  const leftCol = (
+  const leftTop = (
     <>
       <div className="stat-layout">
         <div className="stat-col">
@@ -923,6 +1136,7 @@ export default function CharacterSheet({
                   { key: "other", label: "其他" },
                 ]}
                 mods={char.speedMods}
+                neg={new Set(["armor"])}
                 onChange={(k, v) => setSpeedMod(k as keyof SpeedMods, v)}
               />
             ) : (
@@ -933,12 +1147,18 @@ export default function CharacterSheet({
             <span className="mb-label">生命</span>
             <div className="health-list">
               <div className="health-main">
-                <span className="hl-label">生命值</span>
-                <span className="hl-now">
-                  <input className="hp-now-input" type="number" placeholder={String(maxHpTotal)} value={(char.hpNow?.max === undefined ? "" : String(char.hpNow.max))} onChange={(e) => setHpNow("max", e.target.value)} />
-                  <span className="hl-slash">/</span>
-                  <span className="hl-value">{maxHpTotal}</span>
-                </span>
+                <div className="health-main-row">
+                  <span className="hl-label">生命值</span>
+                  <span className="hl-now">
+                    <input className="hp-now-input" type="number" placeholder={String(maxHpTotal)} value={(char.hpNow?.max === undefined ? "" : String(char.hpNow.max))} onChange={(e) => setHpNow("max", e.target.value)} />
+                    <span className="hl-slash">/</span>
+                    <span className="hl-value">{maxHpTotal}</span>
+                  </span>
+                </div>
+                <div className="health-main-row temp">
+                  <span className="hl-label">临时生命值</span>
+                  <input className="hp-now-input temp-input" type="number" min={0} value={char.tempHp ?? 0} onChange={(e) => setChar((p) => ({ ...p, tempHp: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))} />
+                </div>
               </div>
               <div className="health-row"><span>重伤值</span>
                 <span className="hl-now small">
@@ -963,54 +1183,22 @@ export default function CharacterSheet({
               <div className="hp-extra-row"><span>额外生命值</span><input type="number" value={hpBonus} onChange={(e) => setChar((p) => ({ ...p, hpBonus: Math.floor(Number(e.target.value) || 0) }))} /></div>
               <div className="hp-extra-row"><span>额外回复力</span><input type="number" value={surgeBonus} onChange={(e) => setChar((p) => ({ ...p, surgeBonus: Math.floor(Number(e.target.value) || 0) }))} /></div>
               <div className="hp-extra-row"><span>额外回复值</span><input type="number" value={surgeValueBonus} onChange={(e) => setChar((p) => ({ ...p, surgeValueBonus: Math.floor(Number(e.target.value) || 0) }))} /></div>
-              <div className="hp-extra-row"><span>临时生命值</span><input type="number" value={char.tempHp ?? 0} onChange={(e) => setChar((p) => ({ ...p, tempHp: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))} /></div>
+
             </div>
           </div>
         </div>
       </div>
 
-      <div className="lang-ap-row">
-        <section className="block">
-          <h3 className="block-title">语言</h3>
-          <div className="lang-row">
-            <span className="lang-chip fixed">通用语</span>
-            {char.languages.map((v, i) => (
-              mode === "render" ? (v ? <span key={i} className="lang-chip">{v}</span> : null)
-              : <input key={i} className="lang-input" value={v} placeholder={"语言 " + (i + 1)} onChange={(e) => setLang(i, e.target.value)} />
-            ))}
-            {mode === "edit" && (
-              <span className="lang-steps">
-                <button type="button" className="sg-step" title="减少语言槽" onClick={() => setChar((p) => ({ ...p, languages: p.languages.slice(0, -1) }))}>−</button>
-                <button type="button" className="sg-step" title="增加语言槽" onClick={() => setChar((p) => ({ ...p, languages: [...p.languages, ""] }))}>+</button>
-              </span>
-            )}
-          </div>
-        </section>
-        <section className="block">
-          <h3 className="block-title">行动点</h3>
-          <div className="ap-layout">
-            <div className="ap-main">
-              {mode === "render" ? (
-                <span className="ap-value">{char.actionPoints}</span>
-              ) : (
-                <div className="stepper">
-                  <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.max(0, char.actionPoints - 1) })}>−</button>
-                  <span className="level-value">{char.actionPoints}</span>
-                  <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.min(5, char.actionPoints + 1) })}>+</button>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <section className="block">
+          </>
+  );
+  const raceClassCol = (
+    <><section className="block">
         <div className="block-head">
           <h3 className="block-title">种族特性</h3>
-          <TextButton className="detail-toggle" onClick={() => setRaceDetail((p) => !p)}>
-            <span slot="icon" className="material-symbols-outlined">{raceDetail ? "density_small" : "density_large"}</span>
+          <button type="button" className="mode-chip" onClick={() => setRaceDetail((p) => !p)}>
+            <span className="material-symbols-outlined mode-chip-ic">{raceDetail ? "density_small" : "density_large"}</span>
             {raceDetail ? "简洁" : "详细"}
-          </TextButton>
+          </button>
         </div>
         {raceEntry ? (
           <div className="race-detail">
@@ -1024,10 +1212,10 @@ export default function CharacterSheet({
       <section className="block">
         <div className="block-head">
           <h3 className="block-title">职业能力</h3>
-          <TextButton className="detail-toggle" onClick={() => setClassFeatDetail((p) => !p)}>
-            <span slot="icon" className="material-symbols-outlined">{classFeatDetail ? "density_small" : "density_large"}</span>
+          <button type="button" className="mode-chip" onClick={() => setClassFeatDetail((p) => !p)}>
+            <span className="material-symbols-outlined mode-chip-ic">{classFeatDetail ? "density_small" : "density_large"}</span>
             {classFeatDetail ? "简洁" : "详细"}
-          </TextButton>
+          </button>
         </div>
         {classEntry ? (
           <>
@@ -1044,13 +1232,55 @@ export default function CharacterSheet({
         ) : <p className="hint">请先选择职业。</p>}
       </section>
 
-      <section className="block">
+      
+      {char.level >= 11 && (
+        <section className="block">
+          <div className="block-head">
+            <h3 className="block-title">典范特性</h3>
+            <button type="button" className="mode-chip" onClick={() => setPathDetail((p) => !p)}>
+            <span className="material-symbols-outlined mode-chip-ic">{pathDetail ? "density_small" : "density_large"}</span>
+            {pathDetail ? "简洁" : "详细"}
+          </button>
+          </div>
+          {paragonPathEntry ? (
+            <div className="race-detail">
+              {pathTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(pathTrait, paragonPathEntry.fields).replace(/\n/g, "<br/>") }} />}
+              {pathDetail && pathBody && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(pathBody, paragonPathEntry.fields) }} />}
+              {!pathTrait && !pathBody && <pre className="feature-text">{stripWiki(paragonPathEntry.sourceText)}</pre>}
+            </div>
+          ) : <p className="hint">请先选择典范之道。</p>}
+        </section>
+      )}
+      {char.level >= 21 && (
+        <section className="block">
+          <div className="block-head">
+            <h3 className="block-title">天命特性</h3>
+            <button type="button" className="mode-chip" onClick={() => setDestinyDetail((p) => !p)}>
+            <span className="material-symbols-outlined mode-chip-ic">{destinyDetail ? "density_small" : "density_large"}</span>
+            {destinyDetail ? "简洁" : "详细"}
+          </button>
+          </div>
+          {epicDestinyEntry ? (
+            <div className="race-detail">
+              {destinyTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(destinyTrait, epicDestinyEntry.fields).replace(/\n/g, "<br/>") }} />}
+              {destinyDetail && destinyBody && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(destinyBody, epicDestinyEntry.fields) }} />}
+              {!destinyTrait && !destinyBody && <pre className="feature-text">{stripWiki(epicDestinyEntry.sourceText)}</pre>}
+            </div>
+          ) : <p className="hint">请先选择传奇天命。</p>}
+        </section>
+      )}
+
+    </>
+  );
+  const skillsCol = (
+    <>
+<section className="block">
         <div className="block-head">
           <h3 className="block-title">技能（{char.trainedSkills.length}）</h3>
-          <TextButton className="detail-toggle" onClick={() => setSkillDetail((p) => !p)}>
-            <span slot="icon" className="material-symbols-outlined">{skillDetail ? "density_small" : "density_large"}</span>
+          <button type="button" className="mode-chip" onClick={() => setSkillDetail((p) => !p)}>
+            <span className="material-symbols-outlined mode-chip-ic">{skillDetail ? "density_small" : "density_large"}</span>
             {skillDetail ? "简洁" : "详细"}
-          </TextButton>
+          </button>
         </div>
         {skillDetail ? (
           <div className="skill-table">
@@ -1098,47 +1328,32 @@ export default function CharacterSheet({
 
     </>
   );
-
-  const creationBlock = (
-      <section className="block">
-        <div className="block-head">
-          <h3 className="block-title">人物创建</h3>
-        </div>
-        {mode === "edit" ? (
-          CREATION_FIELDS.map((f) => (
-            <div key={f.key} className="bg-field">
-              <div className="bg-label">{f.label}</div>
-              <textarea
-                className="bg-input"
-                value={char.creation[f.key]}
-                placeholder={f.placeholder}
-                onChange={(e) => setChar((p) => ({ ...p, creation: { ...p.creation, [f.key]: e.target.value } }))}
-              />
-            </div>
-          ))
-        ) : CREATION_FIELDS.some((f) => char.creation[f.key].trim()) ? (
-          CREATION_FIELDS.map((f) =>
-            char.creation[f.key].trim() ? (
-              <div key={f.key} className="bg-field">
-                <div className="bg-label">{f.label}</div>
-                <div className="bg-render" dangerouslySetInnerHTML={{ __html: mdToHtml(char.creation[f.key]) }} />
-              </div>
-            ) : null
-          )
-        ) : (
-          <p className="hint">尚未填写人物创建内容。</p>
-        )}
-      </section>
+  const leftCol = (
+    <>
+      {leftTop}
+      {raceClassCol}
+      {skillsCol}
+    </>
   );
-  const rightCol = (
+  const powersCol = (
     <>
       <section className="block">
         <div className="block-head">
           <h3 className="block-title">威能</h3>
-          <TextButton className="detail-toggle" onClick={() => setBlockDetail((p) => ({ ...p, powers: !p.powers }))}>
-            <span slot="icon" className="material-symbols-outlined">{blockDetail.powers ? "density_small" : "density_large"}</span>
+                    <span className="head-actions">
+            <button type="button" className={"mode-chip" + (slotMode === "mark" ? " active" : "")} title="开启后点击有内容的槽位切换「已使用」遮罩（再次点击解除）" onClick={() => setSlotMode((m) => (m === "mark" ? null : "mark"))}>
+              <span className="mode-chip-ic">−</span>
+              标记使用
+            </button>
+            <button type="button" className={"mode-chip" + (slotMode === "swap" ? " active" : "")} title="开启后点击槽位打开储备弹窗，挑选要交换进来的对象" onClick={() => setSlotMode((m) => (m === "swap" ? null : "swap"))}>
+              <span className="mode-chip-ic">⇄</span>
+              与储备交换
+            </button>
+          </span>
+          <button type="button" className="mode-chip" onClick={() => setBlockDetail((p) => ({ ...p, powers: !p.powers }))}>
+            <span className="material-symbols-outlined mode-chip-ic">{blockDetail.powers ? "density_small" : "density_large"}</span>
             {blockDetail.powers ? "简洁" : "详细"}
-          </TextButton>
+          </button>
         </div>
         {SLOT_CATS.map((cat) => {
           const isSpecial = cat.key === "special";
@@ -1154,13 +1369,13 @@ export default function CharacterSheet({
                 <span className="sg-count">（{filled}/{effCount}）</span>
                 {isSpecial ? (
                   <>
-                    <button type="button" className="sg-step" title="减少槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: resizeSlots(p.powerSlots.special, p.powerSlots.special.length - 1).map((x) => x ?? "") } }))}>−</button>
-                    <button type="button" className="sg-step" title="增加槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: resizeSlots(p.powerSlots.special, p.powerSlots.special.length + 1).map((x) => x ?? "") } }))}>+</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: resizeSlots(p.powerSlots.special, p.powerSlots.special.length - 1).map((x) => x ?? "") } }))}>−</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: resizeSlots(p.powerSlots.special, p.powerSlots.special.length + 1).map((x) => x ?? "") } }))}>+</button>
                   </>
                 ) : (
                   <>
-                    <button type="button" className="sg-step" title="减少槽位" onClick={() => setPowerOverride(cat.key, Math.max(0, effCount - 1))}>−</button>
-                    <button type="button" className="sg-step" title="增加槽位" onClick={() => setPowerOverride(cat.key, Math.min(20, effCount + 1))}>+</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setPowerOverride(cat.key, Math.max(0, effCount - 1))}>−</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setPowerOverride(cat.key, Math.min(20, effCount + 1))}>+</button>
                   </>
                 )}
                 {customized && <span className="sg-custom">自定义</span>}
@@ -1173,13 +1388,13 @@ export default function CharacterSheet({
                     const p = id ? powerMap.get(id) : undefined;
                     if (p) {
                       return (
-                        <div key={i} className="slot-filled" onClick={() => setSlotPicker({ kind: "power", cat: cat.key, index: i })} title="点击更换">
+                        <div key={i} className={"slot-filled" + (isPowerUsed(cat.key, i) ? " slot-used" : "")} onClick={() => onPowerSlotClick(cat.key, i)} title={isPowerUsed(cat.key, i) ? "已标记使用（锁定）" : "点击更换"}>
                           <EntryCard entry={p} />
                         </div>
                       );
                     }
                     return (
-                      <button key={i} type="button" className="slot-empty" onClick={() => setSlotPicker({ kind: "power", cat: cat.key, index: i })}>
+                      <button key={i} type="button" className="slot-empty" onClick={() => onPowerSlotClick(cat.key, i)}>
                         <span className="material-symbols-outlined">add</span>
                         <span>选择{cat.label}</span>
                       </button>
@@ -1193,17 +1408,17 @@ export default function CharacterSheet({
                     const p = id ? powerMap.get(id) : undefined;
                     if (p) {
                       return (
-                        <div key={i} className="compact-row" onClick={() => setSlotPicker({ kind: "power", cat: cat.key, index: i })} title="点击更换">
+                        <div key={i} className={"compact-row" + (isPowerUsed(cat.key, i) ? " slot-used" : "")} onClick={() => onPowerSlotClick(cat.key, i)} title={isPowerUsed(cat.key, i) ? "已标记使用（锁定）" : "点击更换"}>
                           <span className="cr-dot" style={{ background: cat.key === "utility" || cat.key === "special" ? (p.usage === "at-will" ? POWER_COLORS.atWill : p.usage === "encounter" ? POWER_COLORS.encounter : p.usage === "daily" ? POWER_COLORS.daily : POWER_COLORS.utility) : cat.color }} />
                           <span className="cr-name">{p.name}{p.nameEn ? " " + p.nameEn : ""}</span>
                           <span className="cr-sub">L{p.level}{p.usageZh ? " · " + p.usageZh : ""}</span>
-                          <IconButton className="slot-x" title="清空槽位" aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); setChar((c) => ({ ...c, powerSlots: clearPowerSlot(c.powerSlots, cat.key, i) })); }}><span className="material-symbols-outlined">close</span></IconButton>
+                          <IconButton className="slot-x" title={isPowerUsed(cat.key, i) || slotMode ? "锁定" : "清空槽位"} aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); if (slotMode || isPowerUsed(cat.key, i)) return; setChar((c) => ({ ...c, powerSlots: clearPowerSlot(c.powerSlots, cat.key, i) })); }}><span className="material-symbols-outlined">close</span></IconButton>
                           <div className="compact-pop"><EntryCard entry={p} /></div>
                         </div>
                       );
                     }
                     return (
-                      <button key={i} type="button" className="compact-empty" onClick={() => setSlotPicker({ kind: "power", cat: cat.key, index: i })}>＋ 选择{cat.label}</button>
+                      <button key={i} type="button" className="compact-empty" onClick={() => onPowerSlotClick(cat.key, i)}>＋ 选择{cat.label}</button>
                     );
                   })}
                 </div>
@@ -1216,74 +1431,27 @@ export default function CharacterSheet({
         })}
       </section>
 
-      <section className="block">
-        <div className="block-head">
-          <h3 className="block-title">专长</h3>
-          <TextButton className="detail-toggle" onClick={() => setBlockDetail((p) => ({ ...p, feats: !p.feats }))}>
-            <span slot="icon" className="material-symbols-outlined">{blockDetail.feats ? "density_small" : "density_large"}</span>
-            {blockDetail.feats ? "简洁" : "详细"}
-          </TextButton>
-        </div>
-        <div className="selected-group">
-          <div className="sg-title">
-            专长
-            <span className="sg-count">（{char.featSlots.filter(Boolean).length}/{effFeatCount}）</span>
-            <button type="button" className="sg-step" title="减少槽位" onClick={() => setFeatOverride(Math.max(0, effFeatCount - 1))}>−</button>
-            <button type="button" className="sg-step" title="增加槽位" onClick={() => setFeatOverride(Math.min(20, effFeatCount + 1))}>+</button>
-            {char.featSlotOverride !== undefined && <span className="sg-custom">自定义</span>}
-            {char.featSlotOverride !== undefined && <button type="button" className="sg-restore" title="恢复跟随等级" onClick={() => restoreFeatOverride()}>恢复</button>}
-          </div>
-          {blockDetail.feats ? (
-            <div className="power-grid">
-              {Array.from({ length: Math.max(effFeatCount, char.featSlots.length) }, (_, i) => {
-                const id = char.featSlots[i] ?? "";
-                const f = id ? featMap.get(id) : undefined;
-                if (f) {
-                  return (
-                    <div key={i} className="slot-filled" onClick={() => setSlotPicker({ kind: "feat", index: i })} title="点击更换">
-                      <EntryCard entry={f} />
-                    </div>
-                  );
-                }
-                return (
-                  <button key={i} type="button" className="slot-empty" onClick={() => setSlotPicker({ kind: "feat", index: i })}>
-                    <span className="material-symbols-outlined">add</span>
-                    <span>选择专长</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="compact-list">
-              {Array.from({ length: Math.max(effFeatCount, char.featSlots.length) }, (_, i) => {
-                const id = char.featSlots[i] ?? "";
-                const f = id ? featMap.get(id) : undefined;
-                if (f) {
-                  return (
-                    <div key={i} className="compact-row" onClick={() => setSlotPicker({ kind: "feat", index: i })} title="点击更换">
-                      <span className="cr-name">{f.name}{f.nameEn ? " " + f.nameEn : ""}</span>
-                      <span className="cr-sub">{f.tierZh}{f.source ? " · " + f.source : ""}</span>
-                      <IconButton className="slot-x" title="清空槽位" aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); setChar((c) => ({ ...c, featSlots: clearFeatSlot(c.featSlots, i) })); }}><span className="material-symbols-outlined">close</span></IconButton>
-                      <div className="compact-pop"><EntryCard entry={f} /></div>
-                    </div>
-                  );
-                }
-                return (
-                  <button key={i} type="button" className="compact-empty" onClick={() => setSlotPicker({ kind: "feat", index: i })}>＋ 选择专长</button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="block">
+          </>
+  );
+  const rightRest = (
+    <>
+<section className="block">
         <div className="block-head">
           <h3 className="block-title">装备</h3>
-          <TextButton className="detail-toggle" onClick={() => setBlockDetail((p) => ({ ...p, equipment: !p.equipment }))}>
-            <span slot="icon" className="material-symbols-outlined">{blockDetail.equipment ? "density_small" : "density_large"}</span>
+                    <span className="head-actions">
+            <button type="button" className={"mode-chip" + (slotMode === "mark" ? " active" : "")} title="开启后点击有内容的槽位切换「已使用」遮罩（再次点击解除）" onClick={() => setSlotMode((m) => (m === "mark" ? null : "mark"))}>
+              <span className="mode-chip-ic">−</span>
+              标记使用
+            </button>
+            <button type="button" className={"mode-chip" + (slotMode === "swap" ? " active" : "")} title="开启后点击槽位打开储备弹窗，挑选要交换进来的对象" onClick={() => setSlotMode((m) => (m === "swap" ? null : "swap"))}>
+              <span className="mode-chip-ic">⇄</span>
+              与储备交换
+            </button>
+          </span>
+          <button type="button" className="mode-chip" onClick={() => setBlockDetail((p) => ({ ...p, equipment: !p.equipment }))}>
+            <span className="material-symbols-outlined mode-chip-ic">{blockDetail.equipment ? "density_small" : "density_large"}</span>
             {blockDetail.equipment ? "简洁" : "详细"}
-          </TextButton>
+          </button>
         </div>
         <div className="equip-layout">
           <nav className="equip-nav">
@@ -1308,11 +1476,12 @@ export default function CharacterSheet({
                 detail={blockDetail.equipment}
                 names={(i) => g.slots[i].name}
                 items={(i) => { const id = char.equipmentSlots[g.slots[i].index]; return id ? itemMap.get(id) : undefined; }}
-                picker={(i) => setEquipPicker({ kind: "fixed", index: g.slots[i].index })}
-                clear={(i) => setChar((c) => ({ ...c, equipmentSlots: clearEquipmentSlot(c.equipmentSlots, g.slots[i].index) }))}
+                picker={(i) => onEquipSlotClick("fixed", g.slots[i].index)}
+                clear={(i) => { if (slotMode) return; setChar((c) => ({ ...c, equipmentSlots: clearEquipmentSlot(c.equipmentSlots, g.slots[i].index) })); }}
+                usedOf={(i) => isEquipUsed("fixed", g.slots[i].index)}
                 baseKind={g.kind}
                 baseOf={(i) => char.baseItems[g.slots[i].index]}
-                onBaseClick={(i) => g.kind && setBasePicker({ kind: g.kind, index: g.slots[i].index })}
+                onBaseClick={(i) => { if (slotMode || isEquipUsed("fixed", g.slots[i].index)) return; g.kind && setBasePicker({ kind: g.kind, index: g.slots[i].index }); }}
                 levelsOf={(i) => { const id = char.equipmentSlots[g.slots[i].index]; const e = id ? itemMap.get(id) : undefined; return e ? itemLevels(e.itemLevel) : []; }}
                 enhanceOf={(i) => char.equipmentEnhance[g.slots[i].index] ?? 1}
                 onEnhance={(i, tier) => setChar((c) => ({ ...c, equipmentEnhance: { ...c.equipmentEnhance, [g.slots[i].index]: tier } }))}
@@ -1324,25 +1493,35 @@ export default function CharacterSheet({
             <div className="sg-title">
               其他
               <span className="sg-count">（{char.otherSlots.filter(Boolean).length}/{char.otherSlots.length}）</span>
-              <button type="button" className="sg-step" title="减少槽位" onClick={() => setChar((p) => ({ ...p, otherSlots: resizeSlots(p.otherSlots, p.otherSlots.length - 1) }))}>−</button>
-              <button type="button" className="sg-step" title="增加槽位" onClick={() => setChar((p) => ({ ...p, otherSlots: resizeSlots(p.otherSlots, p.otherSlots.length + 1) }))}>+</button>
+              <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, otherSlots: resizeSlots(p.otherSlots, p.otherSlots.length - 1) }))}>−</button>
+              <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, otherSlots: resizeSlots(p.otherSlots, p.otherSlots.length + 1) }))}>+</button>
             </div>
             <EquipGroupSlots
               slots={char.otherSlots}
               detail={blockDetail.equipment}
               names={(i) => "其他 " + (i + 1)}
               items={(i) => { const id = char.otherSlots[i]; return id ? itemMap.get(id) : undefined; }}
-              picker={(i) => setEquipPicker({ kind: "other", index: i })}
-              clear={(i) => setChar((c) => ({ ...c, otherSlots: clearEquipmentSlot(c.otherSlots, i) }))}
+              picker={(i) => onEquipSlotClick("other", i)}
+              clear={(i) => { if (slotMode) return; setChar((c) => ({ ...c, otherSlots: clearEquipmentSlot(c.otherSlots, i) })); }}
+              usedOf={(i) => isEquipUsed("other", i)}
             />
           </div>
           <div id="equip-g-消耗品" className="equip-sub">
             <div className="sg-title">
               消耗品
               <span className="sg-count">（{char.consumableSlots.filter(Boolean).length}/{char.consumableSlots.length}）</span>
-              <button type="button" className="sg-step" title="减少槽位" onClick={() => setChar((p) => ({ ...p, consumableSlots: resizeSlots(p.consumableSlots, p.consumableSlots.length - 1) }))}>−</button>
-              <button type="button" className="sg-step" title="增加槽位" onClick={() => setChar((p) => ({ ...p, consumableSlots: resizeSlots(p.consumableSlots, p.consumableSlots.length + 1) }))}>+</button>
+              <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, consumableSlots: resizeSlots(p.consumableSlots, p.consumableSlots.length - 1) }))}>−</button>
+              <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, consumableSlots: resizeSlots(p.consumableSlots, p.consumableSlots.length + 1) }))}>+</button>
             </div>
+            <EquipGroupSlots
+              slots={char.consumableSlots}
+              detail={blockDetail.equipment}
+              names={(i) => "消耗品 " + (i + 1)}
+              items={(i) => { const id = char.consumableSlots[i]; return id ? itemMap.get(id) : undefined; }}
+              picker={(i) => onEquipSlotClick("consumable", i)}
+              clear={(i) => { if (slotMode) return; setChar((c) => ({ ...c, consumableSlots: clearEquipmentSlot(c.consumableSlots, i) })); }}
+              usedOf={(i) => isEquipUsed("consumable", i)}
+            />
           <div id="equip-g-冒险装备" className="equip-sub">
             <div className="sg-title">
               冒险装备
@@ -1368,14 +1547,6 @@ export default function CharacterSheet({
               ))}
             </div>
           </div>
-            <EquipGroupSlots
-              slots={char.consumableSlots}
-              detail={blockDetail.equipment}
-              names={(i) => "消耗品 " + (i + 1)}
-              items={(i) => { const id = char.consumableSlots[i]; return id ? itemMap.get(id) : undefined; }}
-              picker={(i) => setEquipPicker({ kind: "consumable", index: i })}
-              clear={(i) => setChar((c) => ({ ...c, consumableSlots: clearEquipmentSlot(c.consumableSlots, i) }))}
-            />
           </div>
         </div>
         </div>
@@ -1418,23 +1589,103 @@ export default function CharacterSheet({
       </section>
     </>
   );
-  return (
+  const featsCol = (
+    <>
+      <section className="block">
+        <div className="block-head">
+          <h3 className="block-title">专长</h3>
+          <button type="button" className="mode-chip" onClick={() => setBlockDetail((p) => ({ ...p, feats: !p.feats }))}>
+            <span className="material-symbols-outlined mode-chip-ic">{blockDetail.feats ? "density_small" : "density_large"}</span>
+            {blockDetail.feats ? "简洁" : "详细"}
+          </button>
+        </div>
+        <div className="selected-group">
+          <div className="sg-title">
+            专长
+            <span className="sg-count">（{char.featSlots.filter(Boolean).length}/{effFeatCount}）</span>
+            <button type="button" className="sg-step" title="减少槽位" onClick={() => setFeatOverride(Math.max(0, effFeatCount - 1))}>−</button>
+            <button type="button" className="sg-step" title="增加槽位" onClick={() => setFeatOverride(Math.min(20, effFeatCount + 1))}>+</button>
+            {char.featSlotOverride !== undefined && (
+              <>
+                <span className="sg-custom">自定义</span>
+                <button type="button" className="sg-restore" title="恢复跟随等级" onClick={restoreFeatOverride}>恢复</button>
+              </>
+            )}
+          </div>
+          {blockDetail.feats ? (
+            <div className="power-grid">
+              {Array.from({ length: Math.max(effFeatCount, char.featSlots.length) }, (_, i) => {
+                const id = char.featSlots[i] ?? "";
+                const f = id ? featMap.get(id) : undefined;
+                if (f) {
+                  return (
+                    <div key={i} className="slot-filled" onClick={() => openFeatPicker(i)} title="点击更换">
+                      <EntryCard entry={f} />
+                    </div>
+                  );
+                }
+                return (
+                  <button key={i} type="button" className="slot-empty" onClick={() => openFeatPicker(i)}>
+                    <span className="material-symbols-outlined">add</span>
+                    <span>选择专长</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="compact-list">
+              {Array.from({ length: Math.max(effFeatCount, char.featSlots.length) }, (_, i) => {
+                const id = char.featSlots[i] ?? "";
+                const f = id ? featMap.get(id) : undefined;
+                if (f) {
+                  return (
+                    <div key={i} className="compact-row" onClick={() => openFeatPicker(i)} title="点击更换">
+                      <span className="cr-dot" style={{ background: FEAT_COLOR }} />
+                      <span className="cr-name">{f.name}{f.nameEn ? " " + f.nameEn : ""}</span>
+                      <span className="cr-sub">{f.tierZh ?? ""}</span>
+                      <IconButton className="slot-x" title="清空槽位" aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); setChar((c) => ({ ...c, featSlots: clearFeatSlot(c.featSlots, i) })); }}><span className="material-symbols-outlined">close</span></IconButton>
+                      <div className="compact-pop"><EntryCard entry={f} /></div>
+                    </div>
+                  );
+                }
+                return (
+                  <button key={i} type="button" className="compact-empty" onClick={() => openFeatPicker(i)}>＋ 选择专长</button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+    </>
+  );
+const rightCol = (
+    <>
+      {powersCol}
+      {rightRest}
+    </>
+  );
+
+return (
     <div className="sheet">
       {layout === "double" ? (
         <div className="layout-double">
-          <div className="col-left">
-            {topCol}
-            {leftCol}
-            {creationBlock}
+          <div className="layout-top-row">
+            <div className="lt-cell">{topCol}</div>
+            <div className="lt-cell">{leftTop}</div>
           </div>
-          <div className="col-right">{rightCol}</div>
+          <div className="col-left">
+            {powersCol}
+            {featsCol}
+            {skillsCol}
+            {raceClassCol}
+          </div>
+          <div className="col-right">{rightRest}</div>
         </div>
       ) : (
         <>
           {topCol}
           {leftCol}
           {rightCol}
-          {creationBlock}
         </>
       )}
 
@@ -1489,6 +1740,7 @@ export default function CharacterSheet({
           entries={powers}
           relations={relations}
           classEntry={classEntry}
+          classEntry2={classEntry2}
           raceEntry={raceEntry}
           category={slotPicker.cat === "atWill" ? "at-will" : slotPicker.cat}
           currentLevel={char.level}
@@ -1505,6 +1757,7 @@ export default function CharacterSheet({
           allClasses={classes}
           raceEntry={raceEntry}
           classEntry={classEntry}
+          classEntry2={classEntry2}
           currentLevel={char.level}
           currentId={char.featSlots[slotPicker.index] || undefined}
           onSelect={(id) => setChar((p) => ({ ...p, featSlots: setFeatSlot(p.featSlots, slotPicker.index, id) }))}
@@ -1532,6 +1785,32 @@ export default function CharacterSheet({
           onClose={() => setEquipPicker(null)}
         />
       )}
+      {swapPicker &&
+        createPortal(
+          <div className="picker-overlay" onClick={() => setSwapPicker(null)}>
+            <div className="picker-dialog swap-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="picker-head">
+                <span className="picker-title">从{swapPicker.kind === "power" ? "法术书" : "背包"}交换{swapCurId ? "（当前：" + swapCurName + "）" : "（空槽位）"}</span>
+                <div className="picker-head-btns">
+                  {swapCurId && <button type="button" className="crop-btn" onClick={() => collectToReserve(swapPicker)}>仅收入储备</button>}
+                  <button type="button" className="crop-btn" onClick={() => setSwapPicker(null)}>关闭</button>
+                </div>
+              </div>
+              <div className="swap-list">
+                {swapList.length === 0 && <p className="hint">储备为空，暂无内容可交换。</p>}
+                {swapList.map((it) => {
+                  const e = swapPicker.kind === "power" ? powerMap.get(it.id) : itemMap.get(it.id);
+                  return (
+                    <button key={it.ri} type="button" className="swap-card" title="点击交换进槽位" onClick={() => swapReserveItem(swapPicker, it.ri)}>
+                      {e ? <EntryCard entry={e} /> : <span className="swap-card-fallback"><span className="cr-dot" style={{ background: it.color }} />{it.name}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       {alignmentOpen && (
         <SheetDialog
           open

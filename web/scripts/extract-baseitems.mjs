@@ -13,7 +13,12 @@ const arm = raws.find((t) => t.title === "护甲");
 if (!wep || !arm) { console.error("缺少武器/护甲参考页"); process.exit(1); }
 
 function strip(html) {
-  return html.replace(/<br[^>]*>/gi, " ").replace(/<[^>]+>/g, "").replace(/\^\^[^\^]*\^\^/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  return html.replace(/<br[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\^\^[^\^]*\^\^/g, "").replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").replace(/\n\s*\n/g, "\n").trim();
+}
+
+// 行内单元格：多行（<br> 副手端）取主端
+function cell(td) {
+  return td.split("\n")[0].replace(/\s+$/, "").trim();
 }
 
 function parseTables(html) {
@@ -24,18 +29,24 @@ function parseTables(html) {
     const body = m[1];
     const capM = body.match(/<caption[^>]*>([\s\S]*?)<\/caption>/);
     const rows = [...body.matchAll(/<tr(?: [^>]*)?>([\s\S]*?)<\/tr>/g)];
-    const data = [];
-    let title = "";
+    const groups = [];
+    let cur = null;
     for (const rm of rows) {
       const rawTds = [...rm[1].matchAll(/<td(?: [^>]*)?>([\s\S]*?)<\/td>/g)].map((x) => x[1]);
       if (rawTds.length < 7) continue;
-      if (rm[1].includes("<br")) continue;
       const tds = rawTds.map(strip);
-      if (/（(轻甲|重甲)）$/.test(tds[0])) { title = tds[0]; continue; } // 护甲表：表头行作标题
+      const isTitle = tds[0].includes("（轻甲）") || tds[0].includes("（重甲）");
+      if (isTitle) {
+        // 护甲组标题行：开启新组；标题行本身可能是基础护甲条目（第二格为 +N）
+        cur = { name: tds[0], entry: tds, rows: [] };
+        groups.push(cur);
+        continue;
+      }
       if (!tds[0] || /^(武器|护甲加值)/.test(tds[0])) continue;
-      data.push(tds);
+      if (cur) cur.rows.push(tds);
+      else groups.push({ name: "", entry: null, rows: [tds] });
     }
-    if (data.length) out.push({ caption: capM ? strip(capM[1]) : "", title, rows: data });
+    if (groups.length) out.push({ caption: capM ? strip(capM[1]) : "", groups });
   }
   return out;
 }
@@ -47,40 +58,51 @@ while ((sm = secRe.exec(wep.text))) {
   if (!sm[1].includes("武器")) continue;
   const tables = parseTables(sm[2]);
   for (const t of tables) {
-    for (const r of t.rows) {
-      const priceM = String(r[4] || "").match(/\d+/);
-      weapons.push({
-        name: r[0],
-        dice: r[2] || "",
-        traits: r[6] || "",
-        category: sm[1] + "·" + t.caption,
-        group: r[7] || "",
-        price: priceM ? parseInt(priceM[0], 10) : 0,
-      });
+    const isDouble = t.caption === "双头武器" || sm[1] === "双头武器";
+    for (const g of t.groups) {
+      for (const r of g.rows) {
+        const priceM = String(cell(r[4])).match(/\d+/);
+        const name = cell(r[0]).split("—")[0].replace(/\s+$/, "").trim();
+        if (!name) continue;
+        weapons.push({
+          name,
+          dice: cell(r[2]) || "",
+          traits: [...new Set(r[6].split(/[，,\s]+/).filter(Boolean))].join("，"),
+          category: isDouble ? "双头武器" : sm[1] + "·" + t.caption,
+          group: cell(r[7]).split(/\s+/)[0] || "",
+          price: priceM ? parseInt(priceM[0], 10) : 0,
+        });
+      }
     }
   }
 }
 
 const armors = [];
 for (const t of parseTables(arm.text)) {
-  const label = t.title || t.caption;
-  if (!/（(轻甲|重甲)）/.test(label)) continue;
-  const cat = label.includes("重甲") ? "重甲" : "轻甲";
-  for (const r of t.rows) {
-    const acM = String(r[1]).match(/\+(\d+)/);
-    // 最小增强加值列（r[2]）："—" 为基础护甲，"+N" 为精制品
-    const enhM = String(r[2]).match(/\+(\d+)/);
-    const special = String(r[7] || "").trim();
-    const priceM = String(r[5] || "").match(/\d+/);
-    armors.push({
-      name: r[0].replace(/ Armor$/i, "").trim(),
-      ac: acM ? parseInt(acM[1], 10) : 0,
-      category: cat,
-      masterwork: !!enhM,
-      minEnhance: enhM ? parseInt(enhM[1], 10) : 0,
-      special,
-      price: priceM ? parseInt(priceM[0], 10) : 0,
-    });
+  for (const g of t.groups) {
+    if (!/（(轻甲|重甲)）/.test(g.name)) continue;
+    const cat = g.name.includes("重甲") ? "重甲" : "轻甲";
+    const rows = [];
+    // 标题行自身若是基础护甲条目（第二格为 +N），先入组
+    if (g.entry && /^\+/.test(String(g.entry[1]))) rows.push(g.entry);
+    rows.push(...g.rows);
+    for (const r of rows) {
+      const acM = String(r[1]).match(/\+(\d+)/);
+      // 新表（9列：特性在 r[6]）与旧表（8列：特殊在 r[7]）列序不同
+      const special = String(r.length >= 9 ? r[6] : r[7] || "").trim();
+      const enhM = String(r[2]).match(/\+(\d+)/);
+      // 新表（9列：价格在 r[4]）与旧表（8列：价格在 r[5]）列序不同
+      const priceM = String((r.length >= 9 ? r[4] : r[5]) || "").match(/\d+/);
+      armors.push({
+        name: r[0].replace(/ Armor$/i, "").replace(/（(轻甲|重甲)）/g, "").replace(/ \(light\)$/i, "").replace(/ \(heavy\)$/i, "").trim(),
+        ac: acM ? parseInt(acM[1], 10) : 0,
+        category: cat,
+        masterwork: !!enhM,
+        minEnhance: enhM ? parseInt(enhM[1], 10) : 0,
+        special,
+        price: priceM ? parseInt(priceM[0], 10) : 0,
+      });
+    }
   }
 }
 

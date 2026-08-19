@@ -296,16 +296,16 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .layout-double .ac-head { font-size: 12px; }
 
 /* 角色信息（topbar 归入左栏） */
-.col-left .topbar { padding: 14px 16px; }
-.col-left .topbar .portrait-frame { width: 156px; height: 208px; }
-.col-left .topbar .portrait-col { width: 156px; gap: 12px; }
-.col-left .topbar .info-rows { gap: 16px; }
-.col-left .topbar .info-row { gap: 10px; }
-.col-left .topbar .row-1 { grid-template-columns: minmax(0, 1fr); }
-.col-left .topbar .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.col-left .topbar .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.col-left .topbar .row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.col-left .topbar .row-4 .field-wide { grid-column: span 2; }
+.lt-cell .topbar { padding: 14px 16px; }
+.lt-cell .topbar .portrait-frame { width: 156px; height: 208px; }
+.lt-cell .topbar .portrait-col { width: 156px; gap: 12px; }
+.lt-cell .topbar .info-rows { gap: 16px; }
+.lt-cell .topbar .info-row { gap: 10px; }
+.lt-cell .topbar .row-1 { grid-template-columns: minmax(0, 1fr); }
+.lt-cell .topbar .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lt-cell .topbar .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lt-cell .topbar .row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lt-cell .topbar .row-4 .field-wide { grid-column: span 2; }
 .layout-double .topbar-flex { gap: 14px; }
 .layout-double md-filled-text-field { --md-filled-text-field-input-text-size: 14px; --md-filled-text-field-label-text-size: 12px; }
 .layout-double md-filled-select { --md-filled-select-text-field-input-text-size: 14px; --md-filled-select-text-field-label-text-size: 12px; }
@@ -462,7 +462,11 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .layout-double .def-bonus { display: flex; flex-direction: column; gap: 5px; }
 .def-bonus-total { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); margin-top: 2px; }
 .health-list { display: flex; flex-direction: column; gap: 8px; }
-.health-main { display: flex; justify-content: space-between; align-items: baseline; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container); }
+.health-main { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container); }
+.health-main-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.health-main-row.temp { margin-top: 2px; padding-top: 5px; border-top: 1px dashed var(--md-sys-color-outline-variant); }
+.health-main-row.temp .hl-label { font-size: 11.5px; font-weight: 600; color: var(--md-sys-color-on-surface-variant); }
+.health-main-row.temp .hp-now-input { width: 38px; font-size: 12px; }
 .hl-label { font-size: 14px; font-weight: 600; }
 .hl-value { font-size: 28px; font-weight: 700; }
 .health-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; padding: 2px 6px; }
@@ -997,3 +1001,112 @@ md-dialog.sheet-dialog-xw .picker-cards {
   }
 }
 
+
+/* 基础物品选择弹窗：素版（仿职业/种族选择） */
+.base-dialog { width: min(94vw, 1000px); }
+.base-dialog-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.base-dialog .class-layout { flex: 1; min-height: 0; }
+.base-dialog .class-grid { min-height: 0; align-content: start; }
+.base-dialog .class-sources { padding-right: 8px; }
+.base-dialog .class-roles { flex-wrap: wrap; }
+.base-dialog .picker-card { min-height: 64px; }
+.base-dialog .equip-layout { flex: 1; min-height: 0; }
+.base-dialog .equip-groups { overflow-y: auto; }
+/* 移动力：盔甲减值负号固定在输入框外左侧（与技能盔甲一致） */
+.def-bonus-neg { display: inline-flex; align-items: center; gap: 2px; }
+.def-bonus-neg .def-bonus-minus { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
+
+
+/* 增量加载哨兵 */
+.incremental-sentinel { grid-column: 1 / -1; text-align: center; padding: 10px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+
+/* 语言并入角色信息：换行流式行 */
+.info-row.row-lang { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lt-cell .topbar .info-row.row-lang { gap: 8px; }
+
+/* 双栏：右栏顶部与左栏角色信息对齐（去掉首元素上边距） */
+.col-right > :first-child { margin-top: 0; }
+
+/* 储备页：双栏 50/50 大板块 */
+.reserve-panels { display: flex; flex-direction: column; gap: 16px; }
+.reserve-panels.double { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.reserve-panel { min-height: 62vh; }
+/* 速览页 */
+.overview { min-height: 40vh; }
+
+/* 储备页槽位 */
+.reserve-slots { display: flex; flex-direction: column; gap: 8px; }
+.reserve-slot { display: flex; align-items: center; gap: 8px; }
+.reserve-slot-main { flex: 1; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.reserve-slot-main:hover { border-color: var(--md-sys-color-primary); }
+.reserve-slot-main .sg-dot { flex: none; }
+.rs-name { font-size: 14px; font-weight: var(--fw-subheading, 600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-sub { font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-left: auto; flex: none; }
+.rs-empty { font-size: 13px; color: var(--md-sys-color-on-surface-variant); }
+.rs-clear { flex: none; }
+.reserve-panel .block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+
+/* 已使用遮罩：灰色斜线覆盖 + 黑白滤镜（槽位锁定） */
+.slot-used { position: relative; filter: grayscale(1); }
+.slot-used::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: repeating-linear-gradient(45deg, rgba(128, 128, 128, 0.30) 0 6px, rgba(255, 255, 255, 0.06) 6px 12px);
+  pointer-events: none;
+  z-index: 2;
+}
+.compact-row.slot-used { opacity: 0.92; }
+.slot-used .compact-pop { display: none !important; }
+/* 模式按钮（MD3 filter chip） */
+.head-actions { display: inline-flex; align-items: center; gap: 6px; }
+.block-head .head-actions { margin-left: auto; }
+.block-head { flex-wrap: wrap; }
+.mode-hint { margin: -2px 0 10px; }
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mode-chip:hover { background: var(--md-sys-color-surface-container-highest); }
+.mode-chip.active { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.mode-chip-ic { font-size: 15px; line-height: 1; font-weight: 600; }
+.mode-chip .material-symbols-outlined { font-size: 16px; }
+/* 储备页详细卡片 */
+.reserve-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.reserve-slot-card { min-height: 120px; }
+.reserve-x { position: absolute; top: 6px; right: 6px; z-index: 3; background: var(--md-sys-color-surface-container-high); }
+/* 行动点并入语言行 */
+.info-row.row-lang .stepper { display: inline-flex; align-items: center; gap: 6px; }
+.info-row.row-lang .step { width: 26px; height: 26px; border: none; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); font-size: 15px; cursor: pointer; font-family: inherit; }
+.info-row.row-lang .step:hover { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+
+.reserve-loading { display: flex; align-items: center; justify-content: center; min-height: 100px; color: var(--md-sys-color-on-surface-variant); font-size: 13px; }
+
+/* 储备交换弹窗（全局） */
+.swap-dialog { width: min(94vw, 720px); }
+.swap-list { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow: auto; }
+.swap-card { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); cursor: pointer; text-align: left; font: inherit; overflow: hidden; }
+.swap-card:hover { border-color: var(--md-sys-color-primary); box-shadow: var(--md-sys-elevation-shadow-level1); }
+.swap-card-fallback { display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--md-sys-color-on-surface); font-size: 14px; }
+
+
+/* 双栏顶部行：角色信息 | 数值区 并排，保证威能/装备顶端对齐 */
+.layout-top-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.layout-top-row .lt-cell { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.layout-top-row .stat-layout { margin: 0; }
+
+/* 优异法器卡片（复用精制品强调样式） */
+.base-picker-card.masterwork { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container-high); }

@@ -33,11 +33,13 @@ export const BASE_SHIELDS: BaseShield[] = [
   { name: "重盾", ac: 2, traits: "副手", price: 10 },
 ];
 
-// 法器（施法用具，无伤害骰）
+// 法器（施法用具，无伤害骰）；superior=true 为优异法器（来源：wiki「法器」页）
 export interface BaseImplement {
   name: string;
   category: string;
   price: number;
+  superior?: boolean;
+  properties?: string;
 }
 
 export const BASE_IMPLEMENTS: BaseImplement[] = [
@@ -46,6 +48,46 @@ export const BASE_IMPLEMENTS: BaseImplement[] = [
   { name: "权杖", category: "奥术", price: 12 },
   { name: "法杖", category: "奥术", price: 5 },
   { name: "魔杖", category: "奥术", price: 7 },
+  // —— 优异法器 ——
+  { name: "精准圣徽 Accurate symbol", category: "神术", price: 25, superior: true, properties: "精准" },
+  { name: "星界圣徽 Astral symbol", category: "神术", price: 18, superior: true, properties: "远距，增能（光耀）" },
+  { name: "防卫圣徽 Warding symbol", category: "神术", price: 21, superior: true, properties: "庇护，无滞" },
+  { name: "愤怒圣徽 Wrathful symbol", category: "神术", price: 23, superior: true, properties: "高重击，无阻" },
+  { name: "精准法珠 Accurate orb", category: "奥术", price: 30, superior: true, properties: "精准" },
+  { name: "水晶法珠 Crystal orb", category: "奥术", price: 27, superior: true, properties: "增能（心灵），无阻" },
+  { name: "绿石法珠 Greenstone orb", category: "奥术", price: 27, superior: true, properties: "增能（强酸），无滞" },
+  { name: "石化法珠 Petrified orb", category: "奥术", price: 25, superior: true, properties: "增能（力场），压迫" },
+  { name: "精准权杖 Accurate rod", category: "奥术", price: 25, superior: true, properties: "精准" },
+  { name: "灰白权杖 Ashen rod", category: "奥术", price: 22, superior: true, properties: "增能（火焰），无误" },
+  { name: "死骨权杖 Deathbone rod", category: "奥术", price: 22, superior: true, properties: "增能（暗蚀），无阻" },
+  { name: "挑衅权杖 Defiant rod", category: "奥术", price: 18, superior: true, properties: "增能（光耀），庇护" },
+  { name: "精准法杖 Accurate staff", category: "奥术", price: 20, superior: true, properties: "精准" },
+  { name: "护卫法杖 Guardian staff", category: "奥术", price: 13, superior: true, properties: "增能（力场），庇护" },
+  { name: "曲念法杖 Mindwarp staff", category: "奥术", price: 16, superior: true, properties: "远距，增能（心灵）" },
+  { name: "迅雷法杖 Quickbeam staff", category: "奥术", price: 15, superior: true, properties: "增能（雷鸣），压迫" },
+  { name: "回声魔典 Echo tome", category: "奥术", price: 15, superior: true, properties: "远距，无误" },
+  { name: "禁制魔典 Forbidden tome", category: "奥术", price: 15, superior: true, properties: "致命，无滞" },
+  { name: "恐怖魔典 Unspeakable tome", category: "奥术", price: 15, superior: true, properties: "高重击，无阻" },
+  { name: "精准图腾 Accurate totem", category: "原力", price: 20, superior: true, properties: "精准" },
+  { name: "远视图腾 Farseeing totem", category: "原力", price: 14, superior: true, properties: "致命，远距" },
+  { name: "冰柱图腾 Icicle totem", category: "原力", price: 15, superior: true, properties: "高重击，增能（寒冰）" },
+  { name: "风暴图腾 Storm totem", category: "原力", price: 18, superior: true, properties: "增能（雷鸣），无滞" },
+  { name: "精准魔杖 Accurate wand", category: "奥术", price: 20, superior: true, properties: "精准" },
+  { name: "灰烬魔杖 Cinder wand", category: "奥术", price: 18, superior: true, properties: "高重击，增能（火焰）" },
+  { name: "龙牙魔杖 Dragontooth wand", category: "奥术", price: 18, superior: true, properties: "致命，无误" },
+  { name: "花楸魔杖 Rowan wand", category: "奥术", price: 15, superior: true, properties: "远距，增能（闪电）" },
+  { name: "精准匕首 Accurate dagger", category: "奥术", price: 25, superior: true, properties: "精准" },
+  { name: "纵火匕首 Incendiary dagger", category: "奥术", price: 22, superior: true, properties: "增能（火焰），无误" },
+  { name: "切割匕首 Lancing dagger", category: "奥术", price: 15, superior: true, properties: "高重击，增能（闪电）" },
+  { name: "共鸣匕首 Resonating dagger", category: "奥术", price: 25, superior: true, properties: "增能（雷鸣），压迫" },
+  { name: "精准气印 Accurate ki focus", category: "灵能", price: 25, superior: true, properties: "精准" },
+  { name: "流畅气印 Fluid ki focus", category: "灵能", price: 30, superior: true, properties: "机动，庇护" },
+  { name: "无情气印 Inexorable ki focus", category: "灵能", price: 35, superior: true, properties: "增能（力场），无滞" },
+  { name: "钢铁气印 Iron ki focus", category: "灵能", price: 30, superior: true, properties: "致命，压迫" },
+  { name: "强力气印 Mighty ki focus", category: "灵能", price: 25, superior: true, properties: "高重击，无误" },
+  { name: "山岳气印 Mountain ki focus", category: "灵能", price: 30, superior: true, properties: "压迫，庇护" },
+  { name: "平静气印 Serene ki focus", category: "灵能", price: 35, superior: true, properties: "增能（心灵），无阻" },
+  { name: "超验气印 Transcendent ki focus", category: "灵能", price: 30, superior: true, properties: "闪烁，触及" },
 ];
 
 export { BASE_WEAPONS, BASE_ARMORS, PROPERTY_DEFS };

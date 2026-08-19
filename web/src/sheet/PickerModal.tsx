@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { FilledTextField } from "../components/md";
 import { ABILITY_LABELS, ABILITY_KEYS } from "./character";
 import type { Entry } from "../data/types";
+import { useIncremental } from "../lib/incremental";
 
 export interface RestrictInfo {
   level: number;
@@ -14,6 +15,7 @@ export interface RestrictInfo {
 interface Props {
   title: string;
   entries: Entry[];
+  loading?: boolean;
   selectedId?: string;
   onSelect: (id: string) => void;
   onClose: () => void;
@@ -42,7 +44,7 @@ function raceGrants(entry: Entry, ability: string): boolean {
   return two.includes(ability);
 }
 
-export default function PickerModal({ title, entries, selectedId, onSelect, onClose, renderSub, abilityFilter, restrict }: Props) {
+export default function PickerModal({ title, entries, loading, selectedId, onSelect, onClose, renderSub, abilityFilter, restrict }: Props) {
   const [query, setQuery] = useState("");
   const [abilFilter, setAbilFilter] = useState<string[]>([]);
 
@@ -75,6 +77,7 @@ export default function PickerModal({ title, entries, selectedId, onSelect, onCl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, query, abilFilter, restrict]);
 
+  const { visible, sentinelRef, done } = useIncremental(filtered, 80);
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog" onClick={(e) => e.stopPropagation()}>
@@ -101,12 +104,14 @@ export default function PickerModal({ title, entries, selectedId, onSelect, onCl
         )}
         <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
         <div className="picker-table">
-          {filtered.map((e) => (
+          {loading && entries.length === 0 && <p className="hint">正在加载数据…</p>}
+          {!loading && visible.map((e) => (
             <button key={e.id} type="button" className={e.id === selectedId ? "picker-row selected" : "picker-row"} onClick={() => { onSelect(e.id); onClose(); }}>
               <span className="picker-row-name">{e.name}{e.nameEn ? " " + e.nameEn : ""}</span>
               {renderSub && <span className="picker-row-sub">{renderSub(e)}</span>}
             </button>
           ))}
+          {!done && <div ref={sentinelRef} className="incremental-sentinel">滚动加载更多…</div>}
           {filtered.length === 0 && <p className="hint">无匹配条目。</p>}
         </div>
       </div>

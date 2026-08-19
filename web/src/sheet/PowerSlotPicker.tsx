@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useIncremental } from "../lib/incremental";
 import { createPortal } from "react-dom";
 import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
@@ -14,8 +15,10 @@ const LEVEL_MODES = [
 
 interface Props {
   entries: Entry[];
+  loading?: boolean;
   relations: { powerByGrantedBy: Record<string, string[]> };
   classEntry?: Entry;
+  classEntry2?: Entry;
   raceEntry?: Entry;
   category: PowerCategoryKey;
   currentLevel: number;
@@ -29,7 +32,7 @@ function lv(e: Entry): number {
   return parseInt(String(e.level ?? "0"), 10) || 0;
 }
 
-export default function PowerSlotPicker({ entries, relations, classEntry, raceEntry, category, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
+export default function PowerSlotPicker({ entries, loading, relations, classEntry, classEntry2, raceEntry, category, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
   const [cat, setCat] = useState<PowerCategoryKey>(category);
   const [levelMode, setLevelMode] = useState<"current" | "range" | "all">("current");
   const [minLevel, setMinLevel] = useState(Math.max(1, currentLevel));
@@ -40,9 +43,18 @@ export default function PowerSlotPicker({ entries, relations, classEntry, raceEn
   const conf = POWER_CATEGORIES.find((c) => c.key === cat);
 
   const classIds = useMemo(() => {
-    if (!classEntry) return null;
-    return new Set(relations.powerByGrantedBy[baseClassName(classEntry.name)] ?? []);
-  }, [classEntry, relations]);
+    // 混职：合并两个职业（含基础职业名/全名/id 的授予表）
+    const entries = [classEntry, classEntry2].filter((x): x is Entry => !!x);
+    if (entries.length === 0) return null;
+    const ids = new Set<string>();
+    for (const ce of entries) {
+      for (const key of [baseClassName(ce.name), ce.name, ce.id]) {
+        for (const id of relations.powerByGrantedBy[key] ?? []) ids.add(id);
+      }
+    }
+    return ids;
+  }, [classEntry, classEntry2, relations]);
+  
 
   const raceIds = useMemo(() => {
     if (!raceEntry) return null;
@@ -80,6 +92,8 @@ export default function PowerSlotPicker({ entries, relations, classEntry, raceEn
       .sort((a, b) => lv(a) - lv(b));
   }, [entries, cat, levelMode, minLevel, maxLevel, currentLevel, sourceMode, classIds, raceIds, query]);
 
+
+  const { visible, sentinelRef, done } = useIncremental(filtered, 90);
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog" onClick={(e) => e.stopPropagation()}>
@@ -126,12 +140,14 @@ export default function PowerSlotPicker({ entries, relations, classEntry, raceEn
         <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
         <div className="meta">显示 {filtered.length} 条</div>
         <div className="picker-cards">
-          {filtered.map((p) => (
+          {loading && entries.length === 0 && <p className="hint">正在加载威能数据…</p>}
+          {!loading && visible.map((p) => (
             <button key={p.id} type="button" className={p.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => { onSelect(p.id); onClose(); }}>
               <EntryCard entry={p} />
             </button>
           ))}
-          {filtered.length === 0 && <p className="hint">无匹配威能。</p>}
+          {!loading && filtered.length === 0 && <p className="hint">无匹配威能。</p>}
+          {!done && !loading && <div ref={sentinelRef} className="incremental-sentinel">滚动加载更多…</div>}
         </div>
       </div>
     </div>,

@@ -67,3 +67,41 @@ export function classSummary(text: string): { label: string; value: string }[] {
   if (impl) out.push({ label: "法器", value: impl[1].trim() });
   return out;
 }
+
+// 典范特性：典范之道的 11 级特性条目（连续多个「!! 11级：」段）
+export function paragonFeaturesHtml(text: string): string | undefined {
+  const m = text.match(/^!! 11级[^\n]*\n([\s\S]*?)(?=^!! (?!11级)\d+级|^! |$)/m);
+  if (m && m[1].trim()) return m[1].trim();
+  const m2 = text.match(/^!! [^\n]*\n([\s\S]*)$/m);
+  return m2 && m2[1].trim() ? m2[1].trim() : undefined;
+}
+
+// 典范正文（详细模式）：剔除 11 级特性段后的其余内容
+export function paragonBodyHtml(text: string): string | undefined {
+  const m = text.match(/^!! 11级[^\n]*\n[\s\S]*?(?=^!! (?!11级)\d+级|^! |$)/m);
+  if (!m || m.index === undefined) {
+    const t = text.trim();
+    return t.length > 0 ? t : undefined;
+  }
+  const rest = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
+  return rest.length > 0 ? rest : undefined;
+}
+
+// 天命特性：传奇天命的 21 级特性条目
+export function epicFeaturesHtml(text: string): string | undefined {
+  const m = text.match(/^!! 21级[^\n]*\n([\s\S]*?)(?=^!! (?!21级)\d+级|^! |$)/m);
+  if (m && m[1].trim()) return m[1].trim();
+  const m2 = text.match(/^!! [^\n]*\n([\s\S]*)$/m);
+  return m2 && m2[1].trim() ? m2[1].trim() : undefined;
+}
+
+// 天命正文（详细模式）：剔除 21 级特性段后的其余内容
+export function epicBodyHtml(text: string): string | undefined {
+  const m = text.match(/^!! 21级[^\n]*\n[\s\S]*?(?=^!! (?!21级)\d+级|^! |$)/m);
+  if (!m || m.index === undefined) {
+    const t = text.trim();
+    return t.length > 0 ? t : undefined;
+  }
+  const rest = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
+  return rest.length > 0 ? rest : undefined;
+}

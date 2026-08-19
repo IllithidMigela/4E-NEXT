@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useIncremental } from "../lib/incremental";
 import { createPortal } from "react-dom";
 import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
@@ -12,6 +13,7 @@ const SLOT_CATEGORY: Record<string, string> = {
 
 interface Props {
   entries: Entry[];
+  loading?: boolean;
   slotName: string;
   currentId?: string;
   onSelect: (id: string) => void;
@@ -19,7 +21,7 @@ interface Props {
   onClose: () => void;
 }
 
-export default function ItemSlotPicker({ entries, slotName, currentId, onSelect, onClear, onClose }: Props) {
+export default function ItemSlotPicker({ entries, loading, slotName, currentId, onSelect, onClear, onClose }: Props) {
   const [cat, setCat] = useState<string>(SLOT_CATEGORY[slotName] ?? "");
   const [query, setQuery] = useState("");
 
@@ -33,6 +35,7 @@ export default function ItemSlotPicker({ entries, slotName, currentId, onSelect,
       return true;
     });
   }, [entries, cat, query]);
+  const { visible, sentinelRef, done } = useIncremental(filtered, 90);
 
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
@@ -54,12 +57,14 @@ export default function ItemSlotPicker({ entries, slotName, currentId, onSelect,
         <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
         <div className="meta">显示 {filtered.length} 条</div>
         <div className="picker-cards">
-          {filtered.map((e) => (
+          {loading && entries.length === 0 && <p className="hint">正在加载装备数据…</p>}
+          {!loading && visible.map((e) => (
             <button key={e.id} type="button" className={e.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => { onSelect(e.id); onClose(); }}>
               <EntryCard entry={e} />
             </button>
           ))}
-          {filtered.length === 0 && <p className="hint">无匹配装备。</p>}
+          {!loading && filtered.length === 0 && <p className="hint">无匹配装备。</p>}
+          {!done && !loading && <div ref={sentinelRef} className="incremental-sentinel">滚动加载更多…</div>}
         </div>
       </div>
     </div>,

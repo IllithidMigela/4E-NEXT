@@ -87,6 +87,11 @@ export function migrateCharacter(c: Partial<Character>): Character {
     surgeBonus: base.surgeBonus ?? 0,
     surgeValueBonus: base.surgeValueBonus ?? 0,
     tempHp: base.tempHp ?? 0,
+    spellbook: base.spellbook ?? [],
+    backpack: base.backpack ?? [],
+    powerUsed: base.powerUsed ?? {},
+    equipmentUsed: base.equipmentUsed ?? {},
+    milestones: base.milestones ?? 0,
   };
 }
 
@@ -136,6 +141,13 @@ export interface Character {
   surgeBonus: number; // 额外回复力（次数）
   surgeValueBonus: number; // 额外回复值
   tempHp: number; // 临时生命值
+  // 储备页：法术书（威能槽）与背包（装备槽）
+  spellbook: string[];
+  backpack: string[];
+  // 使用标记：斜线遮罩（键 = "atWill-0" / "e-5" / "o-1" / "c-2"）
+  powerUsed: Record<string, boolean>;
+  equipmentUsed: Record<string, boolean>;
+  milestones: number; // 里程碑记录
 }
 
 // 人物创建：四个 Markdown 栏位
@@ -154,10 +166,12 @@ export const CREATION_FIELDS: { key: keyof CharacterCreation; label: string; pla
 ];
 
 export function defaultCharacter(): Character {
+  // 购点法起始数组 10 10 10 10 10 8：8 落在随机一项属性上（每张新卡不同）
+  const lowKey = ABILITY_KEYS[Math.floor(Math.random() * ABILITY_KEYS.length)];
   return {
     name: "未命名角色",
     level: 1,
-    abilities: { str: 10, con: 10, dex: 10, int: 10, wis: 10, cha: 10 },
+    abilities: { str: 10, con: 10, dex: 10, int: 10, wis: 10, cha: 10, [lowKey]: 8 },
     xp: "",
     gender: "",
     age: "",
@@ -189,6 +203,11 @@ export function defaultCharacter(): Character {
     surgeBonus: 0,
     surgeValueBonus: 0,
     tempHp: 0,
+    spellbook: [],
+    backpack: [],
+    powerUsed: {},
+    equipmentUsed: {},
+    milestones: 0,
   };
 }
 

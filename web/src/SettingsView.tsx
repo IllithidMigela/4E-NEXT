@@ -92,7 +92,7 @@ export default function SettingsView() {
             <p className="hint">模糊：高斯模糊半径（0–16px，建议 0–8，过大会发白发糊）；羽化：底部渐隐区域占背景层高度的比例（最小 50%，S 曲线提前渐隐；图层外扩放大以避免白边）。</p>
           </>
         )}
-        <p className="hint">背景图经高斯模糊与下半部分羽化，覆盖于页面顶部各板块背面；下滑过羽化区后回到 MD3 纯色背景。</p>
+
       </section>
 
       <section className="block">
