@@ -10,6 +10,7 @@ import FeatSlotPicker from "./FeatSlotPicker";
 import ItemSlotPicker from "./ItemSlotPicker";
 import EntryCard from "./EntryCard";
 import PortraitFrame from "./PortraitFrame";
+import CombatPanels from "./CombatPanel";
 import { stripWiki } from "../lib/text";
 import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, paragonFeaturesHtml, paragonBodyHtml, epicFeaturesHtml, epicBodyHtml } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_SHIELDS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText } from "../lib/baseitems";
@@ -1188,8 +1189,29 @@ export default function CharacterSheet({
           </div>
         </div>
       </div>
-
           </>
+  );
+  // 装备槽位增强加值：槽位无魔法物品或无可增强档位时返回 0（档位默认 1，即 4E 增强加值）
+  const enhanceOf = (slot: number): number => {
+    const id = char.equipmentSlots[slot];
+    if (!id) return 0;
+    const e = itemMap.get(id);
+    if (!e) return 0;
+    const levels = itemLevels(e.itemLevel);
+    if (!levels.length) return 0;
+    return Math.min(char.equipmentEnhance[slot] ?? 1, levels.length);
+  };
+  // 伤害骰：取自所选槽位（主手/副手）基础武器的伤害骰；无基础武器/非武器则空
+  const diceOf = (slot: number): string => {
+    const baseId = char.baseItems[slot];
+    const base = baseId ? findBaseItem(baseId) : undefined;
+    return base?.kind === "weapon" ? (base.weapon?.dice ?? "") : "";
+  };
+  // 攻击/伤害：数据面板下方并排（攻击在左、伤害在右），单栏与双栏均通栏展示
+  const combatRow = (
+    <div className="combat-row">
+      <CombatPanels char={char} setChar={setChar} mods={stats.mods} halfLevel={stats.halfLevel} enhanceOf={enhanceOf} diceOf={diceOf} mode={mode} />
+    </div>
   );
   const raceClassCol = (
     <><section className="block">
@@ -1331,6 +1353,7 @@ export default function CharacterSheet({
   const leftCol = (
     <>
       {leftTop}
+      {combatRow}
       {raceClassCol}
       {skillsCol}
     </>
@@ -1673,6 +1696,7 @@ return (
             <div className="lt-cell">{topCol}</div>
             <div className="lt-cell">{leftTop}</div>
           </div>
+          {combatRow}
           <div className="col-left">
             {powersCol}
             {featsCol}

@@ -58,6 +58,16 @@ export function migrateCharacter(c: Partial<Character>): Character {
     speedMods: base.speedMods ?? emptySpeedMods(),
     initMods: base.initMods ?? emptyInitMods(),
     skillMods: base.skillMods ?? emptySkillMods(),
+    combatMods: (() => {
+      const c = base.combatMods ?? emptyCombatMods();
+      // 旧存档可能把增强来源存为 -1（手动），现已删除手动，统一按 0（主手）处理
+      const normAttack = (r: AttackRowData): AttackRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
+      const normDamage = (r: DamageRowData): DamageRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
+      return {
+        attacks: trimBlankRows((c.attacks ?? []).map(normAttack), isBlankAttack),
+        damages: trimBlankRows((c.damages ?? []).map(normDamage), isBlankDamage),
+      };
+    })(),
     baseItems: (base as { baseItems?: Record<number, string> }).baseItems ?? {},
     powerSlots: {
       atWill: base.powerSlots?.atWill ?? [],
@@ -103,6 +113,7 @@ export interface Character {
   speedMods: SpeedMods;
   initMods: InitMods;
   skillMods: SkillMods;
+  combatMods: CombatMods;
   raceId?: string;
   raceAbility2Choice?: AbilityKey;
   classId?: string;
@@ -186,6 +197,7 @@ export function defaultCharacter(): Character {
     speedMods: emptySpeedMods(),
     initMods: emptyInitMods(),
     skillMods: emptySkillMods(),
+    combatMods: emptyCombatMods(),
     featSlots: [],
     equipmentSlots: [],
     adventureItems: [{ name: "", cost: 0 }, { name: "", cost: 0 }],
@@ -422,6 +434,55 @@ export function emptySpeedMods(): SpeedMods {
 
 export function emptyInitMods(): InitMods {
   return { other: 0 };
+}
+
+// —— 攻击/伤害面板 ——
+// 攻击行：½等级与属性调整值自动计算（属性由 ability 指定），其余为手动加值
+export interface AttackRowData {
+  ability: AbilityKey;   // 关联属性（用于自动填充属性调整值）
+  classBonus: number;    // 职业加值
+  profBonus: number;     // 熟练加值
+  feat: number;          // 专长加值
+  enhanceSlot?: number;  // 增强加值来源装备槽位（0/1 = 主手/副手魔法物品，自动计算；缺省按 0 处理）
+  other: number;         // 其他
+}
+
+// 伤害行：伤害骰由所选槽位（主手/副手）的基础武器自动获取，属性调整值自动计算，其余为手动加值
+export interface DamageRowData {
+  ability: AbilityKey;   // 关联属性（用于自动填充属性调整值）
+  feat: number;          // 专长加值
+  enhanceSlot?: number;  // 伤害骰/增强加值来源装备槽位（0/1 = 主手/副手，自动计算；缺省按 0 处理）
+  otherA: number;        // 其他 1
+  otherB: number;        // 其他 2
+}
+
+export interface CombatMods {
+  attacks: AttackRowData[];
+  damages: DamageRowData[];
+}
+
+export function emptyCombatMods(): CombatMods {
+  return {
+    attacks: [
+      { ability: "str", classBonus: 0, profBonus: 0, feat: 0, enhanceSlot: 0, other: 0 },
+    ],
+    damages: [
+      { ability: "str", feat: 0, enhanceSlot: 0, otherA: 0, otherB: 0 },
+    ],
+  };
+}
+
+// 判定空白的攻击/伤害行（全为 0），用于迁移时收敛旧存档的多余空行
+function isBlankAttack(r: AttackRowData): boolean {
+  return r.classBonus === 0 && r.profBonus === 0 && r.feat === 0 && r.other === 0;
+}
+function isBlankDamage(r: DamageRowData): boolean {
+  return r.feat === 0 && r.otherA === 0 && r.otherB === 0;
+}
+function trimBlankRows<T>(rows: T[], isBlank: (r: T) => boolean): T[] {
+  const out = [...rows];
+  while (out.length > 1 && isBlank(out[out.length - 1])) out.pop();
+  return out;
 }
 
 export interface DerivedStats {
