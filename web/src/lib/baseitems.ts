@@ -3,6 +3,7 @@ import { BASE_WEAPONS, BASE_ARMORS, PROPERTY_DEFS } from "./baseitems-data";
 
 export interface BaseWeapon {
   name: string;
+  prof: number;   // 擅长加值（+2/+3；无则 0）
   dice: string;
   traits: string;
   category: string;
