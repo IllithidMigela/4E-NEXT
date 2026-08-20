@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AbilityKey, AttackRowData, Character, DamageRowData } from "./character";
 import { ABILITY_LABELS, ABILITY_KEYS, emptyCombatMods } from "./character";
-import { Menu, MenuItem } from "../components/md";
+import type { CombatSource } from "./combat-source";
+import { Menu, MenuItem, Divider } from "../components/md";
 
 const ABILITY_OPTIONS = ABILITY_KEYS.map((k) => ({ key: k, zh: ABILITY_LABELS[k].zh }));
 
@@ -35,14 +36,25 @@ export default function CombatPanels(props: {
   halfLevel: number;               // ½ 等级（自动）
   enhanceOf: (slot: number) => number; // 某装备槽位的增强加值（无魔法物品则 0）
   diceOf: (slot: number) => string;    // 某装备槽位基础武器的伤害骰（无则空串）
+  profOf: (slot: number, override: boolean) => number; // 某槽位基础武器的擅长加值（未擅长/无武器则 0；override=true 视为擅长）
+  classAttackSources: CombatSource[]; // 职业特性中提及「攻击骰」的条目（职业加值来源）
+  featAttackSources: CombatSource[];  // 已选专长中提及「攻击骰」的（攻击面板专长加值来源）
+  featDamageSources: CombatSource[];  // 已选专长中提及「伤害骰」的（伤害面板专长加值来源）
   mode: "edit" | "render";
 }) {
-  const { char, setChar, mods, halfLevel, enhanceOf, diceOf, mode } = props;
+  const { char, setChar, mods, halfLevel, enhanceOf, diceOf, profOf, classAttackSources, featAttackSources, featDamageSources, mode } = props;
+  // 属性选项：按调整值从高到低排序（并列时保持属性原有顺序）
+  const abilityOptions = useMemo(
+    () => [...ABILITY_OPTIONS].sort((a, b) => mods[b.key] - mods[a.key]),
+    [mods],
+  );
   const combat = char.combatMods;
   const attacks = combat.attacks;
   const damages = combat.damages;
   // 当前打开的来源菜单（记录单元格 id，点击单元格后弹出 Material 菜单）
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  // 处于「手动输入」模式的来源单元格 id（此时该单元格显示数字输入框）
+  const [manualCell, setManualCell] = useState<string | null>(null);
   // 是否显示骰子指令（攻击/伤害各自独立切换）
   const [showDiceAtk, setShowDiceAtk] = useState(false);
   const [showDiceDmg, setShowDiceDmg] = useState(false);
@@ -126,7 +138,7 @@ export default function CombatPanels(props: {
         <span className="ct-auto">{fmtMod(mods[ability])}</span>
         {pickable && (
           <Menu anchor={uid} positioning="popover" quick open={activeMenu === uid} onClosed={() => setActiveMenu(null)}>
-            {ABILITY_OPTIONS.map((o) => (
+            {abilityOptions.map((o) => (
               <MenuItem key={o.key} onClick={() => { onChange(o.key); setActiveMenu(null); }}>
                 <span slot="headline">{o.zh}</span>
                 <span slot="supporting-text">{fmtMod(mods[o.key])}</span>
@@ -160,6 +172,35 @@ export default function CombatPanels(props: {
     );
   };
 
+  // 熟练加值单元格：来源（主手/副手）自动取该槽位基础武器的擅长加值（未擅长则 0），点击单元格弹出菜单；
+  // 菜单内可切换来源，并提供「视为擅长」手动覆盖（用于选择型专长等无法自动判定的情况）
+  const profCell = (slot: number | undefined, override: boolean | undefined, onSlot: (s: number) => void, onToggleOverride: (v: boolean) => void, uid: string) => {
+    const s = (slot ?? 0) >= 0 ? slot! : 0;
+    const ov = !!override;
+    const pickable = mode === "edit";
+    return (
+      <div className="ct-cell ct-pick" id={uid} onClick={() => pickable && setActiveMenu(uid)} title={profOf(s, false) > 0 ? "已擅长该武器，熟练加值自动计算" : "未擅长该武器（可在菜单中「视为擅长」手动覆盖）"}>
+        <span className="ct-ability-name">{enhanceSlotLabel(s)}</span>
+        <span className="ct-auto" title={ov ? "已手动视为擅长" : undefined}>{fmtMod(profOf(s, ov))}</span>
+        {pickable && (
+          <Menu anchor={uid} positioning="popover" quick open={activeMenu === uid} onClosed={() => setActiveMenu(null)}>
+            {ENHANCE_SOURCES.map((o) => (
+              <MenuItem key={o.slot} onClick={() => { onSlot(o.slot); setActiveMenu(null); }}>
+                <span slot="headline">{o.label}</span>
+                <span slot="supporting-text">{fmtMod(profOf(o.slot, ov))}</span>
+              </MenuItem>
+            ))}
+            <Divider />
+            <MenuItem onClick={() => { onToggleOverride(!ov); setActiveMenu(null); }}>
+              <span slot="headline">视为擅长</span>
+              {ov && <span slot="start" className="material-symbols-outlined">check</span>}
+            </MenuItem>
+          </Menu>
+        )}
+      </div>
+    );
+  };
+
   // 数值单元格：编辑模式输入框，渲染模式格式化显示
   const numCell = (v: number, onChange: (n: number) => void, key: string) => (
     <div className="ct-cell" key={key}>
@@ -170,6 +211,48 @@ export default function CombatPanels(props: {
       )}
     </div>
   );
+
+  // 来源单元格（职业加值/专长加值）：点击弹出菜单列出可选来源（职业特性/已选专长），点选填入数值；
+  // 菜单底部提供「归零」与「手动输入」（进入输入框）兜底
+  const sourceCell = (v: number, onChange: (n: number) => void, sources: CombatSource[], uid: string, hint: string) => {
+    const pickable = mode === "edit";
+    if (manualCell === uid && pickable) {
+      return (
+        <div className="ct-cell" key="manual">
+          <input type="number" min={-20} max={50} value={v} autoFocus onChange={(e) => onChange(parseNum(e.target.value))} onBlur={() => setManualCell(null)} />
+        </div>
+      );
+    }
+    return (
+      <div className="ct-cell ct-pick" id={uid} onClick={() => pickable && setActiveMenu(uid)} title={hint}>
+        <span className="ct-auto">{fmtMod(v)}</span>
+        {pickable && (
+          <Menu anchor={uid} positioning="popover" quick open={activeMenu === uid} onClosed={() => setActiveMenu(null)}>
+            {sources.length === 0 ? (
+              <MenuItem disabled>
+                <span slot="headline">无可选来源</span>
+                <span slot="supporting-text">未找到相关特性/专长</span>
+              </MenuItem>
+            ) : (
+              sources.map((s) => (
+                <MenuItem key={s.label} title={s.text} onClick={() => { onChange(s.value); setActiveMenu(null); }}>
+                  <span slot="headline">{s.label}</span>
+                  <span slot="supporting-text">{fmtMod(s.value)}</span>
+                </MenuItem>
+              ))
+            )}
+            <Divider />
+            <MenuItem onClick={() => { onChange(0); setActiveMenu(null); }}>
+              <span slot="headline">归零</span>
+            </MenuItem>
+            <MenuItem onClick={() => { setManualCell(uid); setActiveMenu(null); }}>
+              <span slot="headline">手动输入</span>
+            </MenuItem>
+          </Menu>
+        )}
+      </div>
+    );
+  };
 
   // 伤害骰单元格：只读显示，自动取自所选槽位（主手/副手）基础武器的伤害骰
   const diceCell = (slot: number | undefined, key: string) => {
@@ -201,16 +284,17 @@ export default function CombatPanels(props: {
           <div className="ct-head">{ATTACK_HEAD.map((h) => <span key={h}>{h}</span>)}</div>
           {attacks.map((row, i) => {
             const enhance = enhanceOf(row.enhanceSlot ?? 0);
-            const total = halfLevel + mods[row.ability] + row.classBonus + row.profBonus + row.feat + enhance + row.other;
+            const prof = profOf((row.profSlot ?? 0) >= 0 ? row.profSlot! : 0, !!row.profOverride);
+            const total = halfLevel + mods[row.ability] + row.classBonus + prof + row.feat + enhance + row.other;
             return (
               <Fragment key={i}>
                 <div className="ct-row">
                   <div className="ct-cell ct-total-cell" key="total"><span className="ct-total">{fmtMod(total)}</span></div>
                   <div className="ct-cell" key="half"><span className="ct-auto">{halfLevel}</span></div>
                   {abilityCell(row.ability, (k) => setAttack(i, { ability: k }), `ct-ab-a-${i}`)}
-                  {numCell(row.classBonus, (n) => setAttack(i, { classBonus: n }), "class")}
-                  {numCell(row.profBonus, (n) => setAttack(i, { profBonus: n }), "prof")}
-                  {numCell(row.feat, (n) => setAttack(i, { feat: n }), "feat")}
+                  {sourceCell(row.classBonus, (n) => setAttack(i, { classBonus: n }), classAttackSources, `ct-cl-a-${i}`, "点击选择职业特性中提及攻击骰的加值来源")}
+                  {profCell(row.profSlot, row.profOverride, (s) => setAttack(i, { profSlot: s }), (v) => setAttack(i, { profOverride: v }), `ct-pr-a-${i}`)}
+                  {sourceCell(row.feat, (n) => setAttack(i, { feat: n }), featAttackSources, `ct-fe-a-${i}`, "点击选择已选专长中提及攻击骰的加值来源")}
                   {enhanceCell(row.enhanceSlot, (s) => setAttack(i, { enhanceSlot: s }), `ct-en-a-${i}`)}
                   {numCell(row.other, (n) => setAttack(i, { other: n }), "other")}
                 </div>
@@ -252,7 +336,7 @@ export default function CombatPanels(props: {
                   <div className="ct-cell ct-total-cell" key="total"><span className="ct-total">{fmtMod(total)}</span></div>
                   {diceCell(row.enhanceSlot, "dice")}
                   {abilityCell(row.ability, (k) => setDamage(i, { ability: k }), `ct-ab-d-${i}`)}
-                  {numCell(row.feat, (n) => setDamage(i, { feat: n }), "feat")}
+                  {sourceCell(row.feat, (n) => setDamage(i, { feat: n }), featDamageSources, `ct-fe-d-${i}`, "点击选择已选专长中提及伤害骰的加值来源")}
                   {enhanceCell(row.enhanceSlot, (s) => setDamage(i, { enhanceSlot: s }), `ct-en-d-${i}`)}
                   {numCell(row.otherA, (n) => setDamage(i, { otherA: n }), "otherA")}
                   {numCell(row.otherB, (n) => setDamage(i, { otherB: n }), "otherB")}
