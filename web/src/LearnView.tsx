@@ -68,6 +68,50 @@ export default function LearnView() {
           <div>· 常用预设（均为恰好 22 点）：16 16 12 11 11 8 · 16 16 12 10 10 10 · 18 14 11 10 10 8 · 18 12 12 10 10 10。</div>
         </div>
       </section>
+
+      <section className="block">
+        <h3 className="block-title">标准等级购物表</h3>
+        
+        <div className="level-table-wrap">
+          <table className="level-table">
+            <thead>
+              <tr><th>Lv</th><th>物品价格</th><th>物品卖价</th><th>标准起始装备总值（装备+金币）</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>360</td><td>72</td><td>0+100</td></tr>
+              <tr><td>2</td><td>520</td><td>104</td><td>1560+360</td></tr>
+              <tr><td>3</td><td>680</td><td>136</td><td>2040+520</td></tr>
+              <tr><td>4</td><td>840</td><td>168</td><td>2520+680</td></tr>
+              <tr><td>5</td><td>1000</td><td>200</td><td>3640+840</td></tr>
+              <tr><td>6</td><td>1800</td><td>360</td><td>5400+1000</td></tr>
+              <tr><td>7</td><td>2600</td><td>520</td><td>7800+1800</td></tr>
+              <tr><td>8</td><td>3400</td><td>680</td><td>10200+2600</td></tr>
+              <tr><td>9</td><td>4200</td><td>840</td><td>12600+3400</td></tr>
+              <tr><td>10</td><td>5000</td><td>1000</td><td>18200+4200</td></tr>
+              <tr><td>11</td><td>9000</td><td>1800</td><td>27K+5K</td></tr>
+              <tr><td>12</td><td>13000</td><td>2600</td><td>39K+9K</td></tr>
+              <tr><td>13</td><td>17000</td><td>3400</td><td>51K+13K</td></tr>
+              <tr><td>14</td><td>21000</td><td>4200</td><td>63K+17K</td></tr>
+              <tr><td>15</td><td>25000</td><td>5000</td><td>91K+21K</td></tr>
+              <tr><td>16</td><td>45000</td><td>9000</td><td>135K+25K</td></tr>
+              <tr><td>17</td><td>65000</td><td>13000</td><td>195K+45K</td></tr>
+              <tr><td>18</td><td>85000</td><td>17000</td><td>255K+65K</td></tr>
+              <tr><td>19</td><td>105K</td><td>21K</td><td>315K+85K</td></tr>
+              <tr><td>20</td><td>125K</td><td>25K</td><td>455K+105K</td></tr>
+              <tr><td>21</td><td>225K</td><td>45K</td><td>675K+125K</td></tr>
+              <tr><td>22</td><td>325K</td><td>65K</td><td>975K+225K</td></tr>
+              <tr><td>23</td><td>425K</td><td>85K</td><td>1275K+325K</td></tr>
+              <tr><td>24</td><td>525K</td><td>105K</td><td>1575K+425K</td></tr>
+              <tr><td>25</td><td>625K</td><td>125K</td><td>2275K+525K</td></tr>
+              <tr><td>26</td><td>1125K</td><td>225K</td><td>3375K+625K</td></tr>
+              <tr><td>27</td><td>1625K</td><td>325K</td><td>4875K+1125K</td></tr>
+              <tr><td>28</td><td>2125K</td><td>425K</td><td>6375K+1625K</td></tr>
+              <tr><td>29</td><td>2625K</td><td>525K</td><td>7875K+2125K</td></tr>
+              <tr><td>30</td><td>3125K</td><td>625K</td><td>9375K+2625K</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section className="block">
         <h3 className="block-title">尚未计入的加值</h3>
         <p className="hint">护甲、种族/职业特性加值尚未计入上述派生数值；后续将逐步支持护甲加值、特性加值与状态修正。</p>

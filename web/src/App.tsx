@@ -7,12 +7,13 @@ import LearnView from "./LearnView";
 import ReserveView from "./ReserveView";
 import OverviewView from "./OverviewView";
 import BackgroundView from "./BackgroundView";
+import DrawView from "./DrawView";
 import { loadCards, saveCards, loadActiveId, saveActiveId, uid, type SavedCard } from "./lib/storage";
 import { defaultCharacter, migrateCharacter, type Character } from "./sheet/character";
 import { TextButton } from "./components/md";
 import SheetDialog from "./components/SheetDialog";
 
-type View = "sheet" | "background" | "reserve" | "overview" | "search" | "learn" | "settings";
+type View = "sheet" | "background" | "reserve" | "overview" | "draw" | "search" | "learn" | "settings";
 type Layout = "single" | "double";
 
 // S 曲线羽化：多段渐停近似缓动，底部渐隐更自然
@@ -45,6 +46,7 @@ function Shell() {
   const [activeId, setActiveId] = useState<string>(() => loadActiveId() ?? cards[0]?.id ?? "");
   const [char, setChar] = useState<Character>(() => cards.find((c) => c.id === activeId)?.char ?? defaultCharacter());
   const [cardOpen, setCardOpen] = useState(false);
+  const [drawOpen, setDrawOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -101,6 +103,27 @@ function Shell() {
       saveActiveId(next.id);
     }
     if (renamingId === id) setRenamingId(null);
+  }
+
+  // 进入抽卡模式：清空当前存档（保留卡名）
+  function enterDrawCleared() {
+    setChar(defaultCharacter());
+    setCards((p) => {
+      const next = p.map((c) => (c.id === activeId ? { ...c, char: defaultCharacter(), updatedAt: Date.now() } : c));
+      saveCards(next);
+      return next;
+    });
+    setDrawOpen(false);
+    setView("draw");
+  }
+  // 抽卡完成：写入当前卡并存档，返回人物页
+  function finishDraw(c: Character) {
+    setCards((p) => {
+      const next = p.map((x) => (x.id === activeId ? { ...x, char: c, name: c.name || x.name, updatedAt: Date.now() } : x));
+      saveCards(next);
+      return next;
+    });
+    setView("sheet");
   }
 
   function saveCardNow(id: string) {
@@ -185,6 +208,7 @@ function Shell() {
         <button type="button" className={view === "overview" ? "side-btn active" : "side-btn"} title="速览" onClick={() => setView("overview")}><span className="material-symbols-outlined">overview</span><span className="sb-label">速览</span></button>
         <div className="side-sep" />
         <button type="button" className="side-btn" title="存档" onClick={() => setCardOpen(true)}><span className="material-symbols-outlined">folder</span><span className="sb-label">存档</span></button>
+        <button type="button" className={"side-btn" + (view === "draw" ? " active" : "")} title="抽卡" onClick={() => setDrawOpen(true)}><span className="material-symbols-outlined">casino</span><span className="sb-label">抽卡</span></button>
         <button type="button" className={view === "search" ? "side-btn active" : "side-btn"} title="词条" onClick={() => setView("search")}><span className="material-symbols-outlined">search</span><span className="sb-label">词条</span></button>
         <button type="button" className={view === "learn" ? "side-btn active" : "side-btn"} title="规则" onClick={() => setView("learn")}><span className="material-symbols-outlined">school</span><span className="sb-label">规则</span></button>
         <button type="button" className={view === "settings" ? "side-btn active" : "side-btn"} title="设置" onClick={() => setView("settings")}><span className="material-symbols-outlined">settings</span><span className="sb-label">设置</span></button>
@@ -199,6 +223,7 @@ function Shell() {
           {view === "sheet" && <CharacterSheet layout={layout} mode={mode} char={char} setChar={setChar} />}
           {view === "reserve" && <ReserveView layout={layout} char={char} setChar={setChar} />}
           {view === "background" && <BackgroundView mode={mode} char={char} setChar={setChar} />}
+          {view === "draw" && <DrawView char={char} setChar={setChar} onExit={() => setView("sheet")} onFinish={finishDraw} />}
           {view === "overview" && <OverviewView />}
           {view === "search" && <SearchView />}
           {view === "learn" && <LearnView />}
@@ -236,6 +261,21 @@ function Shell() {
             ))}
           </div>
 
+        </SheetDialog>
+      )}
+      {drawOpen && (
+        <SheetDialog open headline="抽卡" onClose={() => setDrawOpen(false)} actions={<TextButton onClick={() => setDrawOpen(false)}>取消</TextButton>}>
+          <p className="hint">抽卡是一种趣味性的、适合新手的人物卡快速创建方式。注意：进入抽卡后，当前人物卡存档内的全部内容将被清空。请选择：</p>
+          <div className="preset-list">
+            <button type="button" className="card-row draw-opt" onClick={enterDrawCleared}>
+              <span className="preset-name">确定，清空当前存档并进入抽卡</span>
+              <span className="preset-label">覆盖当前人物卡的全部内容</span>
+            </button>
+            <button type="button" className="card-row draw-opt" onClick={() => { newCard(); setDrawOpen(false); setView("draw"); }}>
+              <span className="preset-name">创建新存档并进入抽卡</span>
+              <span className="preset-label">自动新建一个空白人物卡，原卡不受影响</span>
+            </button>
+          </div>
         </SheetDialog>
       )}
     </div>

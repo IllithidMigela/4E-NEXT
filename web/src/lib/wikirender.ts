@@ -105,3 +105,71 @@ export function epicBodyHtml(text: string): string | undefined {
   const rest = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
   return rest.length > 0 ? rest : undefined;
 }
+
+// 典范/天命特性结构化渲染：把连续「!! N级：标题」段拆分为独立特性块（标题 + 正文）
+export function featureBlocksHtml(text: string, fields: Record<string, string> = {}): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const sections = text.split(/^(?=!! )/m);
+  const out: string[] = [];
+  for (const sec of sections) {
+    const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
+    if (!m) continue;
+    const title = m[1].trim();
+    const body = m[2]
+      .replace(/^@@\.\w+\s*/gm, "")
+      .replace(/^@@\s*$/gm, "")
+      .replace(/\{\{[^}]+\}\}/g, "")
+      .replace(/^\s*$/gm, "")
+      .trim();
+    if (!body) {
+      out.push('<div class="pf-item"><div class="pf-title">' + esc(title) + "</div></div>");
+      continue;
+    }
+    const html = wikiToHtml(body, fields).replace(/\n/g, "<br/>");
+    out.push('<div class="pf-item"><div class="pf-title">' + esc(title) + '</div><div class="pf-body">' + html + "</div></div>");
+  }
+  return out.join("");
+}
+
+// 结构化解析典范/天命条目：按「!! N级：标题」分段，识别描述正文（@@ 块）与威能引用（{{名}}）
+export interface FeatureSection {
+  title: string;
+  body?: string;
+  powerRef?: string;
+}
+export interface FeatureParse {
+  hasTitle: boolean; // 存在 ! 开头标题（{{!!title}} 宏）
+  intro?: string; // !! 之前的 @@.indent 引言描述块（已清理标记）
+  sections: FeatureSection[];
+}
+export function parseFeatureSections(text: string): FeatureParse {
+  const hasTitle = /^!\{\{!!\w+\}\}\s*$/m.test(text) || /^! .+$/m.test(text);
+  const first = text.search(/^!! /m);
+  const head = first >= 0 ? text.slice(0, first) : text;
+  const rest = first >= 0 ? text.slice(first) : "";
+  const introM = head.match(/@@\.\w+\s*([\s\S]*?)^@@/m);
+  const intro = introM
+    ? introM[1]
+        .replace(/^''前提条件[^\n]*\n+/m, "")
+        .replace(/^\s*$/gm, "")
+        .trim()
+    : undefined;
+  const out: FeatureSection[] = [];
+  const sections = rest.split(/^(?=!! )/m);
+  for (const sec of sections) {
+    const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
+    if (!m) continue;
+    const title = m[1].trim();
+    let body = m[2].trim();
+    const powerM = body.match(/\{\{([^}]+)\}\}/);
+    const powerRef = powerM ? powerM[1].trim() : undefined;
+    body = body
+      .replace(/\{\{[^}]+\}\}/g, "")
+      .replace(/^@@\.\w+\s*/gm, "")
+      .replace(/^@@\s*$/gm, "")
+      .replace(/^\s*$/gm, "")
+      .trim();
+    out.push({ title, body: body.length > 0 ? body : undefined, powerRef });
+  }
+  return { hasTitle, intro, sections: out };
+}
