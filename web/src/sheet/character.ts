@@ -61,7 +61,7 @@ export function migrateCharacter(c: Partial<Character>): Character {
     combatMods: (() => {
       const c = base.combatMods ?? emptyCombatMods();
       // 旧存档可能把增强来源存为 -1（手动），现已删除手动，统一按 0（主手）处理
-      const normAttack = (r: AttackRowData): AttackRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
+      const normAttack = (r: AttackRowData): AttackRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0, profSlot: (r.profSlot ?? -1) >= 0 ? r.profSlot : 0, profOverride: r.profOverride ?? false });
       const normDamage = (r: DamageRowData): DamageRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
       return {
         attacks: trimBlankRows((c.attacks ?? []).map(normAttack), isBlankAttack),
@@ -77,6 +77,7 @@ export function migrateCharacter(c: Partial<Character>): Character {
       special: base.powerSlots?.special ?? ["", ""],
     },
     featSlots: base.featSlots ?? [],
+    featChoices: (base as { featChoices?: Record<number, string> }).featChoices ?? {},
     equipmentSlots: base.equipmentSlots ?? [],
     adventureItems: base.adventureItems && base.adventureItems.length ? base.adventureItems.map((x) => (typeof x === "string" ? { name: x, cost: 0 } : (x as { name: string; cost: number }))) : [{ name: "", cost: 0 }, { name: "", cost: 0 }],
     money: base.money ?? { earned: 0, spent: 0 },
@@ -135,6 +136,7 @@ export interface Character {
   powerSlotOverrides?: Partial<Record<keyof PowerSlots, number>>;
   featSlots: string[];
   featSlotOverride?: number;
+  featChoices: Record<number, string>; // 选择型专长的具体选择（键 = 专长槽位下标，值 = 所选内容如「长剑 Longsword」或「法珠」）
   equipmentSlots: (string | undefined)[];
   adventureItems: { name: string; cost: number }[];
   money: { earned: number; spent: number };
@@ -179,10 +181,11 @@ export const CREATION_FIELDS: { key: keyof CharacterCreation; label: string; pla
 export function defaultCharacter(): Character {
   // 购点法起始数组 10 10 10 10 10 8：8 落在随机一项属性上（每张新卡不同）
   const lowKey = ABILITY_KEYS[Math.floor(Math.random() * ABILITY_KEYS.length)];
+  const abilities = { str: 10, con: 10, dex: 10, int: 10, wis: 10, cha: 10, [lowKey]: 8 } as Record<AbilityKey, number>;
   return {
     name: "未命名角色",
     level: 1,
-    abilities: { str: 10, con: 10, dex: 10, int: 10, wis: 10, cha: 10, [lowKey]: 8 },
+    abilities,
     xp: "",
     gender: "",
     age: "",
@@ -197,8 +200,9 @@ export function defaultCharacter(): Character {
     speedMods: emptySpeedMods(),
     initMods: emptyInitMods(),
     skillMods: emptySkillMods(),
-    combatMods: emptyCombatMods(),
+    combatMods: emptyCombatMods(highestAbilityKey(abilities)),
     featSlots: [],
+    featChoices: {},
     equipmentSlots: [],
     adventureItems: [{ name: "", cost: 0 }, { name: "", cost: 0 }],
     money: { earned: 0, spent: 0 },
@@ -276,6 +280,13 @@ export function clearEquipmentSlot(slots: (string | undefined)[], index: number)
 // 职业变体名 → 基础职业名（去括号变体 + 「混职」前缀），用于匹配 powerByGrantedBy
 export function baseClassName(name: string): string {
   return name.replace(/（[^）]*）/g, "").replace(/^混职/, "").trim();
+}
+
+// 纯中文名：剥离英文后缀与（变体）括号，如 "战士 Fighter" → "战士"。用于匹配专长前提里的中文职业/种族名
+export function zhName(name: string): string {
+  const i = name.search(/[a-zA-Z]/);
+  const base = i < 0 ? name : name.slice(0, i);
+  return base.replace(/（[^（）]*）/g, "").replace(/^混职/, "").trim();
 }
 
 // 变种职业名解析：战士（武器大师）→ { parent: 战士, variant: 武器大师 }
@@ -439,12 +450,14 @@ export function emptyInitMods(): InitMods {
 // —— 攻击/伤害面板 ——
 // 攻击行：½等级与属性调整值自动计算（属性由 ability 指定），其余为手动加值
 export interface AttackRowData {
-  ability: AbilityKey;   // 关联属性（用于自动填充属性调整值）
-  classBonus: number;    // 职业加值
-  profBonus: number;     // 熟练加值
-  feat: number;          // 专长加值
-  enhanceSlot?: number;  // 增强加值来源装备槽位（0/1 = 主手/副手魔法物品，自动计算；缺省按 0 处理）
-  other: number;         // 其他
+  ability: AbilityKey;     // 关联属性（用于自动填充属性调整值）
+  classBonus: number;      // 职业加值
+  profBonus: number;       // 熟练加值（兼容旧存档的纯手动值，新版本由 profSlot 自动计算）
+  profSlot?: number;       // 熟练加值来源装备槽位（0/1 = 主手/副手基础武器，自动取擅长加值；缺省按 0 处理）
+  profOverride?: boolean;  // 手动视为擅长（覆盖自动擅长判定，用于选择型专长等无法自动判定的情况）
+  feat: number;            // 专长加值
+  enhanceSlot?: number;    // 增强加值来源装备槽位（0/1 = 主手/副手魔法物品，自动计算；缺省按 0 处理）
+  other: number;           // 其他
 }
 
 // 伤害行：伤害骰由所选槽位（主手/副手）的基础武器自动获取，属性调整值自动计算，其余为手动加值
@@ -461,13 +474,24 @@ export interface CombatMods {
   damages: DamageRowData[];
 }
 
-export function emptyCombatMods(): CombatMods {
+// 返回属性值最高的属性键（并列时按 ABILITY_KEYS 顺序取第一个）
+export function highestAbilityKey(abilities: Partial<Record<AbilityKey, number>>): AbilityKey {
+  let best: AbilityKey = ABILITY_KEYS[0];
+  let bestVal = -Infinity;
+  for (const k of ABILITY_KEYS) {
+    const v = abilities[k] ?? -Infinity;
+    if (v > bestVal) { bestVal = v; best = k; }
+  }
+  return best;
+}
+
+export function emptyCombatMods(ability: AbilityKey = "str"): CombatMods {
   return {
     attacks: [
-      { ability: "str", classBonus: 0, profBonus: 0, feat: 0, enhanceSlot: 0, other: 0 },
+      { ability, classBonus: 0, profBonus: 0, profSlot: 0, profOverride: false, feat: 0, enhanceSlot: 0, other: 0 },
     ],
     damages: [
-      { ability: "str", feat: 0, enhanceSlot: 0, otherA: 0, otherB: 0 },
+      { ability, feat: 0, enhanceSlot: 0, otherA: 0, otherB: 0 },
     ],
   };
 }

@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
 import { useIncremental } from "../lib/incremental";
-import { baseClassName, cleanDisplayName } from "./character";
+import { baseClassName, cleanDisplayName, zhName, type AbilityKey } from "./character";
+import { featPrereqFailReason } from "./feat-req";
 import type { Entry } from "../data/types";
 
 const TIERS = ["英雄", "典范", "传奇"];
@@ -38,40 +39,68 @@ interface Props {
   classEntry?: Entry;
   classEntry2?: Entry;
   currentLevel: number;
+  abilities?: Record<AbilityKey, number>;
+  trainedSkills?: string[];
+  weaponTokens?: Set<string>;
+  armorTokens?: Set<string>;
+  shieldTokens?: Set<string>;
   currentId?: string;
   onSelect: (id: string) => void;
   onClear?: () => void;
   onClose: () => void;
 }
 
-export default function FeatSlotPicker({ entries, loading, allRaces, allClasses, raceEntry, classEntry, classEntry2, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
+export default function FeatSlotPicker({ entries, loading, allRaces, allClasses, raceEntry, classEntry, classEntry2, currentLevel, abilities, trainedSkills, weaponTokens, armorTokens, shieldTokens, currentId, onSelect, onClear, onClose }: Props) {
   const [tier, setTier] = useState<string>(defaultTier(currentLevel));
   const [restrict, setRestrict] = useState(true);
   const [type, setType] = useState("");
   const [query, setQuery] = useState("");
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
+  // 选择前进行前置条件判定所需上下文
+  const reqCtx = useMemo(
+    () => ({
+      currentLevel,
+      abilities: abilities ?? ({} as Record<AbilityKey, number>),
+      trainedSkills: trainedSkills ?? [],
+      raceEntry,
+      classEntry,
+      classEntry2,
+      allRaces,
+      allClasses,
+      weaponTokens: weaponTokens ?? new Set<string>(),
+      armorTokens: armorTokens ?? new Set<string>(),
+      shieldTokens: shieldTokens ?? new Set<string>(),
+    }),
+    [currentLevel, abilities, trainedSkills, raceEntry, classEntry, classEntry2, allRaces, allClasses, weaponTokens, armorTokens, shieldTokens]
+  );
 
-  // 当前角色名称集合（种族 + 职业[含混职双职业]，含去括号变体名与基础职业名）
+  // 当前角色名称集合（种族 + 职业[含混职双职业]，含去括号变体名、纯中文名与基础职业名）
   const myNames = useMemo(() => {
     const set = new Set<string>();
-    if (raceEntry) set.add(raceEntry.name);
+    const add = (n: string) => { if (!n) return; set.add(n); set.add(cleanDisplayName(n)); set.add(zhName(n)); set.add(baseClassName(n)); };
+    if (raceEntry) add(raceEntry.name);
     for (const ce of [classEntry, classEntry2]) {
-      if (!ce) continue;
-      set.add(ce.name);
-      set.add(cleanDisplayName(ce.name));
-      set.add(baseClassName(ce.name));
+      if (ce) add(ce.name);
     }
     return set;
   }, [raceEntry, classEntry, classEntry2]);
 
-  // 全量种族/职业名称（去括号变体名），用于识别专长前置条件里的种族/职业要求
+  // 全量种族/职业名称（含去括号变体名与纯中文名），用于识别专长前置条件里的种族/职业要求
   const knownRaces = useMemo(() => {
     const set = new Set<string>();
-    for (const e of allRaces) set.add(cleanDisplayName(e.name));
+    for (const e of allRaces) { set.add(cleanDisplayName(e.name)); set.add(zhName(e.name)); }
     return set;
   }, [allRaces]);
   const knownClasses = useMemo(() => {
     const set = new Set<string>();
-    for (const e of allClasses) set.add(cleanDisplayName(e.name));
+    for (const e of allClasses) { set.add(cleanDisplayName(e.name)); set.add(zhName(e.name)); }
     return set;
   }, [allClasses]);
 
@@ -159,7 +188,11 @@ export default function FeatSlotPicker({ entries, loading, allRaces, allClasses,
         <div className="picker-cards">
           {loading && entries.length === 0 && <p className="hint">正在加载专长数据…</p>}
           {!loading && visible.map((f) => (
-            <button key={f.id} type="button" className={f.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => { onSelect(f.id); onClose(); }}>
+            <button key={f.id} type="button" className={f.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => {
+              const reason = featPrereqFailReason(f, reqCtx);
+              if (reason) { showToast(reason); return; }
+              onSelect(f.id); onClose();
+            }}>
               <EntryCard entry={f} />
             </button>
           ))}
@@ -167,6 +200,7 @@ export default function FeatSlotPicker({ entries, loading, allRaces, allClasses,
           {!done && !loading && <div ref={sentinelRef} className="incremental-sentinel">滚动加载更多…</div>}
         </div>
       </div>
+      {toast && <div className="ct-toast" role="status">{toast}</div>}
     </div>,
     document.body
   );
