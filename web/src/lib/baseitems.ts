@@ -49,6 +49,7 @@ export const BASE_IMPLEMENTS: BaseImplement[] = [
   { name: "权杖", category: "奥术", price: 12 },
   { name: "法杖", category: "奥术", price: 5 },
   { name: "魔杖", category: "奥术", price: 7 },
+  { name: "气印", category: "灵能", price: 5 },
   // —— 优异法器 ——
   { name: "精准圣徽 Accurate symbol", category: "神术", price: 25, superior: true, properties: "精准" },
   { name: "星界圣徽 Astral symbol", category: "神术", price: 18, superior: true, properties: "远距，增能（光耀）" },
