@@ -84,7 +84,7 @@ export function migrateCharacter(c: Partial<Character>): Character {
     otherSlots: base.otherSlots ?? [],
     consumableSlots: base.consumableSlots ?? [],
     trainedSkills: base.trainedSkills ?? [],
-    languages: base.languages && base.languages.length ? base.languages : ["", ""],
+    languages: base.languages && base.languages.length ? base.languages : [""],
     actionPoints: base.actionPoints ?? 0,
     creation: base.creation ?? {
       personality: "",
@@ -207,7 +207,7 @@ export function defaultCharacter(): Character {
     otherSlots: [],
     consumableSlots: [],
     trainedSkills: [],
-    languages: ["", ""],
+    languages: [""],
     actionPoints: 1,
     creation: { personality: "", concept: "", background: "", notes: "" },
     hpNow: {},

@@ -600,7 +600,7 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .picker-title { font-size: 18px; font-weight: var(--fw-heading); }
 .picker-dialog md-filled-text-field { width: 100%; }
 .picker-table { display: flex; flex-direction: column; gap: 4px; overflow: auto; flex: 1; min-height: 0; }
-.picker-cards { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; align-content: start; padding: 2px; }
+.picker-cards { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: max-content; gap: 10px; align-items: stretch; align-content: start; padding: 2px; }
 .picker-card { border: none; background: transparent; padding: 0; cursor: pointer; text-align: left; border-radius: var(--md-sys-shape-corner-medium); }
 .picker-card:hover { opacity: 0.92; }
 .picker-card.selected { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; border-radius: var(--md-sys-shape-corner-medium); }
@@ -622,7 +622,7 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .cr-item { border: none; padding: 6px 14px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); cursor: pointer; color: var(--md-sys-color-on-surface); font: inherit; }
 .cr-item:hover { background: var(--md-sys-color-surface-container); }
 .cr-item.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
-.class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; overflow: auto; align-content: start; }
+.class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: max-content; gap: 8px; overflow: auto; align-content: start; }
 .class-card { display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); cursor: pointer; text-align: left; color: var(--md-sys-color-on-surface); font: inherit; }
 .class-card:hover { background: var(--md-sys-color-surface-container-high); }
 .class-card.selected { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
@@ -739,11 +739,12 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .align-section { margin-bottom: 12px; }
 .base-groups { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow: auto; }
 .base-cat { display: flex; flex-direction: column; gap: 6px; }
-.base-picker-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); font-family: inherit; }
+.base-picker-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); font-family: inherit; color: var(--md-sys-color-on-surface); }
 .base-picker-card:hover { opacity: 1; background: var(--md-sys-color-surface-container-high); }
 .base-picker-card .bi-name { font-weight: normal; font-size: 13px; color: var(--md-sys-color-on-surface); }
 .base-picker-card .bi-dice { font-weight: normal; font-size: 18px; color: var(--md-sys-color-primary); font-family: inherit; }
-.base-picker-card .bi-traits { font-weight: normal; font-size: 11px; color: var(--md-sys-color-on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-family: inherit; }
+.base-picker-card .bi-name { white-space: normal; word-break: break-word; overflow-wrap: anywhere; max-width: 100%; }
+.base-picker-card .bi-traits { font-weight: normal; font-size: 11px; color: var(--md-sys-color-on-surface-variant); white-space: normal; word-break: break-word; overflow-wrap: anywhere; max-width: 100%; font-family: inherit; line-height: 1.4; }
 .base-cat-title { font-size: 12.5px; font-weight: normal; color: var(--md-sys-color-on-surface); }
 .base-cat-sub { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
 .align-section-title { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); margin-bottom: 6px; }
@@ -1049,8 +1050,11 @@ md-dialog.sheet-dialog-xw .picker-cards {
 /* 基础物品选择弹窗：素版（仿职业/种族选择） */
 .base-dialog { width: min(94vw, 1000px); }
 .base-dialog-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.base-dialog .class-layout { flex: 1; min-height: 0; }
-.base-dialog .class-grid { min-height: 0; align-content: start; }
+.base-dialog .class-layout { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.base-dialog .class-main { min-height: 0; }
+.base-dialog .class-grid { flex: 1; min-height: 0; align-content: start; overflow: auto; }
+.base-dialog .impl-groups { flex: 1; min-height: 0; overflow: auto; }
+
 .base-dialog .class-sources { padding-right: 8px; }
 .base-dialog .class-roles { flex-wrap: wrap; }
 .base-dialog .picker-card { min-height: 64px; }
@@ -1154,3 +1158,87 @@ md-dialog.sheet-dialog-xw .picker-cards {
 
 /* 优异法器卡片（复用精制品强调样式） */
 .base-picker-card.masterwork { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container-high); }
+
+/* 法器二级分类（法器组 → 简易/优异） */
+.impl-groups { display: flex; flex-direction: column; gap: 12px; overflow: auto; min-height: 0; width: 100%; box-sizing: border-box; }
+.impl-group-title { font-size: 13px; font-weight: var(--fw-subheading, 600); color: var(--md-sys-color-primary); margin-bottom: 6px; }
+.impl-subgroup { margin-bottom: 8px; }
+.impl-sub-label { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); margin-bottom: 6px; }
+.impl-group .picker-cards { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.layout-double .impl-group .picker-cards, .impl-groups .picker-cards .picker-card { min-width: 0; }
+
+/* 法器窗口回退按钮 */
+.cl-back { display: flex; align-items: center; gap: 4px; border: 1px solid var(--md-sys-color-outline-variant); margin-bottom: 2px; }
+.cl-back-ic { font-size: 14px; }
+
+.base-picker-card .bi-name, .base-picker-card .bi-dice, .base-picker-card .bi-traits { max-width: 100%; }
+
+/* ===== 抽卡向导 ===== */
+.draw { padding: 4px; max-width: 960px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.draw-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.draw-title { font-size: 22px; font-weight: 500; letter-spacing: 0; color: var(--md-sys-color-on-surface); }
+.draw-count { font-size: 13px; color: var(--md-sys-color-on-surface-variant); }
+.draw-bar { height: 8px; border-radius: 9999px; background: var(--md-sys-color-surface-container-high); overflow: hidden; margin-bottom: 18px; }
+.draw-bar-fill { height: 100%; border-radius: 9999px; background: var(--md-sys-color-primary); transition: width var(--md-sys-motion-duration-medium2) var(--md-sys-motion-easing-emphasized); }
+.draw-body { padding: 4px 2px; }
+.draw-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.draw-level { width: 52px; height: 52px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard), transform var(--md-sys-motion-duration-short2); }
+.draw-level:hover { background: var(--md-sys-color-surface-container-high); }
+.draw-level.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); transform: translateY(-2px); box-shadow: var(--md-sys-elevation-shadow-level2); }
+.draw-nav { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.draw-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+.draw-card { display: flex; flex-direction: column; align-items: stretch; height: 100%; box-sizing: border-box; border: none; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); padding: 6px; cursor: pointer; text-align: left; font: inherit; color: var(--md-sys-color-on-surface); box-shadow: var(--md-sys-elevation-shadow-level1); opacity: 0; transform: translateY(14px) scale(0.97); animation: draw-card-in var(--md-sys-motion-duration-medium3) var(--md-sys-motion-easing-emphasized-decelerate) forwards; }
+.draw-card > * { width: 100%; align-self: start; }
+@keyframes draw-card-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.draw-card:hover { box-shadow: var(--md-sys-elevation-shadow-level3); transform: translateY(-2px); }
+.draw-lv { font-size: 14px; color: var(--md-sys-color-on-surface-variant); }
+.draw-ability .ac-mod { font-size: 13px; }
+.draw-opt { width: 100%; text-align: left; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); padding: 12px; cursor: pointer; color: var(--md-sys-color-on-surface); display: flex; flex-direction: column; gap: 3px; }
+.draw-opt:hover { border-color: var(--md-sys-color-primary); }
+@media (max-width: 720px) {
+  .draw-cards { grid-template-columns: 1fr; }
+}
+
+/* 抽卡：全局退出按钮（悬浮于弹窗层之上） */
+.draw-exit { position: fixed; top: 12px; right: 12px; z-index: 320; }
+
+.draw-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+
+.draw-body { animation: draw-view-in var(--md-sys-motion-duration-medium2) var(--md-sys-motion-easing-emphasized-decelerate) both; }
+@keyframes draw-view-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* 等级按钮：MD3 选中态（secondary-container tonal） */
+.draw-level.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+
+/* 抽卡：快速分配标题 + 属性提升 */
+.draw-presets-label { font-size: 12px; font-weight: 500; color: var(--md-sys-color-on-surface-variant); margin: 12px 0 4px; }
+.draw-boost { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.draw-boost-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font: inherit; cursor: pointer; }
+.draw-boost-item:hover { background: var(--md-sys-color-surface-container-high); }
+.draw-boost-item.active { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; }
+.db-name { font-size: 13px; font-weight: 500; }
+.db-val { font-size: 15px; font-weight: 600; }
+
+/* 典范/天命特性块（结构化渲染） */
+.pf-list { display: flex; flex-direction: column; gap: 10px; }
+.pf-item { padding: 2px 0; }
+.pf-title { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); margin-bottom: 4px; }
+.pf-title::before { content: ""; flex: none; align-self: stretch; width: 3px; border-radius: 2px; background: var(--md-sys-color-primary); }
+.pf-body { font-size: 13px; line-height: 1.6; color: var(--md-sys-color-on-surface); }
+.pf-body b { color: var(--md-sys-color-on-surface); }
+
+/* 典范/天命特性：威能卡容器 + 简洁模式 */
+.pf-power { display: flex; flex-direction: column; }
+.pf-power .power-card, .pf-power .feat-card, .pf-power .item-card, .pf-power .generic-card { height: 100%; }
+.pf-title-only { font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); padding: 2px 0; }
+.pf-list.compact { gap: 6px; }
+
+/* 典范/天命条目标题与引言 */
+.pf-entry-title { font-size: 16px; font-weight: 600; color: var(--md-sys-color-primary); padding-bottom: 6px; border-bottom: 1px solid var(--md-sys-color-outline-variant); margin-bottom: 10px; }
+.pf-intro { font-size: 13px; line-height: 1.7; color: var(--md-sys-color-on-surface-variant); padding: 10px 12px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); margin-bottom: 12px; }
+.pf-power .pf-title { margin-bottom: 6px; }

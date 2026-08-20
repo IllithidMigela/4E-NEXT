@@ -12,7 +12,7 @@ import EntryCard from "./EntryCard";
 import PortraitFrame from "./PortraitFrame";
 import CombatPanels from "./CombatPanel";
 import { stripWiki } from "../lib/text";
-import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, paragonFeaturesHtml, paragonBodyHtml, epicFeaturesHtml, epicBodyHtml } from "../lib/wikirender";
+import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, parseFeatureSections, type FeatureSection } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_SHIELDS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
 import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
@@ -105,6 +105,12 @@ function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor"; onClick: 
     </button>
   );
 }
+// 法器组（优异法器二级分类）——按名称组名归类
+const IMPL_GROUPS = ["圣徽", "法珠", "权杖", "法杖", "魔典", "图腾", "魔杖", "匕首", "气印"];
+function implGroup(name: string): string {
+  return IMPL_GROUPS.find((g) => name.includes(g)) ?? "";
+}
+
 // 基础物品选择弹窗：左侧导航 + 分组卡片
 const ARMOR_BASES: { name: string; cat: string }[] = [
   { name: "布甲", cat: "轻甲" },
@@ -141,6 +147,7 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
   // 武器：二分法过滤（左：简易-优异/双头/法器/护盾；上：单手/双手/远程/弹药）
   const [wcat, setWcat] = useState("");
   const [whand, setWhand] = useState("");
+  const [implG, setImplG] = useState("");
   const visibleWeapons = BASE_WEAPONS.filter((w) => {
     if (wcat === "双头") { if (!w.category.includes("双头")) return false; }
     else if (wcat) { if (!w.category.startsWith(wcat)) return false; }
@@ -180,37 +187,77 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
       {props.kind === "weapon" ? (
         <div className="class-layout base-class-layout">
           <div className="class-sources">
-            <button type="button" className={wcat === "" ? "cl-item active" : "cl-item"} onClick={() => setWcat("")}>全部</button>
-            {["简易", "军用", "优异", "双头"].map((c) => (
-              <button key={c} type="button" className={wcat === c ? "cl-item active" : "cl-item"} onClick={() => setWcat(c)}>{c}</button>
-            ))}
-            <button type="button" className={"cl-item" + (wcat === "法器" ? " active" : "")} onClick={() => setWcat("法器")}>法器</button>
-            <button type="button" className={"cl-item" + (wcat === "护盾" ? " active" : "")} onClick={() => setWcat("护盾")}>护盾</button>
+            {wcat === "法器" ? (
+              <>
+                <button type="button" className="cl-item cl-back" title="返回武器分类" onClick={() => { setWcat(""); setImplG(""); }}><span className="cl-back-ic">←</span>返回</button>
+                <button type="button" className={implG === "" ? "cl-item active" : "cl-item"} onClick={() => setImplG("")}>全部法器</button>
+                {IMPL_GROUPS.map((g) => (
+                  <button key={g} type="button" className={implG === g ? "cl-item active" : "cl-item"} onClick={() => setImplG(g)}>{g}法器</button>
+                ))}
+              </>
+            ) : (
+              <>
+                <button type="button" className={wcat === "" ? "cl-item active" : "cl-item"} onClick={() => setWcat("")}>全部</button>
+                {["简易", "军用", "优异", "双头"].map((c) => (
+                  <button key={c} type="button" className={wcat === c ? "cl-item active" : "cl-item"} onClick={() => setWcat(c)}>{c}</button>
+                ))}
+                <button type="button" className={"cl-item" + (wcat === "法器" ? " active" : "")} onClick={() => setWcat("法器")}>法器</button>
+                <button type="button" className={"cl-item" + (wcat === "护盾" ? " active" : "")} onClick={() => setWcat("护盾")}>护盾</button>
+              </>
+            )}
           </div>
           <div className="class-main">
+            {wcat !== "法器" && (
             <div className="class-roles">
               <button type="button" className={whand === "" ? "cr-item active" : "cr-item"} onClick={() => setWhand("")}>全部持握</button>
               {["单手", "双手", "远程", "弹药"].map((h) => (
                 <button key={h} type="button" className={whand === h ? "cr-item active" : "cr-item"} onClick={() => setWhand(h)}>{h}</button>
               ))}
             </div>
-            <div className="class-grid">
-              {wcat === "法器" ? (
-                <>
-                  {BASE_IMPLEMENTS.filter((im) => !im.superior).map((im) => card(im.name, baseItemId("implement", im.name), "—", im.category + "法器"))}
-                  {BASE_IMPLEMENTS.filter((im) => im.superior).map((im) => card(im.name, baseItemId("implement", im.name), "—", (im.properties ? "优异 · " + im.properties : "优异") + " · " + im.category + "法器", true))}
-                </>
-              ) : wcat === "护盾" ? (
-                BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits))
-              ) : (
-                <>
-                  {visibleWeapons.map((w) => card(w.name, baseItemId("weapon", w.name), w.dice, w.traits && w.traits !== "—" ? w.traits : w.group))}
-                  {visibleWeapons.length === 0 && <p className="hint">无匹配武器。</p>}
-                </>
-              )}
-            </div>
+            )}
+            {wcat === "法器" ? (
+              <div className="impl-groups">
+                {IMPL_GROUPS.filter((g) => !implG || implG === g).map((g) => {
+                  const groupImps = BASE_IMPLEMENTS.filter((im) => implGroup(im.name) === g);
+                  if (groupImps.length === 0) return null;
+                  const base = groupImps.filter((im) => !im.superior);
+                  const sup = groupImps.filter((im) => im.superior);
+                  return (
+                    <div key={g} className="impl-group">
+                      <div className="impl-group-title">{g}法器</div>
+                      {base.length > 0 && (
+                        <div className="impl-subgroup">
+                          <div className="impl-sub-label">简易</div>
+                          <div className="picker-cards">
+                            {base.map((im) => card(im.name, baseItemId("implement", im.name), String(im.price) + "gp", im.category + "法器"))}
+                          </div>
+                        </div>
+                      )}
+                      {sup.length > 0 && (
+                        <div className="impl-subgroup">
+                          <div className="impl-sub-label">优异</div>
+                          <div className="picker-cards">
+                            {sup.map((im) => card(im.name, baseItemId("implement", im.name), String(im.price) + "gp", (im.properties || "") + " · " + im.category + "法器", true))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="class-grid">
+                {wcat === "护盾" ? (
+                  BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits))
+                ) : (
+                  <>
+                    {visibleWeapons.map((w) => card(w.name, baseItemId("weapon", w.name), w.dice, w.traits && w.traits !== "—" ? w.traits : w.group))}
+                    {visibleWeapons.length === 0 && <p className="hint">无匹配武器。</p>}
+                  </>
+                )}
+              </div>
+            )}            </div>
           </div>
-        </div>
       ) : (
         <div className="equip-layout base-dialog-layout">
           <nav className="equip-nav">
@@ -359,6 +406,43 @@ function ClassFeatureBlock({ entry, detail }: { entry: Entry; detail: boolean })
         <div key={s.label} className="cls-sum-row"><span className="cls-sum-label">{s.label}</span><span className="cls-sum-value">{s.value}</span></div>
       ))}
       {summary.length === 0 && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(entry.sourceText, entry.fields) }} />}
+    </div>
+  );
+}
+
+// 典范/天命特性段列表：详细=特性块+完整威能卡；简洁=特性标题+威能compact行（威能仅供查看，不做管理）
+function FeatureSectionList({ sections, detail, fields, powerOf }: { sections: FeatureSection[]; detail: boolean; fields: Record<string, string>; powerOf: (id: string) => Entry | undefined }) {
+  if (sections.length === 0) return null;
+  return (
+    <div className={"pf-list" + (detail ? "" : " compact")}>
+      {sections.map((s, i) => {
+        const p = s.powerRef ? powerOf(s.powerRef) : undefined;
+        if (detail) {
+          if (p) return (
+            <div key={i} className="pf-power">
+              <div className="pf-title">{s.title}</div>
+              <EntryCard entry={p} />
+            </div>
+          );
+          return (
+            <div key={i} className="pf-item">
+              <div className="pf-title">{s.title}</div>
+              {s.body && <div className="pf-body" dangerouslySetInnerHTML={{ __html: wikiToHtml(s.body, fields) }} />}
+            </div>
+          );
+        }
+        if (p) {
+          return (
+            <div key={i} className="compact-row" title={p.name}>
+              <span className="cr-dot" style={{ background: p.usage === "at-will" ? POWER_COLORS.atWill : p.usage === "encounter" ? POWER_COLORS.encounter : p.usage === "daily" ? POWER_COLORS.daily : POWER_COLORS.utility }} />
+              <span className="cr-name">{p.name}{p.nameEn ? " " + p.nameEn : ""}</span>
+              <span className="cr-sub">L{p.level}{p.usageZh ? " · " + p.usageZh : ""}</span>
+              <div className="compact-pop"><EntryCard entry={p} /></div>
+            </div>
+          );
+        }
+        return <div key={i} className="pf-title-only">{s.title}</div>;
+      })}
     </div>
   );
 }
@@ -672,10 +756,8 @@ export default function CharacterSheet({
   const classEntry = useMemo(() => classes.find((c) => c.id === char.classId), [classes, char.classId]);
   const paragonPathEntry = useMemo(() => paragonPaths.find((p) => p.id === char.paragonPathId), [paragonPaths, char.paragonPathId]);
   const epicDestinyEntry = useMemo(() => epicDestinies.find((d) => d.id === char.epicDestinyId), [epicDestinies, char.epicDestinyId]);
-  const pathTrait = paragonPathEntry ? paragonFeaturesHtml(paragonPathEntry.sourceText) : undefined;
-  const pathBody = paragonPathEntry ? paragonBodyHtml(paragonPathEntry.sourceText) : undefined;
-  const destinyTrait = epicDestinyEntry ? epicFeaturesHtml(epicDestinyEntry.sourceText) : undefined;
-  const destinyBody = epicDestinyEntry ? epicBodyHtml(epicDestinyEntry.sourceText) : undefined;
+  const pathParse = useMemo(() => (paragonPathEntry ? parseFeatureSections(paragonPathEntry.sourceText) : { hasTitle: false, sections: [] as FeatureSection[] }), [paragonPathEntry]);
+  const destinyParse = useMemo(() => (epicDestinyEntry ? parseFeatureSections(epicDestinyEntry.sourceText) : { hasTitle: false, sections: [] as FeatureSection[] }), [epicDestinyEntry]);
   const classDisplay = useMemo(() => {
     const n1 = classEntry ? cleanDisplayName(classEntry.name) : undefined;
     if (!char.hybrid) return n1;
@@ -1266,9 +1348,15 @@ export default function CharacterSheet({
           </div>
           {paragonPathEntry ? (
             <div className="race-detail">
-              {pathTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(pathTrait, paragonPathEntry.fields).replace(/\n/g, "<br/>") }} />}
-              {pathDetail && pathBody && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(pathBody, paragonPathEntry.fields) }} />}
-              {!pathTrait && !pathBody && <pre className="feature-text">{stripWiki(paragonPathEntry.sourceText)}</pre>}
+              {pathParse.sections.length > 0 ? (
+                <>
+                  {pathParse.hasTitle && <div className="pf-entry-title">{cleanDisplayName(paragonPathEntry.name)}</div>}
+                  {pathDetail && pathParse.intro && <div className="pf-intro" dangerouslySetInnerHTML={{ __html: wikiToHtml(pathParse.intro, paragonPathEntry.fields) }} />}
+                  <FeatureSectionList sections={pathParse.sections} detail={pathDetail} fields={paragonPathEntry.fields} powerOf={(id) => powerMap.get(id)} />
+                </>
+              ) : (
+                <pre className="feature-text">{stripWiki(paragonPathEntry.sourceText)}</pre>
+              )}
             </div>
           ) : <p className="hint">请先选择典范之道。</p>}
         </section>
@@ -1284,9 +1372,15 @@ export default function CharacterSheet({
           </div>
           {epicDestinyEntry ? (
             <div className="race-detail">
-              {destinyTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(destinyTrait, epicDestinyEntry.fields).replace(/\n/g, "<br/>") }} />}
-              {destinyDetail && destinyBody && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(destinyBody, epicDestinyEntry.fields) }} />}
-              {!destinyTrait && !destinyBody && <pre className="feature-text">{stripWiki(epicDestinyEntry.sourceText)}</pre>}
+              {destinyParse.sections.length > 0 ? (
+                <>
+                  {destinyParse.hasTitle && <div className="pf-entry-title">{cleanDisplayName(epicDestinyEntry.name)}</div>}
+                  {destinyDetail && destinyParse.intro && <div className="pf-intro" dangerouslySetInnerHTML={{ __html: wikiToHtml(destinyParse.intro, epicDestinyEntry.fields) }} />}
+                  <FeatureSectionList sections={destinyParse.sections} detail={destinyDetail} fields={epicDestinyEntry.fields} powerOf={(id) => powerMap.get(id)} />
+                </>
+              ) : (
+                <pre className="feature-text">{stripWiki(epicDestinyEntry.sourceText)}</pre>
+              )}
             </div>
           ) : <p className="hint">请先选择传奇天命。</p>}
         </section>
@@ -1852,7 +1946,7 @@ return (
             </div>
           </div>
           <div className="align-section">
-            <div className="align-section-title">D&D 九阵营</div>
+            <div className="align-section-title">九阵营</div>
             <div className="align-grid">
               {NINE_ALIGNMENTS.map((a) => (
                 <button key={a} type="button" className={char.alignment === a ? "preset-item align-item active" : "preset-item align-item"} onClick={() => { setChar({ ...char, alignment: a }); setAlignmentOpen(false); }}>{a}</button>
