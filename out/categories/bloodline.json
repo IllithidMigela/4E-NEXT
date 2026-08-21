@@ -1,0 +1,66 @@
+[
+  {
+    "id": "欺诈者血统 Beguiler Bloodline",
+    "name": "欺诈者血统",
+    "nameEn": "Beguiler Bloodline",
+    "category": "bloodline",
+    "tags": [
+      "血统"
+    ],
+    "source": "HoS",
+    "sourceText": "@@.indent\nWhether your curse of vampirism was inflicted by fate or by choice, you have come to wholly accept your power by the beginning of the paragon tier. However, though the common folk would call you a monster if they knew your true nature, you cannot simply forsake the memory of the person you once were.\n\nYou prefer the company of mortals and the benefits of being a part of society. Through the magic of blood and shadow, your mastery of your appearance and your subtle hunting methods have made you the most attractive of predators. Your enemies believe your lies even as they overlook your strangeness. When you reveal your true nature in all its dark glory, they are unable to look away—much less escape—as they fall to their knees before you.\n@@\n!! 11级：欺诈者血统特性 Beguiler Bloodline Feature\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nYour cunning manner keeps your true nature and identity concealed from others, even as it helps you keep your foes off guard in combat.\n\n''增益：''你在唬骗检定上获得+2加值。当你尝试对一个与你种族相同的特定个体使用的时，此加值增加为+5。此外，你能以一个次要动作进行一次唬骗检定来佯攻并获得战斗优势。你在对任何给你提供战斗优势的生物的伤害骰上获得+3加值\n@@\n!! 12级：欺诈者血统辅助威能 Beguiler Bloodline Utility Power\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nThe beguiling power of your blood can be released to charm your foes even in the heat of combat. As your dread curse draws the attention of your enemies, you and your allies gain the advantage.\n@@\n{{庄严灵气 Aura of Grandeur}}\n!! 16级：欺诈者血统特性 Beguiler Bloodline Feature\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nIn whetting the power of your deadly attraction, you have also learned to shroud that power, escaping notice when it suits you. When you do so, the strength of your mind and spirit can cloak you even against the deadly light of the sun.\n\n''增益：''你在隐秘检定上获得+2加值。如果你在进行此检定的回合内移动了不超过2格或你不在战斗中，则此加值增加为+4\n\n另外，日光不再对你造成光耀伤害，且当它使你虚弱时，你在对抗此效果的豁免骰上获得等同于你魅力调整值的加值\n@@\n!! 20级：欺诈者血统每日威能 Beguiler Bloodline Daily Power\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nAt the height of the paragon tier, you are a foe beyond compare. When you invoke the dark splendor of your hunter's instincts, your prey cannot hope to escape you.\n@@\n{{猎食光辉 Predatory Splendor}}",
+    "fields": {
+      "created": "20221116092045043",
+      "creator": "Leon",
+      "modified": "20221116092509396",
+      "modifier": "Leon",
+      "source": "HoS"
+    },
+    "wiki": {
+      "transclusions": [
+        "庄严灵气 Aura of Grandeur",
+        "猎食光辉 Predatory Splendor"
+      ],
+      "links": [],
+      "macros": [],
+      "headings": [
+        "11级：欺诈者血统特性 Beguiler Bloodline Feature",
+        "12级：欺诈者血统辅助威能 Beguiler Bloodline Utility Power",
+        "16级：欺诈者血统特性 Beguiler Bloodline Feature",
+        "20级：欺诈者血统每日威能 Beguiler Bloodline Daily Power"
+      ]
+    }
+  },
+  {
+    "id": "追猎者血统 Stalker Bloodline",
+    "name": "追猎者血统",
+    "nameEn": "Stalker Bloodline",
+    "category": "bloodline",
+    "tags": [
+      "血统"
+    ],
+    "source": "HoS",
+    "sourceText": "@@.indent\nThe dark curse that made you a vampire took little toll on your physical form. However, in your heart and soul, you have become a beast more terrifying than any monster you had known of in mortal life. As your power has grown, you have struggled at times to keep your feral side from taking over. Although you live for the chase and the kill, your hold on your humanity helps you glimpse the mindless savagery and wickedness that awaits you if you give in.\n\nBy controlling your bestial spirit, you can learn to take advantage of your predatory nature. The monster within is your connection between the world of mortals and the world of shadow, and it makes you strong.\n@@\n!! 11级：追猎者血统特性 Stalker Bloodline Feature\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nYour cunning manner keeps your true nature and identity concealed from others, even as it helps you keep your foes off guard in combat.\n\n''增益：''你在威吓检定上获得+2加值。\n\n此外，你在你的吸血鬼和追猎者血统攻击的伤害骰上获得+2加值\n@@\n!! 12级：追猎者血统辅助威能 Stalker Bloodline Utility Power\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nYou are the consummate hunter, and each successful strike only increases your hunger for new prey. When one foe feels your wrath, you bring forth even greater savagery against your other enemies.\n@@\n{{猎人狂怒 Hunter's Frenzy}}\n!! 16级：追猎者血统特性 Stalker Bloodline Feature\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nYou have fully assimilated your animalistic side, connecting you to the beasts of the earth. You are a creature of the land in addition to a creature of the night, and the sun no longer burns you.\n\n''增益：''你在自然检定上获得+2加值。当你尝试安抚一个野兽时，此加值增加为+4\n\n另外，日光不再对你造成光耀伤害，且当它使你虚弱时，你在对抗此效果的豁免骰上获得等同于你魅力调整值的加值\n@@\n!! 20级：追猎者血统每日威能 Stalker Bloodline Daily Power\n@@.indent\n''吸血鬼贵族典范之道特性''\n\nAs you nurture your predatory side, the gnawing hunger within you grows ever stronger. The power of your stalker bloodline gives you strength in battle, and lets you release its full fury in the form of a shadowy wolf whose bite can lay waste to the deadliest foes.\n@@\n{{暗狼形态 Darkwolf Form}}",
+    "fields": {
+      "created": "20221116092552074",
+      "creator": "Leon",
+      "modified": "20221116092850279",
+      "modifier": "Leon",
+      "source": "HoS"
+    },
+    "wiki": {
+      "transclusions": [
+        "猎人狂怒 Hunter's Frenzy",
+        "暗狼形态 Darkwolf Form"
+      ],
+      "links": [],
+      "macros": [],
+      "headings": [
+        "11级：追猎者血统特性 Stalker Bloodline Feature",
+        "12级：追猎者血统辅助威能 Stalker Bloodline Utility Power",
+        "16级：追猎者血统特性 Stalker Bloodline Feature",
+        "20级：追猎者血统每日威能 Stalker Bloodline Daily Power"
+      ]
+    }
+  }
+]

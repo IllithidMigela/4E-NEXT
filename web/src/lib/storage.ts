@@ -49,3 +49,36 @@ export function saveActiveId(id: string): void {
     // 忽略
   }
 }
+
+// localStorage 容量估算：按 UTF-16 码元统计（含 key + value），近似各浏览器配额口径。
+const LS_MAX = 5 * 1024 * 1024; // 通用上限约 5MB
+
+export interface StorageUsage {
+  used: number;   // 已用字节（UTF-16 码元数）
+  total: number;  // 上限
+  percent: number; // 0–100
+  keys: number;
+}
+
+export function localStorageUsage(): StorageUsage {
+  let used = 0;
+  let keys = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      const v = localStorage.getItem(k) ?? "";
+      used += k.length + v.length;
+      keys++;
+    }
+  } catch {
+    /* ignore */
+  }
+  return { used, total: LS_MAX, percent: Math.min(100, (used / LS_MAX) * 100), keys };
+}
+
+export function fmtBytes(n: number): string {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(2) + " MB";
+}

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, Switch } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import PowerSlotPicker from "./PowerSlotPicker";
 import FeatSlotPicker from "./FeatSlotPicker";
@@ -13,10 +13,11 @@ import ItemSlotPicker from "./ItemSlotPicker";
 import EntryCard from "./EntryCard";
 import PortraitFrame from "./PortraitFrame";
 import CombatPanels from "./CombatPanel";
-import { collectProficiencyTokens, collectProficiencySources, isProficient, featChoiceInfo, collectArmorTokens, collectShieldTokens, collectImplementGroups, type FeatOption } from "./proficiency";
+import { collectProficiencyTokens, collectProficiencySources, isProficient, featChoiceInfo, collectArmorTokens, collectShieldTokens, collectImplementGroups, armorProficient, type FeatOption } from "./proficiency";
+import { SmartHover } from "./SmartHover";
 import { collectClassSources, collectFeatSources } from "./combat-source";
 import { stripWiki } from "../lib/text";
-import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, parseFeatureSections, type FeatureSection } from "../lib/wikirender";
+import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, parseFeatureSections, parseClassFeatureOptions, tokenizeWikiBody, type FeatureSection } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
 import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
@@ -25,6 +26,21 @@ import ClassPickerModal from "./ClassPickerModal";
 import SheetDialog from "../components/SheetDialog";
 
 const ABILITIES: AbilityKey[] = ["str", "con", "dex", "int", "wis", "cha"];
+
+// 灵能职业（每日灵能点来源）：炽念使/战魂/心灵术士共用同一阶梯表；武僧不消耗灵能点，故排除。
+const PSIONIC_PP_CLASSES = new Set(["炽念使 Ardent", "战魂 Battlemind", "心灵术士 Psion"]);
+// 按当前等级返回该灵能职业的每日灵能点，非灵能职业返回 undefined
+function psionicPowerPoints(classId: string | undefined, level: number): number | undefined {
+  if (!classId || !PSIONIC_PP_CLASSES.has(classId)) return undefined;
+  if (level <= 2) return 2;
+  if (level <= 6) return 4;
+  if (level <= 12) return 6;
+  if (level <= 16) return 7;
+  if (level <= 20) return 9;
+  if (level <= 22) return 11;
+  if (level <= 26) return 13;
+  return 15;
+}
 
 // 22 购点常用预设（数值数组按 ABILITIES 顺序，均恰好 22 点；应用时按玩家拖动的属性顺序分配）
 const BUY_PRESETS: { label: string; values: number[] }[] = [
@@ -125,11 +141,17 @@ const ARMOR_BASES: { name: string; cat: string }[] = [
   { name: "全身板甲", cat: "重甲" },
 ];
 
-function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; baseId?: string; proficientInfos?: WeapInfo[]; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
+function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; baseId?: string; proficientInfos?: WeapInfo[]; proficientImplGroups?: string[]; armorTokens?: Set<string>; shieldTokens?: Set<string>; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
   const [masterwork, setMasterwork] = useState(false);
   const active = (id: string) => props.baseId === id;
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const card = (name: string, id: string, main: string, sub: string, mw?: boolean) => (
+  const armorTok = props.armorTokens ?? new Set<string>();
+  const shieldTok = props.shieldTokens ?? new Set<string>();
+  // 护甲擅长：命中具体护甲名 或 命中所属大类（轻甲/重甲）
+  const armorProf = (a: { name: string; category: string }) =>
+    armorProficient(armorTok, shieldTok, a.name) ||
+    (a.category === "轻甲" ? armorTok.has("轻甲") : a.category === "重甲" ? armorTok.has("重甲") : false);
+  const card = (name: string, id: string, main: string, sub: string, proficient = false, mw?: boolean) => (
     <button
       key={id}
       type="button"
@@ -139,6 +161,7 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
       <span className="bi-name">{name}</span>
       <span className="bi-dice">{main}</span>
       <span className="bi-traits">{sub}</span>
+      {proficient && <span className="prof-badge">擅长</span>}
     </button>
   );
 
@@ -174,6 +197,9 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
           weapons={BASE_WEAPONS}
           allowImplShield
           proficientInfos={props.proficientInfos ?? []}
+          proficientImplGroups={props.proficientImplGroups}
+          armorTokens={props.armorTokens}
+          shieldTokens={props.shieldTokens}
           currentName={currentBaseName}
           onSelect={(id) => props.onSelect(id)}
         />
@@ -189,8 +215,8 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
               <div key={g.label} id={"base-g-" + g.label} className="base-cat">
                 <div className="base-cat-title">{g.label}</div>
                 <div className="picker-cards">
-                  {g.items.filter((a) => !a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, a.category))}
-                  {masterwork && g.items.filter((a) => a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, "最小增强 +" + a.minEnhance + (a.special ? " · " + a.special : ""), true))}
+                  {g.items.filter((a) => !a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, a.category, armorProf(a)))}
+                  {masterwork && g.items.filter((a) => a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, "最小增强 +" + a.minEnhance + (a.special ? " · " + a.special : ""), armorProf(a), true))}
                 </div>
               </div>
             ))}
@@ -305,17 +331,125 @@ const DEF_BONUS_LABELS: Record<DefenseBonusSource, string> = {
   other: "其他",
 };
 
-// 单个职业的能力块（classTrait + 职业特性 / 简略擅长行）
-function ClassFeatureBlock({ entry, detail }: { entry: Entry; detail: boolean }) {
+// 职业特性正文渲染：保留换行/表格，并把 [[威能]]、[[专长]] 等超链接转为悬浮卡片预览
+function WikiBody({ body, fields, lookup }: { body: string; fields: Record<string, string>; lookup: (target: string) => Entry | undefined }) {
+  const tokens = useMemo(() => tokenizeWikiBody(body, fields), [body, fields]);
+  return (
+    <>
+      {tokens.map((t, i) => {
+        if (t.kind === "link") {
+          const entry = lookup(t.target);
+          if (!entry) return <span key={i} className="wiki-ref-plain">{t.alias}</span>;
+          return <SmartHover key={i} className="wiki-ref" popClass="wiki-ref-pop" pop={<EntryCard entry={entry} />}>{t.alias}</SmartHover>;
+        }
+        if (t.kind === "html") return <div key={i} className="wiki-html" dangerouslySetInnerHTML={{ __html: t.html }} />;
+        return <span key={i} dangerouslySetInnerHTML={{ __html: t.html }} />;
+      })}
+    </>
+  );
+}
+
+// 单个职业特性条目：普通特性渲染标题+正文；选择型特性渲染「选择一个」选项（阵营面板样式）
+// 单选型（count=1）：点击切换选中；多选型（count>1，如法师戏法「获得4个」）：点击增删并显示进度
+function ClassFeatureItem({ section, fields, choiceKey, chosen, onChoose, lookup }: {
+  section: FeatureSection;
+  fields: Record<string, string>;
+  choiceKey: string;
+  chosen?: string | string[];
+  onChoose: (key: string, label: string | string[]) => void;
+  lookup: (target: string) => Entry | undefined;
+}) {
+  const parsed = useMemo(() => parseClassFeatureOptions(section.body), [section.body]);
+  const chosenVals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
+  const count = parsed.count ?? 1;
+  const multiple = count > 1;
+  const isChosen = (label: string) => chosenVals.includes(label);
+  const toggle = (label: string) => {
+    if (multiple) onChoose(choiceKey, isChosen(label) ? chosenVals.filter((x) => x !== label) : [...chosenVals, label]);
+    else onChoose(choiceKey, isChosen(label) ? "" : label);
+  };
+  const selOpts = parsed.options.filter((o) => isChosen(o.label));
+  // 选项为纯 [[链接]]（C 形态：戏法/庇护威能）→ 无描述，仅展示所选威能
+  const linkOnly = parsed.options.length > 0 && parsed.options.every((o) => !o.desc);
+  if (parsed.selectable) {
+    return (
+      <div className="pf-item">
+        <div className="pf-title">{section.title}</div>
+        {parsed.intro && <div className="pf-body"><WikiBody body={parsed.intro} fields={fields} lookup={lookup} /></div>}
+        <div className="cls-options">
+          {parsed.options.map((o, i) => {
+            const entry = lookup(o.label);
+            return (
+              <SmartHover key={i} className={isChosen(o.label) ? "cls-option active" : "cls-option"} popClass="cls-option-pop" pop={entry ? <EntryCard entry={entry} /> : undefined} onClick={() => toggle(o.label)}>
+                {o.label}
+              </SmartHover>
+            );
+          })}
+        </div>
+        {multiple && (
+          <div className={chosenVals.length >= count ? "cls-options-hint ok" : "cls-options-hint"}>
+            已选 {chosenVals.length}/{count}{chosenVals.length >= count ? " 个" : ` 个（还需 ${count - chosenVals.length} 个）`}
+          </div>
+        )}
+        {!multiple && selOpts.length === 0 && parsed.options.length > 0 && <div className="cls-options-hint">点击选择一个选项</div>}
+        {selOpts.length > 0 && (
+          <div className="cls-choice-desc">
+            {linkOnly ? (
+              <div className="cls-choice-powers">
+                {selOpts.map((o, i) => {
+                  const entry = lookup(o.label);
+                  if (!entry) return <span key={i} className="cls-choice-power-name">{o.label}</span>;
+                  return (
+                    <SmartHover key={i} className="cls-choice-power" popClass="cls-choice-power-pop" pop={<EntryCard entry={entry} />}>
+                      {entry.name}{entry.nameEn ? " " + entry.nameEn : ""}
+                    </SmartHover>
+                  );
+                })}
+              </div>
+            ) : (
+              selOpts.map((o, i) => <WikiBody key={i} body={o.label + "：" + o.desc} fields={fields} lookup={lookup} />)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="pf-item">
+      <div className="pf-title">{section.title}</div>
+      {section.body && <div className="pf-body"><WikiBody body={section.body} fields={fields} lookup={lookup} /></div>}
+    </div>
+  );
+}
+
+// 单个职业的能力块（classTrait + 职业特性以条目展示 / 简略擅长行）
+function ClassFeatureBlock({ entry, detail, choices, onChoose, lookup }: {
+  entry: Entry;
+  detail: boolean;
+  choices: Record<string, string | string[]>;
+  onChoose: (key: string, label: string | string[]) => void;
+  lookup: (target: string) => Entry | undefined;
+}) {
   const trait = classTraitHtml(entry.sourceText);
   const features = classFeaturesHtml(entry.sourceText);
   const summary = classSummary(entry.sourceText);
+  const parsed = useMemo(() => (features ? parseFeatureSections(features) : undefined), [features]);
   if (detail) {
     return (
       <div className="class-detail">
-        {trait && <div className="class-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(trait, entry.fields).replace(/\n/g, "<br/>") }} />}
-        {features && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(features, entry.fields) }} />}
-        {!trait && !features && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(entry.sourceText, entry.fields) }} />}
+        {trait && <div className="class-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(trait, entry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />}
+        {parsed?.intro && <div className="pf-intro"><WikiBody body={parsed.intro} fields={entry.fields} lookup={lookup} /></div>}
+        {parsed && parsed.sections.length > 0 ? (
+          <div className="pf-list">
+            {parsed.sections.map((s, i) => (
+              <ClassFeatureItem key={i} section={s} fields={entry.fields} choiceKey={entry.id + "::" + s.title} chosen={choices[entry.id + "::" + s.title]} onChoose={onChoose} lookup={lookup} />
+            ))}
+          </div>
+        ) : features ? (
+          <div className="class-features"><WikiBody body={features} fields={entry.fields} lookup={lookup} /></div>
+        ) : !trait ? (
+          <div className="class-features"><WikiBody body={entry.sourceText} fields={entry.fields} lookup={lookup} /></div>
+        ) : null}
       </div>
     );
   }
@@ -324,7 +458,48 @@ function ClassFeatureBlock({ entry, detail }: { entry: Entry; detail: boolean })
       {summary.map((s) => (
         <div key={s.label} className="cls-sum-row"><span className="cls-sum-label">{s.label}</span><span className="cls-sum-value">{s.value}</span></div>
       ))}
-      {summary.length === 0 && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(entry.sourceText, entry.fields) }} />}
+      {parsed && parsed.sections.length > 0 ? (
+        // 简洁模式：直接展示已选择/已生效的特性与选项（隐藏风味文字），不再用悬停弹出
+        <div className="pf-list compact cls-compact">
+          {parsed.sections.map((s, i) => {
+            const opt = parseClassFeatureOptions(s.body);
+            const choiceKey = entry.id + "::" + s.title;
+            const chosen = choices[choiceKey];
+            const chosenVals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
+            if (!opt.selectable) {
+              // 普通特性：直接展示机械效果正文（风味段已随章节切分被排除）
+              return (
+                <div key={i} className="cls-feat">
+                  <div className="cls-feat-name">{cleanDisplayName(s.title)}</div>
+                  {s.body && <div className="cls-feat-note"><WikiBody body={s.body} fields={entry.fields} lookup={lookup} /></div>}
+                </div>
+              );
+            }
+            const count = opt.count ?? 1;
+            const multiple = count > 1;
+            const selected = opt.options.filter((o) => chosenVals.includes(o.label));
+            return (
+              <div key={i} className={"cls-feat" + (selected.length ? " set" : " unset")}>
+                <div className="cls-feat-name">{cleanDisplayName(s.title)}</div>
+                {selected.length === 0 ? (
+                  <div className="cls-feat-sub">{multiple ? `未选 0/${count}` : "未选择"}</div>
+                ) : (
+                  multiple && <div className="cls-feat-count">已选 {chosenVals.length}/{count}</div>
+                )}
+                {selected.map((o, j) =>
+                  o.desc ? (
+                    <div key={j} className="cls-feat-compact-optname"><WikiBody body={o.label + "：" + o.desc} fields={entry.fields} lookup={lookup} /></div>
+                  ) : (
+                    <div key={j} className="cls-feat-opt">{cleanDisplayName(o.label)}</div>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : summary.length === 0 ? (
+        <div className="class-features"><WikiBody body={entry.sourceText} fields={entry.fields} lookup={lookup} /></div>
+      ) : null}
     </div>
   );
 }
@@ -352,12 +527,11 @@ function FeatureSectionList({ sections, detail, fields, powerOf }: { sections: F
         }
         if (p) {
           return (
-            <div key={i} className="compact-row" title={p.name}>
+            <SmartHover key={i} className="compact-row" popClass="compact-pop" title={p.name} pop={<EntryCard entry={p} />}>
               <span className="cr-dot" style={{ background: p.usage === "at-will" ? POWER_COLORS.atWill : p.usage === "encounter" ? POWER_COLORS.encounter : p.usage === "daily" ? POWER_COLORS.daily : POWER_COLORS.utility }} />
               <span className="cr-name">{p.name}{p.nameEn ? " " + p.nameEn : ""}</span>
               <span className="cr-sub">L{p.level}{p.usageZh ? " · " + p.usageZh : ""}</span>
-              <div className="compact-pop"><EntryCard entry={p} /></div>
-            </div>
+            </SmartHover>
           );
         }
         return <div key={i} className="pf-title-only">{s.title}</div>;
@@ -875,7 +1049,29 @@ export default function CharacterSheet({
     if (!classEntry2) return a;
     return 3 + a + parseTrainedSkillCount(classEntry2.sourceText);
   }, [classEntry, classEntry2]);
-  const trainedSet = useMemo(() => new Set(char.trainedSkills), [char.trainedSkills]);
+  // 职业内置自动受训技能（如刺客的隐秘）——由职业来源派生，更换职业时随之重建
+  const classAutoTrained = useMemo(() => {
+    const names: string[] = [];
+    if (classEntry) names.push(...parseBuiltinTrainedSkills(classEntry.sourceText));
+    if (classEntry2) names.push(...parseBuiltinTrainedSkills(classEntry2.sourceText));
+    return [...new Set(names)];
+  }, [classEntry, classEntry2]);
+  // 职业技能池（供点选受训）：主职与混职去重合并
+  const classSkillPool = useMemo(() => {
+    const pool = new Map<string, { name: string; ability: AbilityKey }>();
+    for (const e of [classEntry, classEntry2]) {
+      if (!e) continue;
+      for (const s of parseClassSkills(e.sourceText)) if (!pool.has(s.name)) pool.set(s.name, s);
+    }
+    return [...pool.values()];
+  }, [classEntry, classEntry2]);
+  // 有效受训技能 = 杂项受训 + 职业内置自动受训 + 职业点选受训
+  const effectiveTrained = useMemo(
+    () => [...new Set([...char.trainedSkills, ...classAutoTrained, ...char.classTrainedSkills])],
+    [char.trainedSkills, classAutoTrained, char.classTrainedSkills]
+  );
+  const trainedSet = useMemo(() => new Set(effectiveTrained), [effectiveTrained]);
+  const classTrainedSet = useMemo(() => new Set(char.classTrainedSkills), [char.classTrainedSkills]);
   const levelInfo = useMemo(() => (char.level >= 1 ? LEVELS[char.level - 1] : undefined), [char.level]);
   const isBoostLevel = levelInfo?.abilityBoost === "两个 +1";
   const raceTrait = useMemo(() => (raceEntry ? raceTraitHtml(raceEntry.sourceText) : undefined), [raceEntry]);
@@ -910,6 +1106,7 @@ export default function CharacterSheet({
       xp: lv === 0 ? "0" : String(xpForLevel(lv)),
       paragonPathId: lv < 11 ? undefined : p.paragonPathId,
       epicDestinyId: lv < 21 ? undefined : p.epicDestinyId,
+      powerPoints: psionicPowerPoints(p.classId, lv) ?? p.powerPoints,
     }));
   }
 
@@ -997,6 +1194,16 @@ export default function CharacterSheet({
     });
   }
 
+  // 职业受训点选：从职业技能池中选择（上限 = 职业额外受训数），更换职业时清除
+  function toggleClassTrained(name: string) {
+    setChar((p) => {
+      const has = p.classTrainedSkills.includes(name);
+      if (has) return { ...p, classTrainedSkills: p.classTrainedSkills.filter((s) => s !== name) };
+      if (trainedCount > 0 && p.classTrainedSkills.length >= trainedCount) return p;
+      return { ...p, classTrainedSkills: [...p.classTrainedSkills, name] };
+    });
+  }
+
   function setAdvItem(i: number, patch: Partial<{ name: string; cost: number }>) {
     setChar((p) => {
       const arr = [...p.adventureItems];
@@ -1031,6 +1238,51 @@ export default function CharacterSheet({
     setChar((p) => ({ ...p, featSlotOverride: undefined }));
   }
 
+  // 行动资源面板：行动点 / 里程碑 / 灵能点（位于经验下方，尺寸与原先一致）
+  const resourcePanel = (
+    <div className="resource-panel">
+      <div className="resource-item">
+        <span className="field-label">行动点</span>
+        {mode === "render" ? (
+          <span className="level-value">{char.actionPoints}</span>
+        ) : (
+          <div className="stepper">
+            <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.max(0, char.actionPoints - 1) })}>−</button>
+            <span className="level-value">{char.actionPoints}</span>
+            <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.min(5, char.actionPoints + 1) })}>+</button>
+            <button type="button" className="step reset" title="重置行动点" onClick={() => setChar({ ...char, actionPoints: 1 })}>↺</button>
+          </div>
+        )}
+      </div>
+      <div className="resource-item">
+        <span className="field-label">里程碑</span>
+        {mode === "render" ? (
+          <span className="level-value">{char.milestones ?? 0}</span>
+        ) : (
+          <div className="stepper">
+            <button type="button" className="step" onClick={() => setChar({ ...char, milestones: Math.max(0, (char.milestones ?? 0) - 1), actionPoints: Math.max(0, char.actionPoints - 1) })}>−</button>
+            <span className="level-value">{char.milestones ?? 0}</span>
+            <button type="button" className="step" onClick={() => setChar({ ...char, milestones: Math.min(99, (char.milestones ?? 0) + 1), actionPoints: Math.min(5, char.actionPoints + 1) })}>+</button>
+            <button type="button" className="step reset" title="重置里程碑" onClick={() => setChar({ ...char, milestones: 0 })}>↺</button>
+          </div>
+        )}
+      </div>
+      <div className="resource-item">
+        <span className="field-label">灵能点</span>
+        {mode === "render" ? (
+          <span className="level-value">{char.powerPoints ?? 0}</span>
+        ) : (
+          <div className="stepper">
+            <button type="button" className="step" onClick={() => setChar({ ...char, powerPoints: Math.max(0, (char.powerPoints ?? 0) - 1) })}>−</button>
+            <span className="level-value">{char.powerPoints ?? 0}</span>
+            <button type="button" className="step" onClick={() => setChar({ ...char, powerPoints: Math.min(99, (char.powerPoints ?? 0) + 1) })}>+</button>
+            <button type="button" className="step reset" title="重置灵能点" onClick={() => setChar({ ...char, powerPoints: psionicPowerPoints(char.classId, char.level) ?? 0 })}>↺</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const topCol = (
     <section className="block topbar">
         <div className="topbar-head">
@@ -1052,6 +1304,7 @@ export default function CharacterSheet({
               </div>
             )}
             <TextField label="经验" value={char.xp ?? ""} onChange={(v) => onXpChange(v)} type="number" mode={mode} />
+            {layout === "double" && resourcePanel}
           </div>
           <div className="info-rows">
             <div className="info-row row-1">
@@ -1078,6 +1331,7 @@ export default function CharacterSheet({
               <TextField label="冒险团队与组织" value={char.organization ?? ""} onChange={(v) => setChar({ ...char, organization: v })} wide mode={mode} />
             </div>
             <div className="info-row row-lang">
+              {layout === "single" && resourcePanel}
               <span className="field-label">语言</span>
               <span className="lang-chip fixed">通用语</span>
               {char.languages.map((v, i) => (
@@ -1089,26 +1343,6 @@ export default function CharacterSheet({
                   <button type="button" className="sg-step" title="减少语言槽" onClick={() => setChar((p) => ({ ...p, languages: p.languages.slice(0, -1) }))}>−</button>
                   <button type="button" className="sg-step" title="增加语言槽" onClick={() => setChar((p) => ({ ...p, languages: [...p.languages, ""] }))}>+</button>
                 </span>
-              )}
-              <span className="field-label">行动点</span>
-              {mode === "render" ? (
-                <span className="level-value">{char.actionPoints}</span>
-              ) : (
-                <div className="stepper">
-                  <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.max(0, char.actionPoints - 1) })}>−</button>
-                  <span className="level-value">{char.actionPoints}</span>
-                  <button type="button" className="step" onClick={() => setChar({ ...char, actionPoints: Math.min(5, char.actionPoints + 1) })}>+</button>
-                </div>
-              )}
-              <span className="field-label">里程碑</span>
-              {mode === "render" ? (
-                <span className="level-value">{char.milestones ?? 0}</span>
-              ) : (
-                <div className="stepper">
-                  <button type="button" className="step" onClick={() => setChar({ ...char, milestones: Math.max(0, (char.milestones ?? 0) - 1) })}>−</button>
-                  <span className="level-value">{char.milestones ?? 0}</span>
-                  <button type="button" className="step" onClick={() => setChar({ ...char, milestones: Math.min(99, (char.milestones ?? 0) + 1) })}>+</button>
-                </div>
               )}
             </div>
           </div>
@@ -1306,6 +1540,24 @@ export default function CharacterSheet({
       <CombatPanels char={char} setChar={setChar} mods={stats.mods} halfLevel={stats.halfLevel} enhanceOf={enhanceOf} diceOf={diceOf} profOf={profOf} mode={mode} classAttackSources={classAttackSources} featAttackSources={featAttackSources} featDamageSources={featDamageSources} />
     </div>
   );
+  // 职业特性「选择一个」选项：记录所选值（键 = "职业ID::特性标题"；多选型如戏法存字符串数组）
+  const setClassFeatureChoice = (key: string, label: string | string[]) => {
+    const next = { ...char.classFeatureChoices };
+    if (Array.isArray(label)) {
+      if (label.length === 0) delete next[key];
+      else next[key] = label;
+    } else if (label) {
+      next[key] = label;
+    } else {
+      delete next[key];
+    }
+    setChar({ ...char, classFeatureChoices: next });
+  };
+  // 职业特性正文中的 [[威能/专长]] 超链接 → 悬浮卡片查找
+  const wikiLookup = useMemo(
+    () => (target: string) => powerMap.get(target) ?? featMap.get(target) ?? itemMap.get(target),
+    [powerMap, featMap, itemMap]
+  );
   const raceClassCol = (
     <><section className="block">
         <div className="block-head">
@@ -1317,7 +1569,7 @@ export default function CharacterSheet({
         </div>
         {raceEntry ? (
           <div className="race-detail">
-            {raceTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(raceTrait, raceEntry.fields).replace(/\n/g, "<br/>") }} />}
+            {raceTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(raceTrait, raceEntry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />}
             {raceDetail && raceBody && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(raceBody, raceEntry.fields) }} />}
             {!raceTrait && !raceBody && <pre className="feature-text">{stripWiki(raceEntry.sourceText)}</pre>}
           </div>
@@ -1335,12 +1587,12 @@ export default function CharacterSheet({
         {classEntry ? (
           <>
             {classEntry2 && <div className="class-entry-title">{cleanDisplayName(classEntry.name)}</div>}
-            <ClassFeatureBlock entry={classEntry} detail={classFeatDetail} />
+            <ClassFeatureBlock entry={classEntry} detail={classFeatDetail} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} />
             {classEntry2 && (
               <>
                 <hr className="class-entry-sep" />
                 <div className="class-entry-title">{cleanDisplayName(classEntry2.name)}</div>
-                <ClassFeatureBlock entry={classEntry2} detail={classFeatDetail} />
+                <ClassFeatureBlock entry={classEntry2} detail={classFeatDetail} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} />
               </>
             )}
           </>
@@ -1403,13 +1655,14 @@ export default function CharacterSheet({
     <>
 <section className="block">
         <div className="block-head">
-          <h3 className="block-title">技能（{char.trainedSkills.length}）</h3>
+          <h3 className="block-title">技能（{effectiveTrained.length}）</h3>
           <button type="button" className="mode-chip" onClick={() => setSkillDetail((p) => !p)}>
             <span className="material-symbols-outlined mode-chip-ic">{skillDetail ? "density_small" : "density_large"}</span>
             {skillDetail ? "简洁" : "详细"}
           </button>
         </div>
         {skillDetail ? (
+          <>
           <div className="skill-table">
             {SKILL_TABLE.map((s) => {
               const trained = trainedSet.has(s.name);
@@ -1435,6 +1688,29 @@ export default function CharacterSheet({
               );
             })}
           </div>
+          {classSkillPool.length > 0 && (
+            <div className="cls-skill-pick">
+              <div className="csp-title">
+                <span>职业技能受训（{char.classTrainedSkills.length}/{trainedCount}）</span>
+                <span className="csp-sub">点选受训 · 更换职业时清除</span>
+              </div>
+              <div className="csp-list">
+                {classSkillPool.map((s) => {
+                  const auto = classAutoTrained.includes(s.name);
+                  const sel = classTrainedSet.has(s.name);
+                  const cls = auto ? "csp-item auto" : sel ? "csp-item active" : "csp-item";
+                  return (
+                    <button key={s.name} type="button" className={cls} onClick={() => !auto && toggleClassTrained(s.name)}
+                      title={auto ? "职业自动受训" : sel ? "已受训（点击取消）" : "点击受训"}>
+                      <span className="csp-name">{s.name}</span>
+                      <span className="csp-ability">{ABILITY_LABELS[s.ability].zh}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          </>
         ) : (
           <div className="skill-compact">
             {SKILL_TABLE.map((s) => {
@@ -1827,7 +2103,7 @@ return (
           entries={classes}
           hybrid={!!char.hybrid}
           selectedIds={[char.classId, char.classId2].filter((x): x is string => !!x)}
-          onSelect={(ids, isHybrid) => setChar({ ...char, hybrid: isHybrid, classId: ids[0], classId2: ids[1] })}
+          onSelect={(ids, isHybrid) => setChar({ ...char, hybrid: isHybrid, classId: ids[0], classId2: ids[1], classTrainedSkills: [], powerPoints: psionicPowerPoints(ids[0], char.level) ?? char.powerPoints })}
           onClose={() => setPicker(null)}
         />
       )}
@@ -1893,7 +2169,7 @@ return (
           classEntry2={classEntry2}
           currentLevel={char.level}
           abilities={char.abilities}
-          trainedSkills={char.trainedSkills}
+          trainedSkills={effectiveTrained}
           weaponTokens={proficiencyTokens}
           armorTokens={armorTokens}
           shieldTokens={shieldTokens}
@@ -2048,6 +2324,9 @@ return (
           index={basePicker.index}
           baseId={char.baseItems[basePicker.index]}
           proficientInfos={proficientWeaponInfos}
+          proficientImplGroups={proficientImplGroups}
+          armorTokens={armorTokens}
+          shieldTokens={shieldTokens}
           onSelect={(id) => { setChar((p) => ({ ...p, baseItems: { ...p.baseItems, [basePicker.index]: id } })); setBasePicker(null); }}
           onClear={() => { setChar((p) => { const b = { ...p.baseItems }; delete b[basePicker.index]; return { ...p, baseItems: b }; }); setBasePicker(null); }}
           onClose={() => setBasePicker(null)}

@@ -78,6 +78,7 @@ export function migrateCharacter(c: Partial<Character>): Character {
     },
     featSlots: base.featSlots ?? [],
     featChoices: (base as { featChoices?: Record<number, string> }).featChoices ?? {},
+    classFeatureChoices: (base as { classFeatureChoices?: Record<string, string> }).classFeatureChoices ?? {},
     equipmentSlots: base.equipmentSlots ?? [],
     adventureItems: base.adventureItems && base.adventureItems.length ? base.adventureItems.map((x) => (typeof x === "string" ? { name: x, cost: 0 } : (x as { name: string; cost: number }))) : [{ name: "", cost: 0 }, { name: "", cost: 0 }],
     money: base.money ?? { earned: 0, spent: 0 },
@@ -85,8 +86,9 @@ export function migrateCharacter(c: Partial<Character>): Character {
     otherSlots: base.otherSlots ?? [],
     consumableSlots: base.consumableSlots ?? [],
     trainedSkills: base.trainedSkills ?? [],
+  classTrainedSkills: (base as { classTrainedSkills?: string[] }).classTrainedSkills ?? [],
     languages: base.languages && base.languages.length ? base.languages : [""],
-    actionPoints: base.actionPoints ?? 0,
+    actionPoints: base.actionPoints ?? 1,
     creation: base.creation ?? {
       personality: "",
       concept: "",
@@ -103,6 +105,7 @@ export function migrateCharacter(c: Partial<Character>): Character {
     powerUsed: base.powerUsed ?? {},
     equipmentUsed: base.equipmentUsed ?? {},
     milestones: base.milestones ?? 0,
+    powerPoints: base.powerPoints ?? 0,
   };
 }
 
@@ -137,6 +140,7 @@ export interface Character {
   featSlots: string[];
   featSlotOverride?: number;
   featChoices: Record<number, string>; // 选择型专长的具体选择（键 = 专长槽位下标，值 = 所选内容如「长剑 Longsword」或「法珠」）
+  classFeatureChoices: Record<string, string | string[]>; // 职业特性「选择一个」的选项（键 = "职业ID::特性标题"，值 = 所选选项名；多选型如戏法为字符串数组）
   equipmentSlots: (string | undefined)[];
   adventureItems: { name: string; cost: number }[];
   money: { earned: number; spent: number };
@@ -145,6 +149,7 @@ export interface Character {
   otherSlots: (string | undefined)[];
   consumableSlots: (string | undefined)[];
   trainedSkills: string[];
+  classTrainedSkills: string[]; // 职业选择型受训技能（用户从职业技能列表点选，更换职业时清除）
   languages: string[];
   actionPoints: number;
   creation: CharacterCreation;
@@ -161,6 +166,7 @@ export interface Character {
   powerUsed: Record<string, boolean>;
   equipmentUsed: Record<string, boolean>;
   milestones: number; // 里程碑记录
+  powerPoints: number; // 灵能点
 }
 
 // 人物创建：四个 Markdown 栏位
@@ -203,6 +209,7 @@ export function defaultCharacter(): Character {
     combatMods: emptyCombatMods(highestAbilityKey(abilities)),
     featSlots: [],
     featChoices: {},
+    classFeatureChoices: {},
     equipmentSlots: [],
     adventureItems: [{ name: "", cost: 0 }, { name: "", cost: 0 }],
     money: { earned: 0, spent: 0 },
@@ -211,6 +218,7 @@ export function defaultCharacter(): Character {
     otherSlots: [],
     consumableSlots: [],
     trainedSkills: [],
+    classTrainedSkills: [],
     languages: [""],
     actionPoints: 1,
     creation: { personality: "", concept: "", background: "", notes: "" },
@@ -224,6 +232,7 @@ export function defaultCharacter(): Character {
     powerUsed: {},
     equipmentUsed: {},
     milestones: 0,
+    powerPoints: 0,
   };
 }
 
@@ -362,6 +371,17 @@ export function parseClassSkills(text: string): ClassSkill[] {
 export function parseTrainedSkillCount(text: string): number {
   const m = text.match(/选择(\d+)个(?:额外的)?受训技能/);
   return m ? parseInt(m[1], 10) : 0;
+}
+
+// 解析「受训技能：隐秘。1级时…」开头的内置自动受训技能（如刺客的隐秘）
+export function parseBuiltinTrainedSkills(text: string): string[] {
+  const m = text.match(/受训技能：([^。\n]*)/);
+  if (!m) return [];
+  return m[1]
+    .replace(/''/g, "") // 原文为「''受训技能：''隐秘。」，去除引号标记
+    .split(/[、，，,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function abilityModifier(score: number): number {

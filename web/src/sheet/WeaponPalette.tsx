@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BASE_SHIELDS, BASE_IMPLEMENTS, baseItemId, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
+import { armorProficient } from "./proficiency";
 
 // 已擅长武器条目（供「已擅长武器」按钮展示）
 export interface WeapInfo { id: string; name: string; main: string; sub: string; }
@@ -24,6 +25,9 @@ export interface WeaponPaletteProps {
   proficientImplGroups?: string[];
   // 法器档位：all=基础+优异；basic=仅基础（奥术法器擅长）；superior=仅优异（优异法器训练）
   implTier?: "all" | "basic" | "superior";
+  // 护甲/盾牌擅长 token 集（护盾面板「擅长」角标用；缺省视为全未擅长）
+  armorTokens?: Set<string>;
+  shieldTokens?: Set<string>;
   // 当前已选武器名（高亮）
   currentName?: string;
   // 选择回调：传入 (baseItemId, 武器名)
@@ -31,7 +35,7 @@ export interface WeaponPaletteProps {
 }
 
 // 基础武器/擅长武器/法器专长共用选择面板：左侧类别导航 + 持握过滤 + 分格卡片 + 左下角「已擅长/未擅长武器」
-export default function WeaponPalette({ weapons: pool, allowImplShield, categories, proficientInfos, implements: implPool, proficientImplGroups, implTier, currentName, onSelect }: WeaponPaletteProps) {
+export default function WeaponPalette({ weapons: pool, allowImplShield, categories, proficientInfos, implements: implPool, proficientImplGroups, implTier, armorTokens, shieldTokens, currentName, onSelect }: WeaponPaletteProps) {
   const implMode = !!implPool && implPool.length > 0;
   const implList = implMode ? implPool! : BASE_IMPLEMENTS;
   const tier = implMode ? (implTier ?? "all") : "all";
@@ -52,15 +56,35 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
   const unprofImpls = implMode ? tierImps.filter((im) => !implProGroup.has(implGroup(im.name))).map(toImplCard) : [];
 
   const catBtns = categories ?? ["全部", "简易", "军用", "优异", "双头"];
-  const card = (id: string, name: string, main: string, sub: string) => (
+  const card = (id: string, name: string, main: string, sub: string, proficient = false) => (
     <button key={id} type="button" className={name === currentName ? "picker-card base-picker-card selected" : "picker-card base-picker-card"} onClick={() => onSelect(id, name)}>
       <span className="bi-name">{name}</span>
       <span className="bi-dice">{main}</span>
       <span className="bi-traits">{sub}</span>
+      {proficient && <span className="prof-badge">擅长</span>}
     </button>
   );
 
-  const toCard = (w: BaseWeapon) => ({ id: baseItemId("weapon", w.name), name: w.name, main: w.dice, sub: w.traits && w.traits !== "—" ? w.traits : w.group });
+  // 武器卡片：第1行 中文名(左)+武器组(右)；第2行 英文名(左，小号)；第3行 伤害骰(左)+擅长加值(中)+射程(右)；第4行 特性(左)+右下角擅长角标
+  const weaponCard = (w: BaseWeapon, proficient: boolean) => (
+    <button key={baseItemId("weapon", w.name)} type="button" className={w.name === currentName ? "picker-card base-picker-card selected" : "picker-card base-picker-card"} onClick={() => onSelect(baseItemId("weapon", w.name), w.name)}>
+      <span className="wk-row1">
+        <span className="bi-name">{w.name.split(/\s/)[0]}</span>
+        <span className="wk-range">{w.range && w.range !== "—" ? "射程 " + w.range : ""}</span>
+      </span>
+      <span className="wk-en">{w.name.split(/\s/).slice(1).join(" ")}</span>
+      <span className="wk-row2">
+        <span className="bi-dice">{w.dice}</span>
+        <span className="wk-prof">{w.prof ? "+" + w.prof : "—"}</span>
+        {proficient && <span className="prof-badge">擅长</span>}
+      </span>
+      <span className="wk-row3">
+        <span className="bi-traits">{w.traits && w.traits !== "—" ? w.traits : ""}</span>
+        <span className="wk-group">{w.group}</span>
+      </span>
+    </button>
+  );
+
   const filterWeapon = (w: BaseWeapon) => {
     if (wcat === "双头") { if (!w.category.includes("双头")) return false; }
     else if (wcat) { if (!w.category.startsWith(wcat)) return false; }
@@ -73,8 +97,8 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
   const visibleWeapons = pool.filter(filterWeapon);
 
   const proficientNames = new Set(proficientInfos.map((p) => p.name));
-  const unprofWeapons = pool.filter((w) => filterWeapon(w) && !proficientNames.has(w.name)).map(toCard);
-  const profWeapons = pool.filter((w) => filterWeapon(w) && proficientNames.has(w.name)).map(toCard);
+  const unprofWeapons = pool.filter((w) => filterWeapon(w) && !proficientNames.has(w.name));
+  const profWeapons = pool.filter((w) => filterWeapon(w) && proficientNames.has(w.name));
 
   return (
     <div className="class-layout base-class-layout">
@@ -115,13 +139,13 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
         )}
         {view === "prof" ? (
           <div className="class-grid pp-prof-grid">
-            {implMode ? (profImpls.length === 0 ? <p className="hint">暂无可展示的已擅长法器。</p> : profImpls.map((it) => card(it.id, it.name, it.main, it.sub)))
-              : (profWeapons.length === 0 ? <p className="hint">暂无可展示的已擅长武器。</p> : profWeapons.map((it) => card(it.id, it.name, it.main, it.sub)))}
+            {implMode ? (profImpls.length === 0 ? <p className="hint">暂无可展示的已擅长法器。</p> : profImpls.map((it) => card(it.id, it.name, it.main, it.sub, implProGroup.has(implGroup(it.name)))))
+              : (profWeapons.length === 0 ? <p className="hint">暂无可展示的已擅长武器。</p> : profWeapons.map((w) => weaponCard(w, true)))}
           </div>
         ) : view === "unprof" ? (
           <div className="class-grid pp-prof-grid">
-            {implMode ? (unprofImpls.length === 0 ? <p className="hint">暂无可展示的未擅长法器。</p> : unprofImpls.map((it) => card(it.id, it.name, it.main, it.sub)))
-              : (unprofWeapons.length === 0 ? <p className="hint">暂无可展示的未擅长武器。</p> : unprofWeapons.map((it) => card(it.id, it.name, it.main, it.sub)))}
+            {implMode ? (unprofImpls.length === 0 ? <p className="hint">暂无可展示的未擅长法器。</p> : unprofImpls.map((it) => card(it.id, it.name, it.main, it.sub, implProGroup.has(implGroup(it.name)))))
+              : (unprofWeapons.length === 0 ? <p className="hint">暂无可展示的未擅长武器。</p> : unprofWeapons.map((w) => weaponCard(w, false)))}
           </div>
         ) : wcat === "法器" ? (
           <div className="impl-groups">
@@ -137,7 +161,7 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
                     <div className="impl-subgroup">
                       <div className="impl-sub-label">简易</div>
                       <div className="picker-cards">
-                        {base.map((im) => card(baseItemId("implement", im.name), im.name, String(im.price) + "gp", im.category + "法器"))}
+                        {base.map((im) => card(baseItemId("implement", im.name), im.name, String(im.price) + "gp", im.category + "法器", implProGroup.has(implGroup(im.name))))}
                       </div>
                     </div>
                   )}
@@ -145,7 +169,7 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
                     <div className="impl-subgroup">
                       <div className="impl-sub-label">优异</div>
                       <div className="picker-cards">
-                        {sup.map((im) => card(baseItemId("implement", im.name), im.name, String(im.price) + "gp", (im.properties || "") + " · " + im.category + "法器"))}
+                        {sup.map((im) => card(baseItemId("implement", im.name), im.name, String(im.price) + "gp", (im.properties || "") + " · " + im.category + "法器", implProGroup.has(implGroup(im.name))))}
                       </div>
                     </div>
                   )}
@@ -155,11 +179,11 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
           </div>
         ) : wcat === "护盾" ? (
           <div className="class-grid">
-            {BASE_SHIELDS.map((s) => card(baseItemId("shield", s.name), s.name, "+" + s.ac + " AC", s.traits))}
+            {BASE_SHIELDS.map((s) => card(baseItemId("shield", s.name), s.name, "+" + s.ac + " AC", s.traits, armorProficient(armorTokens ?? new Set(), shieldTokens ?? new Set(), s.name)))}
           </div>
         ) : (
           <div className="class-grid">
-            {visibleWeapons.map((w) => card(baseItemId("weapon", w.name), w.name, w.dice, w.traits && w.traits !== "—" ? w.traits : w.group))}
+            {visibleWeapons.map((w) => weaponCard(w, proficientNames.has(w.name)))}
             {visibleWeapons.length === 0 && <p className="hint">无匹配武器。</p>}
           </div>
         )}

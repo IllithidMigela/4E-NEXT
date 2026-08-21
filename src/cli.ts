@@ -1,6 +1,7 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, RAW_FILE } from "./lib/paths.js";
+import { execSync } from "node:child_process";
+import { DATA_DIR, RAW_FILE, CANONICAL_DIR } from "./lib/paths.js";
 import { runExtract } from "./etl/extract.js";
 import { runClassify } from "./etl/classify.js";
 import { runNormalize } from "./etl/normalize.js";
@@ -42,6 +43,54 @@ async function cmdNormalize(): Promise<void> {
   for (const [k, v] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
     console.log("  " + v + "  " + k + ".json");
   }
+  const meta = JSON.parse(readFileSync(join(CANONICAL_DIR, "_meta.json"), "utf8")) as {
+    schemaVersion: number;
+    generatedAt: string;
+    initial: boolean;
+    changes: { added: number; changed: number; removed: number };
+    totals: { count: number; valid: number; invalid: number };
+  };
+  const c = meta.changes;
+  console.log("[canonical] schemaVersion=" + meta.schemaVersion + " 生成于 " + meta.generatedAt);
+  console.log("[canonical] " + (meta.initial ? "首次同步" : "增量同步")
+    + " 新增 " + c.added + " / 更新 " + c.changed + " / 移除 " + c.removed);
+  console.log("[canonical] 校验通过 " + meta.totals.valid + " 条 / 失败 " + meta.totals.invalid + " 条（全量 " + meta.totals.count + "）");
+  console.log("[canonical] 已写出 out/canonical/*.jsonl + _meta.json + _changes.json");
+}
+
+async function cmdCommit(): Promise<void> {
+  if (!existsSync(join(CANONICAL_DIR, "_meta.json"))) {
+    console.error("[commit] 缺少 canonical 状态，请先运行 normalize");
+    process.exitCode = 1;
+    return;
+  }
+  const meta = JSON.parse(readFileSync(join(CANONICAL_DIR, "_meta.json"), "utf8")) as {
+    initial: boolean;
+    changes: { added: number; changed: number; removed: number };
+  };
+  const c = meta.changes;
+  // 以「out/ 是否已被 git 跟踪」判定是否需要初始入库（Phase A 产物可能尚未入库）
+  let untracked = false;
+  try {
+    untracked = execSync("git ls-files out/", { encoding: "utf8" }).trim().length === 0;
+  } catch {
+    untracked = true;
+  }
+  if (!untracked && c.added === 0 && c.changed === 0 && c.removed === 0) {
+    console.log("[commit] 无内容变更，跳过提交");
+    return;
+  }
+  execSync("git add out/", { stdio: "inherit" });
+  const label = untracked || meta.initial
+    ? "初始导入全部条目"
+    : "+" + c.added + " ~" + c.changed + " -" + c.removed;
+  execSync('git commit -m "sync: 4e wiki 数据快照 ' + label + '"', { stdio: "inherit" });
+  console.log("[commit] 已提交: " + label);
+}
+
+async function cmdSync(): Promise<void> {
+  await cmdNormalize();
+  await cmdCommit();
 }
 
 async function cmdProfile(): Promise<void> {
@@ -79,11 +128,13 @@ async function main(): Promise<void> {
     classify: cmdClassify,
     normalize: cmdNormalize,
     index: cmdIndex,
+    sync: cmdSync,
+    commit: cmdCommit,
     all: cmdAll,
   };
   const h = handlers[cmd];
   if (!h) {
-    console.error("未知命令: " + cmd + "。用法: pnpm <extract|profile|classify|normalize|index|all>");
+    console.error("未知命令: " + cmd + "。用法: pnpm <extract|profile|classify|normalize|index|sync|commit|all>");
     process.exitCode = 1;
     return;
   }

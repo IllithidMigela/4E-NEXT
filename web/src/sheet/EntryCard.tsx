@@ -27,6 +27,7 @@ function PowerCard({ entry }: { entry: Entry }) {
     <div className="power-card" style={{ "--pc": color } as CSSProperties}>
       <div className="pc-head">
         <span className="pc-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
+        {entry.origin === "user" && <span className="origin-badge">自制</span>}
         <span className="pc-meta">{entry.powerType}{entry.level ? " " + entry.level : ""}</span>
       </div>
       {entry.flavorText && <div className="pc-flavor">{entry.flavorText}</div>}
@@ -44,6 +45,7 @@ function ItemCard({ entry }: { entry: Entry }) {
     <div className="item-card" style={{ "--ic": ITEM_COLOR } as CSSProperties}>
       <div className="ic-head">
         <span className="ic-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
+        {entry.origin === "user" && <span className="origin-badge">自制</span>}
         <span className="ic-meta">{[entry.itemCategory, entry.rarity, entry.itemLevel ? "L" + entry.itemLevel : ""].filter(Boolean).join(" · ")}</span>
       </div>
       {entry.flavorText && <div className="ic-flavor">{entry.flavorText}</div>}
@@ -58,6 +60,7 @@ function FeatCard({ entry }: { entry: Entry }) {
     <div className="feat-card" style={{ "--fc": FEAT_COLOR } as CSSProperties}>
       <div className="fc-head">
         <span className="fc-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
+        {entry.origin === "user" && <span className="origin-badge">自制</span>}
         <span className="fc-meta">{entry.tierZh}{entry.source ? " · " + entry.source : ""}</span>
       </div>
       {entry.prerequisite && (
@@ -104,6 +107,7 @@ function GenericCard({ entry }: { entry: Entry }) {
     <div className="generic-card" style={{ "--gc": "var(--md-sys-color-primary)" } as CSSProperties}>
       <div className="gc-head">
         <span className="gc-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
+        {entry.origin === "user" && <span className="origin-badge">自制</span>}
         <span className="gc-meta">{CATEGORY_LABELS[entry.category] ?? entry.category}{entry.source ? " · " + entry.source : ""}</span>
       </div>
       {rows.length > 0 && (

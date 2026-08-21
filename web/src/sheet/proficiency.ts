@@ -156,8 +156,8 @@ function matchesToken(weapon: BaseWeapon, token: string): boolean {
     if (group && !weapon.group.split(/[，,]/).includes(group)) return false;
     return true;
   }
-  // 具体武器名
-  return cn.includes(token);
+  // 具体武器名：精确匹配中文名（如 token「匕首」仅匹配「匕首」，不含「格挡匕首」）
+  return cn === token;
 }
 
 // 角色是否擅长某武器

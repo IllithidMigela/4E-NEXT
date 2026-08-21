@@ -12,6 +12,8 @@
     "classify": "tsc && node dist/cli.js classify",
     "normalize": "tsc && node dist/cli.js normalize",
     "index": "tsc && node dist/cli.js index",
+    "sync": "tsc && node dist/cli.js sync",
+    "commit": "tsc && node dist/cli.js commit",
     "pipeline": "tsc && node dist/cli.js all"
   },
   "dependencies": {

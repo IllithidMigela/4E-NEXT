@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-21T02:32:33.790Z",
+  "initial": false,
+  "changes": {
+    "added": 0,
+    "changed": 0,
+    "removed": 0
+  },
+  "categories": {
+    "power": {
+      "count": 8903,
+      "valid": 8903,
+      "invalid": 0
+    },
+    "equipment": {
+      "count": 2603,
+      "valid": 2603,
+      "invalid": 0
+    },
+    "paragon-path": {
+      "count": 577,
+      "valid": 577,
+      "invalid": 0
+    },
+    "item-set": {
+      "count": 38,
+      "valid": 38,
+      "invalid": 0
+    },
+    "feat": {
+      "count": 3202,
+      "valid": 3202,
+      "invalid": 0
+    },
+    "epic-destiny": {
+      "count": 115,
+      "valid": 115,
+      "invalid": 0
+    },
+    "creature": {
+      "count": 205,
+      "valid": 205,
+      "invalid": 0
+    },
+    "race": {
+      "count": 54,
+      "valid": 54,
+      "invalid": 0
+    },
+    "ritual": {
+      "count": 162,
+      "valid": 162,
+      "invalid": 0
+    },
+    "reference": {
+      "count": 38,
+      "valid": 38,
+      "invalid": 0
+    },
+    "theme": {
+      "count": 27,
+      "valid": 27,
+      "invalid": 0
+    },
+    "vice": {
+      "count": 2,
+      "valid": 2,
+      "invalid": 0
+    },
+    "class": {
+      "count": 77,
+      "valid": 77,
+      "invalid": 0
+    },
+    "domain": {
+      "count": 9,
+      "valid": 9,
+      "invalid": 0
+    },
+    "nav": {
+      "count": 38,
+      "valid": 38,
+      "invalid": 0
+    },
+    "magic-school": {
+      "count": 6,
+      "valid": 6,
+      "invalid": 0
+    },
+    "pact": {
+      "count": 8,
+      "valid": 8,
+      "invalid": 0
+    },
+    "bloodline": {
+      "count": 2,
+      "valid": 2,
+      "invalid": 0
+    },
+    "virtue": {
+      "count": 2,
+      "valid": 2,
+      "invalid": 0
+    },
+    "dictionary": {
+      "count": 1,
+      "valid": 1,
+      "invalid": 0
+    }
+  },
+  "totals": {
+    "count": 16069,
+    "valid": 16069,
+    "invalid": 0
+  }
+}

@@ -8,12 +8,13 @@ import ReserveView from "./ReserveView";
 import OverviewView from "./OverviewView";
 import BackgroundView from "./BackgroundView";
 import DrawView from "./DrawView";
+import HomebrewView from "./HomebrewView";
 import { loadCards, saveCards, loadActiveId, saveActiveId, uid, type SavedCard } from "./lib/storage";
 import { defaultCharacter, migrateCharacter, type Character } from "./sheet/character";
 import { TextButton } from "./components/md";
 import SheetDialog from "./components/SheetDialog";
 
-type View = "sheet" | "background" | "reserve" | "overview" | "draw" | "search" | "learn" | "settings";
+type View = "sheet" | "background" | "reserve" | "overview" | "draw" | "search" | "learn" | "homebrew" | "settings";
 type Layout = "single" | "double";
 
 // S 曲线羽化：多段渐停近似缓动，底部渐隐更自然
@@ -208,6 +209,7 @@ function Shell() {
         <button type="button" className={view === "overview" ? "side-btn active" : "side-btn"} title="速览" onClick={() => setView("overview")}><span className="material-symbols-outlined">overview</span><span className="sb-label">速览</span></button>
         <div className="side-sep" />
         <button type="button" className="side-btn" title="存档" onClick={() => setCardOpen(true)}><span className="material-symbols-outlined">folder</span><span className="sb-label">存档</span></button>
+        <button type="button" className={view === "homebrew" ? "side-btn active" : "side-btn"} title="私设" onClick={() => setView("homebrew")}><span className="material-symbols-outlined">extension</span><span className="sb-label">私设</span></button>
         <button type="button" className={"side-btn" + (view === "draw" ? " active" : "")} title="抽卡" onClick={() => setDrawOpen(true)}><span className="material-symbols-outlined">casino</span><span className="sb-label">抽卡</span></button>
         <button type="button" className={view === "search" ? "side-btn active" : "side-btn"} title="词条" onClick={() => setView("search")}><span className="material-symbols-outlined">search</span><span className="sb-label">词条</span></button>
         <button type="button" className={view === "learn" ? "side-btn active" : "side-btn"} title="规则" onClick={() => setView("learn")}><span className="material-symbols-outlined">school</span><span className="sb-label">规则</span></button>
@@ -227,6 +229,7 @@ function Shell() {
           {view === "overview" && <OverviewView />}
           {view === "search" && <SearchView />}
           {view === "learn" && <LearnView />}
+          {view === "homebrew" && <HomebrewView />}
           {view === "settings" && <SettingsView />}
         </div>
       </main>

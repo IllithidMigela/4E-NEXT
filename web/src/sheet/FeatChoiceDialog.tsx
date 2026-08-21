@@ -88,6 +88,7 @@ export default function FeatChoiceDialog({ featName, label, options, weaponPool,
             <span className="bi-name">{o.name}</span>
             <span className="bi-dice">{o.main}</span>
             <span className="bi-traits">{o.sub}</span>
+            {proficientImplGroups?.includes(o.name) && <span className="prof-badge">擅长</span>}
           </button>
         ))}
         {filtered.length === 0 && <p className="hint">无匹配项。</p>}
