@@ -482,8 +482,8 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .combat-head .mode-chip { margin-left: auto; }
 .combat-table { display: flex; flex-direction: column; gap: 6px; }
 .ct-head, .ct-row { display: grid; gap: 6px; align-items: stretch; }
-.combat-table.attack .ct-head, .combat-table.attack .ct-row { grid-template-columns: 1.3fr 0.8fr 2fr repeat(3, 1fr) 1.6fr 1fr; }
-.combat-table.damage .ct-head, .combat-table.damage .ct-row { grid-template-columns: 1.3fr 1.5fr 2fr 1fr 1.6fr 1fr 1fr; }
+.combat-table.attack .ct-head, .combat-table.attack .ct-row { grid-template-columns: 1.6fr repeat(5, 1fr) 1.6fr 1fr; }
+.combat-table.damage .ct-head, .combat-table.damage .ct-row { grid-template-columns: 1.6fr 1fr 1fr 1fr 1.6fr 1fr 1fr; }
 .ct-head span { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); text-align: center; padding: 2px 0; }
 /* 骰子指令行（显示在对应栏位下方）：.r d20+总加值 / .r 伤害骰+总加值；点击复制 */
 .ct-dice-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border: 1px dashed var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container-low); font-size: 12px; color: var(--md-sys-color-on-surface-variant); cursor: pointer; }
@@ -500,6 +500,8 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .ct-pick md-menu { position: absolute; display: none; }
 .ct-pick md-menu[open] { display: block; }
 .ct-total { font-size: 18px; font-weight: 700; color: var(--md-sys-color-primary); }
+.ct-total-cell { white-space: nowrap; overflow: visible; }
+.ct-total-cell .ct-total { white-space: nowrap; }
 .ct-auto { font-size: 14px; font-weight: 600; }
 .ct-ability-name { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
 .ct-cell input { width: 100%; max-width: 46px; padding: 2px 0; border: none; background: transparent; color: var(--md-sys-color-on-surface); font-size: 12.5px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
@@ -752,6 +754,14 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .align-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .align-item { justify-content: center; padding: 8px 12px; font-size: 13px; }
 .preset-item.active { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; }
+
+/* 装备面板「擅长」弹窗 */
+.prof-sources { display: flex; flex-direction: column; gap: 12px; }
+.prof-source { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); }
+.prof-source-name { font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); }
+.prof-group { display: flex; align-items: baseline; gap: 10px; }
+.prof-cat { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); flex-shrink: 0; width: 32px; }
+.prof-items { font-size: 13px; color: var(--md-sys-color-on-surface); }
 
 /* ---- 教学页 ---- */
 .learn-view { display: flex; flex-direction: column; gap: 16px; }
@@ -1060,6 +1070,11 @@ md-dialog.sheet-dialog-xw .picker-cards {
 .base-dialog .picker-card { min-height: 64px; }
 .base-dialog .equip-layout { flex: 1; min-height: 0; }
 .base-dialog .equip-groups { overflow-y: auto; }
+/* 基础武器/擅长武器面板：左下角「已擅长武器」提示条 */
+.pick-palette-footer { display: flex; align-items: center; gap: 10px; padding: 8px 2px 2px; border-top: 1px solid rgba(128,128,128,.25); margin-top: 6px; }
+.ppf-btn { border: 1px solid rgba(128,128,128,.4); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; background: transparent; color: inherit; }
+.ppf-btn:hover { background: rgba(128,128,128,.12); }
+.ppf-label { font-size: 12px; opacity: .8; }
 /* 移动力：盔甲减值负号固定在输入框外左侧（与技能盔甲一致） */
 .def-bonus-neg { display: inline-flex; align-items: center; gap: 2px; }
 .def-bonus-neg .def-bonus-minus { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }

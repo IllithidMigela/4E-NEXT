@@ -3,17 +3,21 @@ import { createPortal } from "react-dom";
 import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, Switch } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import PowerSlotPicker from "./PowerSlotPicker";
 import FeatSlotPicker from "./FeatSlotPicker";
+import FeatChoiceDialog from "./FeatChoiceDialog";
+import WeaponPalette, { type WeapInfo, implGroup } from "./WeaponPalette";
 import ItemSlotPicker from "./ItemSlotPicker";
 import EntryCard from "./EntryCard";
 import PortraitFrame from "./PortraitFrame";
 import CombatPanels from "./CombatPanel";
+import { collectProficiencyTokens, collectProficiencySources, isProficient, featChoiceInfo, collectArmorTokens, collectShieldTokens, collectImplementGroups, type FeatOption } from "./proficiency";
+import { collectClassSources, collectFeatSources } from "./combat-source";
 import { stripWiki } from "../lib/text";
 import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, parseFeatureSections, type FeatureSection } from "../lib/wikirender";
-import { BASE_WEAPONS, BASE_ARMORS, BASE_SHIELDS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText } from "../lib/baseitems";
+import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
 import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import PickerModal from "./PickerModal";
@@ -62,7 +66,7 @@ const EQUIP_GROUPS: { label: string; kind?: "weapon" | "armor"; slots: { index: 
 ];
 
 // 基础物品块：名称 + 大字伤害骰/AC + 简名特性；特性完整定义悬浮显示（同威能简洁模式）
-function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor"; onClick: () => void }) {
+function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor"; label?: string; onClick: () => void }) {
   const item = props.id ? findBaseItem(props.id) : undefined;
   const weapon = item?.kind === "weapon" ? item.weapon : undefined;
   const armor = item?.kind === "armor" ? item.armor : undefined;
@@ -86,7 +90,7 @@ function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor"; onClick: 
         </>
       ) : props.kind === "weapon" ? (
         <>
-          <span className="bi-name">{weapon ? weapon.name : "基础武器"}</span>
+          <span className="bi-name">{weapon ? weapon.name : (props.label ?? "基础武器")}</span>
           <span className="bi-dice">{weapon ? weapon.dice : "—"}</span>
           <span className="bi-traits">{traitNames || "点击选择"}</span>
           {traitFull && (
@@ -105,12 +109,6 @@ function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor"; onClick: 
     </button>
   );
 }
-// 法器组（优异法器二级分类）——按名称组名归类
-const IMPL_GROUPS = ["圣徽", "法珠", "权杖", "法杖", "魔典", "图腾", "魔杖", "匕首", "气印"];
-function implGroup(name: string): string {
-  return IMPL_GROUPS.find((g) => name.includes(g)) ?? "";
-}
-
 // 基础物品选择弹窗：左侧导航 + 分组卡片
 const ARMOR_BASES: { name: string; cat: string }[] = [
   { name: "布甲", cat: "轻甲" },
@@ -127,7 +125,7 @@ const ARMOR_BASES: { name: string; cat: string }[] = [
   { name: "全身板甲", cat: "重甲" },
 ];
 
-function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; baseId?: string; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
+function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; baseId?: string; proficientInfos?: WeapInfo[]; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
   const [masterwork, setMasterwork] = useState(false);
   const active = (id: string) => props.baseId === id;
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -144,19 +142,6 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
     </button>
   );
 
-  // 武器：二分法过滤（左：简易-优异/双头/法器/护盾；上：单手/双手/远程/弹药）
-  const [wcat, setWcat] = useState("");
-  const [whand, setWhand] = useState("");
-  const [implG, setImplG] = useState("");
-  const visibleWeapons = BASE_WEAPONS.filter((w) => {
-    if (wcat === "双头") { if (!w.category.includes("双头")) return false; }
-    else if (wcat) { if (!w.category.startsWith(wcat)) return false; }
-    if (whand === "单手") { if (!w.category.includes("·单手")) return false; }
-    else if (whand === "双手") { if (!w.category.includes("·双手") && !w.category.includes("双头")) return false; }
-    else if (whand === "远程") { if (!w.category.includes("远程")) return false; }
-    else if (whand === "弹药") { if (!w.category.includes("·弹药")) return false; }
-    return true;
-  });
   const armorGroups = masterwork
     ? ARMOR_BASES.map((b) => ({ label: b.cat + "-" + b.name, items: BASE_ARMORS.filter((a) => a.name.includes(b.name)) }))
     : [{ label: "轻甲", items: BASE_ARMORS.filter((a) => a.category === "轻甲" && !a.masterwork) }, { label: "重甲", items: BASE_ARMORS.filter((a) => a.category === "重甲" && !a.masterwork) }];
@@ -185,79 +170,13 @@ function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; base
           </label>
         )}
       {props.kind === "weapon" ? (
-        <div className="class-layout base-class-layout">
-          <div className="class-sources">
-            {wcat === "法器" ? (
-              <>
-                <button type="button" className="cl-item cl-back" title="返回武器分类" onClick={() => { setWcat(""); setImplG(""); }}><span className="cl-back-ic">←</span>返回</button>
-                <button type="button" className={implG === "" ? "cl-item active" : "cl-item"} onClick={() => setImplG("")}>全部法器</button>
-                {IMPL_GROUPS.map((g) => (
-                  <button key={g} type="button" className={implG === g ? "cl-item active" : "cl-item"} onClick={() => setImplG(g)}>{g}法器</button>
-                ))}
-              </>
-            ) : (
-              <>
-                <button type="button" className={wcat === "" ? "cl-item active" : "cl-item"} onClick={() => setWcat("")}>全部</button>
-                {["简易", "军用", "优异", "双头"].map((c) => (
-                  <button key={c} type="button" className={wcat === c ? "cl-item active" : "cl-item"} onClick={() => setWcat(c)}>{c}</button>
-                ))}
-                <button type="button" className={"cl-item" + (wcat === "法器" ? " active" : "")} onClick={() => setWcat("法器")}>法器</button>
-                <button type="button" className={"cl-item" + (wcat === "护盾" ? " active" : "")} onClick={() => setWcat("护盾")}>护盾</button>
-              </>
-            )}
-          </div>
-          <div className="class-main">
-            {wcat !== "法器" && (
-            <div className="class-roles">
-              <button type="button" className={whand === "" ? "cr-item active" : "cr-item"} onClick={() => setWhand("")}>全部持握</button>
-              {["单手", "双手", "远程", "弹药"].map((h) => (
-                <button key={h} type="button" className={whand === h ? "cr-item active" : "cr-item"} onClick={() => setWhand(h)}>{h}</button>
-              ))}
-            </div>
-            )}
-            {wcat === "法器" ? (
-              <div className="impl-groups">
-                {IMPL_GROUPS.filter((g) => !implG || implG === g).map((g) => {
-                  const groupImps = BASE_IMPLEMENTS.filter((im) => implGroup(im.name) === g);
-                  if (groupImps.length === 0) return null;
-                  const base = groupImps.filter((im) => !im.superior);
-                  const sup = groupImps.filter((im) => im.superior);
-                  return (
-                    <div key={g} className="impl-group">
-                      <div className="impl-group-title">{g}法器</div>
-                      {base.length > 0 && (
-                        <div className="impl-subgroup">
-                          <div className="impl-sub-label">简易</div>
-                          <div className="picker-cards">
-                            {base.map((im) => card(im.name, baseItemId("implement", im.name), String(im.price) + "gp", im.category + "法器"))}
-                          </div>
-                        </div>
-                      )}
-                      {sup.length > 0 && (
-                        <div className="impl-subgroup">
-                          <div className="impl-sub-label">优异</div>
-                          <div className="picker-cards">
-                            {sup.map((im) => card(im.name, baseItemId("implement", im.name), String(im.price) + "gp", (im.properties || "") + " · " + im.category + "法器", true))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="class-grid">
-                {wcat === "护盾" ? (
-                  BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits))
-                ) : (
-                  <>
-                    {visibleWeapons.map((w) => card(w.name, baseItemId("weapon", w.name), w.dice, w.traits && w.traits !== "—" ? w.traits : w.group))}
-                    {visibleWeapons.length === 0 && <p className="hint">无匹配武器。</p>}
-                  </>
-                )}
-              </div>
-            )}            </div>
-          </div>
+        <WeaponPalette
+          weapons={BASE_WEAPONS}
+          allowImplShield
+          proficientInfos={props.proficientInfos ?? []}
+          currentName={currentBaseName}
+          onSelect={(id) => props.onSelect(id)}
+        />
       ) : (
         <div className="equip-layout base-dialog-layout">
           <nav className="equip-nav">
@@ -333,7 +252,7 @@ function EquipGroupSlots(props: {
       {props.slots.map((_, i) => {
         const item = props.items(i);
         const base = props.baseKind && props.baseOf ? (
-          <BaseItemBlock id={props.baseOf(i)} kind={props.baseKind} onClick={() => props.onBaseClick?.(i)} />
+          <BaseItemBlock id={props.baseOf(i)} kind={props.baseKind} label={props.baseKind === "weapon" ? props.names(i) : undefined} onClick={() => props.onBaseClick?.(i)} />
         ) : null;
         if (item) {
           return (
@@ -609,6 +528,7 @@ export default function CharacterSheet({
   const [relations, setRelations] = useState<{ powerByGrantedBy: Record<string, string[]> }>({ powerByGrantedBy: {} });
   const [picker, setPicker] = useState<null | "class" | "race" | "paragon" | "epic">(null);
   const [slotPicker, setSlotPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "feat"; index: number }>(null);
+  const [featChoicePicker, setFeatChoicePicker] = useState<null | { index: number; featName: string; label: string; options: FeatOption[]; weaponPool?: BaseWeapon[]; categories?: string[]; implementPool?: BaseImplement[]; implTier?: "basic" | "superior" }>(null);
   const [equipPicker, setEquipPicker] = useState<null | { kind: "fixed" | "other" | "consumable"; index: number }>(null);
   const [blockDetail, setBlockDetail] = useState<{ powers: boolean; feats: boolean; equipment: boolean }>({ powers: true, feats: true, equipment: true });
 
@@ -617,6 +537,7 @@ export default function CharacterSheet({
   const [buyPresetOpen, setBuyPresetOpen] = useState(false);
   const [classFeatDetail, setClassFeatDetail] = useState(true);
   const [alignmentOpen, setAlignmentOpen] = useState(false);
+  const [profOpen, setProfOpen] = useState(false);
   const [earnInput, setEarnInput] = useState("");
   const [spendInput, setSpendInput] = useState("");
   const [autoCostOpen, setAutoCostOpen] = useState(false);
@@ -768,24 +689,23 @@ export default function CharacterSheet({
     return undefined;
   }, [char.hybrid, char.classId2, classEntry, classes]);
   const classEntry2 = useMemo(() => (char.hybrid ? classes.find((c) => c.id === char.classId2) : undefined), [classes, char.hybrid, char.classId2]);
-  // 典范/天命选择限制：当前角色种族/职业名集合 + 全量名称
+  // 典范/天命选择限制：当前角色种族/职业名集合 + 全量名称（含纯中文名，匹配前置里的中文名）
   const restrictNames = useMemo(() => {
+    const addName = (s: Set<string>, n: string) => {
+      if (!n) return;
+      s.add(n);
+      s.add(cleanDisplayName(n));
+      s.add(zhName(n));
+      s.add(baseClassName(n));
+    };
     const my = new Set<string>();
-    if (raceEntry) my.add(raceEntry.name);
-    if (classEntry) {
-      my.add(classEntry.name);
-      my.add(cleanDisplayName(classEntry.name));
-      my.add(baseClassName(classEntry.name));
-    }
-    if (classEntry2) {
-      my.add(classEntry2.name);
-      my.add(cleanDisplayName(classEntry2.name));
-      my.add(baseClassName(classEntry2.name));
-    }
+    if (raceEntry) addName(my, raceEntry.name);
+    if (classEntry) addName(my, classEntry.name);
+    if (classEntry2) addName(my, classEntry2.name);
     return {
       myNames: [...my],
-      raceNames: races.map((r) => cleanDisplayName(r.name)),
-      classNames: classes.map((c) => cleanDisplayName(c.name)),
+      raceNames: races.flatMap((r) => [cleanDisplayName(r.name), zhName(r.name)]),
+      classNames: classes.flatMap((c) => [cleanDisplayName(c.name), zhName(c.name)]),
     };
   }, [raceEntry, classEntry, classEntry2, races, classes]);
   // 混职：两个混职职业条目的数值相加（血量/回复力向下取整，防御加值累加）
@@ -826,6 +746,73 @@ export default function CharacterSheet({
 
   const powerMap = useMemo(() => new Map(powers.map((p) => [p.id, p])), [powers]);
   const featMap = useMemo(() => new Map(feats.map((f) => [f.id, f])), [feats]);
+  // 选择型专长的已选对象（键 = 槽位下标 → { cat, item }）
+  const featChoicesList = useMemo(
+    () =>
+      Object.entries(char.featChoices)
+        .map(([idx, item]) => {
+          const f = featMap.get(char.featSlots[Number(idx)]);
+          const info = f ? featChoiceInfo(f) : null;
+          return { cat: (info?.cat ?? "weapon") as "weapon" | "implement", item };
+        })
+        .filter((c) => c.item),
+    [char.featChoices, char.featSlots, featMap]
+  );
+  // 武器擅长 token 集：职业（含混职）/种族 的「武器擅长」行 + 已选专长白名单 + 选择型专长选定对象
+  const proficiencyTokens = useMemo(
+    () =>
+      collectProficiencyTokens({
+        classText: classEntry?.sourceText,
+        classText2: classEntry2?.sourceText,
+        raceText: raceEntry?.sourceText,
+        featNames: char.featSlots.map((id) => featMap.get(id)?.name ?? ""),
+        featChoiceTokens: featChoicesList.map((c) => c.item.split(/\s/)[0]),
+      }),
+    [classEntry, classEntry2, raceEntry, char.featSlots, featMap, featChoicesList]
+  );
+  // 已擅长武器条目（供「选择基础武器」/擅长武器专长弹窗左下角「已擅长武器」展示）
+  const proficientWeaponInfos = useMemo<WeapInfo[]>(
+    () =>
+      BASE_WEAPONS.filter((w) => isProficient(w, proficiencyTokens))
+        .map((w) => ({ id: baseItemId("weapon", w.name), name: w.name, main: w.dice, sub: w.traits && w.traits !== "—" ? w.traits : w.group })),
+    [proficiencyTokens]
+  );
+  // 已擅长的法器组：职业（含混职）/种族「法器：」行 + 选择型法器专长选定的法器；用于法器面板「已擅长/未擅长」
+  const proficientImplGroups = useMemo(() => {
+    const implChoices: { cat: "implement"; item: string }[] = [];
+    for (const idxStr of Object.keys(char.featChoices ?? {})) {
+      const idx = Number(idxStr);
+      const featEntry = featMap.get(char.featSlots[idx]);
+      const info = featEntry ? featChoiceInfo(featEntry) : null;
+      if (info?.cat === "implement") implChoices.push({ cat: "implement", item: char.featChoices?.[idx] ?? "" });
+    }
+    return collectImplementGroups({ classText: classEntry?.sourceText, classText2: classEntry2?.sourceText, raceText: raceEntry?.sourceText, featChoices: implChoices });
+  }, [char.featSlots, char.featChoices, featMap, classEntry, classEntry2, raceEntry]);
+  // 防具/盾牌擅长 token 集：职业（含混职）/种族 + 已选「盔甲擅长/盾牌擅长」专长；用于专长前置「擅长鳞甲」类判定
+  const featNameList = useMemo(() => char.featSlots.map((id) => featMap.get(id)?.name ?? ""), [char.featSlots, featMap]);
+  const armorTokens = useMemo(
+    () => collectArmorTokens(classEntry?.sourceText, classEntry2?.sourceText, raceEntry?.sourceText, featNameList),
+    [classEntry, classEntry2, raceEntry, featNameList]
+  );
+  const shieldTokens = useMemo(
+    () => collectShieldTokens(classEntry?.sourceText, classEntry2?.sourceText, raceEntry?.sourceText, featNameList),
+    [classEntry, classEntry2, raceEntry, featNameList]
+  );
+  // 擅长总览（装备面板「擅长」弹窗）：职业/种族/专长提供的武器、法器、防具擅长
+  const profSources = useMemo(
+    () =>
+      collectProficiencySources({
+        className: classEntry ? cleanDisplayName(classEntry.name) : "职业",
+        className2: classEntry2 ? cleanDisplayName(classEntry2.name) : undefined,
+        classText: classEntry?.sourceText,
+        classText2: classEntry2?.sourceText,
+        raceName: raceEntry ? cleanDisplayName(raceEntry.name) : "种族",
+        raceText: raceEntry?.sourceText,
+        featNames: char.featSlots.map((id) => featMap.get(id)?.name ?? ""),
+        featChoices: featChoicesList,
+      }),
+    [classEntry, classEntry2, raceEntry, char.featSlots, featMap, featChoicesList]
+  );
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const swapList = swapPicker
     ? (() => {
@@ -1289,10 +1276,34 @@ export default function CharacterSheet({
     const base = baseId ? findBaseItem(baseId) : undefined;
     return base?.kind === "weapon" ? (base.weapon?.dice ?? "") : "";
   };
+  // 擅长加值：所选槽位基础武器的擅长加值；未装备武器/非武器为 0。
+  // override=true 时视为擅长（忽略自动判定，用于选择型专长等无法自动判定的情况）
+  const profOf = (slot: number, override: boolean): number => {
+    const baseId = char.baseItems[slot];
+    const base = baseId ? findBaseItem(baseId) : undefined;
+    if (base?.kind !== "weapon" || !base.weapon) return 0;
+    return override || isProficient(base.weapon, proficiencyTokens) ? base.weapon.prof : 0;
+  };
+  // 攻击/伤害数值来源（供「职业加值」「专长加值」单元格点击后选择）：
+  // 职业特性（含混职）中提及「攻击骰」的条目 → 职业加值来源
+  const classAttackSources = useMemo(
+    () => collectClassSources([classEntry?.sourceText, classEntry2?.sourceText], "攻击骰", char.level),
+    [classEntry, classEntry2, char.level]
+  );
+  // 已选专长中提及「攻击骰」的 → 攻击面板专长加值来源
+  const featAttackSources = useMemo(
+    () => collectFeatSources(char.featSlots.map((id) => featMap.get(id)), "攻击骰", char.level),
+    [char.featSlots, featMap, char.level]
+  );
+  // 已选专长中提及「伤害骰」的 → 伤害面板专长加值来源
+  const featDamageSources = useMemo(
+    () => collectFeatSources(char.featSlots.map((id) => featMap.get(id)), "伤害骰", char.level),
+    [char.featSlots, featMap, char.level]
+  );
   // 攻击/伤害：数据面板下方并排（攻击在左、伤害在右），单栏与双栏均通栏展示
   const combatRow = (
     <div className="combat-row">
-      <CombatPanels char={char} setChar={setChar} mods={stats.mods} halfLevel={stats.halfLevel} enhanceOf={enhanceOf} diceOf={diceOf} mode={mode} />
+      <CombatPanels char={char} setChar={setChar} mods={stats.mods} halfLevel={stats.halfLevel} enhanceOf={enhanceOf} diceOf={diceOf} profOf={profOf} mode={mode} classAttackSources={classAttackSources} featAttackSources={featAttackSources} featDamageSources={featDamageSources} />
     </div>
   );
   const raceClassCol = (
@@ -1565,6 +1576,10 @@ export default function CharacterSheet({
               与储备交换
             </button>
           </span>
+          <button type="button" className="mode-chip" title="查看职业、种族、专长提供的武器、法器、防具擅长" onClick={() => setProfOpen(true)}>
+            <span className="material-symbols-outlined mode-chip-ic">workspace_premium</span>
+            擅长
+          </button>
           <button type="button" className="mode-chip" onClick={() => setBlockDetail((p) => ({ ...p, equipment: !p.equipment }))}>
             <span className="material-symbols-outlined mode-chip-ic">{blockDetail.equipment ? "density_small" : "density_large"}</span>
             {blockDetail.equipment ? "简洁" : "详细"}
@@ -1877,9 +1892,39 @@ return (
           classEntry={classEntry}
           classEntry2={classEntry2}
           currentLevel={char.level}
+          abilities={char.abilities}
+          trainedSkills={char.trainedSkills}
+          weaponTokens={proficiencyTokens}
+          armorTokens={armorTokens}
+          shieldTokens={shieldTokens}
           currentId={char.featSlots[slotPicker.index] || undefined}
-          onSelect={(id) => setChar((p) => ({ ...p, featSlots: setFeatSlot(p.featSlots, slotPicker.index, id) }))}
-          onClear={() => setChar((p) => ({ ...p, featSlots: clearFeatSlot(p.featSlots, slotPicker.index) }))}
+          onSelect={(id) => {
+            const f = featMap.get(id);
+            const choice = f ? featChoiceInfo(f) : null;
+            const idx = slotPicker.index;
+            setChar((p) => {
+              const featChoices = { ...p.featChoices };
+              delete featChoices[idx]; // 重新选择时清除旧选择
+              return { ...p, featSlots: setFeatSlot(p.featSlots, idx, id), featChoices };
+            });
+            if (choice) {
+              if (choice.cat === "weapon") {
+                const weaponPool = BASE_WEAPONS.filter((w) => choice.options.some((o) => o.name === w.name));
+                const categories = ["全部", ...(["简易", "军用", "优异", "双头"] as const).filter((c) => weaponPool.some((w) => (c === "双头" ? w.category.includes("双头") : w.category.startsWith(c))))];
+                setFeatChoicePicker({ index: idx, featName: f?.name ?? "", label: choice.label, options: choice.options, weaponPool, categories });
+              } else if (choice.cat === "implement") {
+                const implementPool = BASE_IMPLEMENTS.filter((im) => choice.options.some((o) => implGroup(im.name) === o.name));
+                setFeatChoicePicker({ index: idx, featName: f?.name ?? "", label: choice.label, options: choice.options, implementPool, implTier: choice.implTier });
+              } else {
+                setFeatChoicePicker({ index: idx, featName: f?.name ?? "", label: choice.label, options: choice.options });
+              }
+            }
+          }}
+          onClear={() => setChar((p) => {
+            const featChoices = { ...p.featChoices };
+            delete featChoices[slotPicker.index];
+            return { ...p, featSlots: clearFeatSlot(p.featSlots, slotPicker.index), featChoices };
+          })}
           onClose={() => setSlotPicker(null)}
         />
       )}
@@ -1955,11 +2000,54 @@ return (
           </div>
         </SheetDialog>
       )}
+      {profOpen && (
+        <SheetDialog
+          open
+          headline="擅长"
+          sub="职业、种族、专长提供的武器、法器、防具擅长"
+          onClose={() => setProfOpen(false)}
+        >
+          {profSources.length === 0 ? (
+            <p className="hint">暂无可展示的擅长信息。</p>
+          ) : (
+            <div className="prof-sources">
+              {profSources.map((s) => (
+                <div key={s.source} className="prof-source">
+                  <div className="prof-source-name">{s.source}</div>
+                  {s.groups.map((g) => (
+                    <div key={g.cat} className="prof-group">
+                      <span className="prof-cat">{g.cat}</span>
+                      <span className="prof-items">{g.items.length ? g.items.join("、") : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </SheetDialog>
+      )}
+      {featChoicePicker && (
+        <FeatChoiceDialog
+          featName={featChoicePicker.featName}
+          label={featChoicePicker.label}
+          options={featChoicePicker.options}
+          weaponPool={featChoicePicker.weaponPool}
+          categories={featChoicePicker.categories}
+          implementPool={featChoicePicker.implementPool}
+          implTier={featChoicePicker.implTier}
+          proficientImplGroups={proficientImplGroups}
+          proficientInfos={proficientWeaponInfos}
+          current={char.featChoices[featChoicePicker.index]}
+          onChoose={(item) => setChar((p) => ({ ...p, featChoices: { ...p.featChoices, [featChoicePicker.index]: item } }))}
+          onClose={() => setFeatChoicePicker(null)}
+        />
+      )}
       {basePicker && (
         <BasePickerDialog
           kind={basePicker.kind}
           index={basePicker.index}
           baseId={char.baseItems[basePicker.index]}
+          proficientInfos={proficientWeaponInfos}
           onSelect={(id) => { setChar((p) => ({ ...p, baseItems: { ...p.baseItems, [basePicker.index]: id } })); setBasePicker(null); }}
           onClear={() => { setChar((p) => { const b = { ...p.baseItems }; delete b[basePicker.index]; return { ...p, baseItems: b }; }); setBasePicker(null); }}
           onClose={() => setBasePicker(null)}

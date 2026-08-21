@@ -21,6 +21,12 @@ function cell(td) {
   return td.split("\n")[0].replace(/\s+$/, "").trim();
 }
 
+// 擅长加值：解析 "+N"（如 +2/+3），"—"/空则 0
+function parseProf(s) {
+  const m = String(s).match(/\+(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 function parseTables(html) {
   const out = [];
   const tableRe = /<table[^>]*>([\s\S]*?)<\/table>/g;
@@ -66,6 +72,7 @@ while ((sm = secRe.exec(wep.text))) {
         if (!name) continue;
         weapons.push({
           name,
+          prof: parseProf(cell(r[1])),
           dice: cell(r[2]) || "",
           traits: [...new Set(r[6].split(/[，,\s]+/).filter(Boolean))].join("，"),
           category: isDouble ? "双头武器" : sm[1] + "·" + t.caption,
@@ -125,7 +132,7 @@ const lines = [
   "import type { BaseWeapon, BaseArmor } from \"./baseitems\";",
   "",
   "export const BASE_WEAPONS: BaseWeapon[] = [",
-  ...weapons.map((w) => "  { name: " + JSON.stringify(w.name) + ", dice: " + JSON.stringify(w.dice) + ", traits: " + JSON.stringify(w.traits) + ", category: " + JSON.stringify(w.category) + ", group: " + JSON.stringify(w.group) + ", price: " + (w.price ?? 0) + " },"),
+  ...weapons.map((w) => "  { name: " + JSON.stringify(w.name) + ", prof: " + (w.prof ?? 0) + ", dice: " + JSON.stringify(w.dice) + ", traits: " + JSON.stringify(w.traits) + ", category: " + JSON.stringify(w.category) + ", group: " + JSON.stringify(w.group) + ", price: " + (w.price ?? 0) + " },"),
   "];",
   "",
   "export const BASE_ARMORS: BaseArmor[] = [",

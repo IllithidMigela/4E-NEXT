@@ -6,7 +6,7 @@ import ClassPickerModal from "./sheet/ClassPickerModal";
 import EntryCard from "./sheet/EntryCard";
 import { LEVELS, xpForLevel } from "./sheet/leveling";
 import {
-  type AbilityKey, ABILITY_KEYS, ABILITY_LABELS, baseClassName,
+  type AbilityKey, ABILITY_KEYS, ABILITY_LABELS, baseClassName, highestAbilityKey,
   parseRaceAbilities, racialBonus, applyAbilityBonus, buyPointsUsed,
   type Character,
 } from "./sheet/character";
@@ -205,6 +205,7 @@ export default function DrawView({ char, setChar, onExit, onFinish }: Props) {
   }
 
   function finish() {
+    const topAbility = highestAbilityKey(abilities);
     const c: Character = {
       ...char,
       name: char.name || "未命名角色",
@@ -218,6 +219,10 @@ export default function DrawView({ char, setChar, onExit, onFinish }: Props) {
       level: maxLevel,
       xp: String(xpForLevel(maxLevel)),
       abilities,
+      combatMods: {
+        attacks: char.combatMods.attacks.map((r) => ({ ...r, ability: topAbility })),
+        damages: char.combatMods.damages.map((r) => ({ ...r, ability: topAbility })),
+      },
       powerSlots: { atWill: slots.atWill, encounter: slots.encounter, daily: slots.daily, utility: slots.utility, special: [] },
       featSlots: featPicks,
     };
