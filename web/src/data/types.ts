@@ -11,6 +11,7 @@ export interface SearchEntry {
   nameEn?: string;
   category: string;
   tags: string[];
+  origin?: "official" | "user";
   source?: string;
   text: string;
 }
@@ -33,6 +34,8 @@ export interface Entry {
   nameEn?: string;
   category: string;
   tags: string[];
+  // 数据层标识：official=官方规范化数据；user=个人资源池（自制）。缺省视为官方。
+  origin?: "official" | "user";
   source?: string;
   magazine?: string;
   sourceText: string;

@@ -8,6 +8,7 @@ export interface BaseWeapon {
   traits: string;
   category: string;
   group: string;
+  range?: string; // 射程（如 "15/30"；近战为 "—"/undefined）
   price: number;
 }
 

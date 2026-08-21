@@ -1,10 +1,13 @@
 import { join } from "node:path";
-import { readJsonl, writeJson } from "../lib/io.js";
-import { RAW_FILE, CATEGORIES_DIR } from "../lib/paths.js";
+import { existsSync, readdirSync } from "node:fs";
+import { readJsonl, writeJson, writeJsonl } from "../lib/io.js";
+import { RAW_FILE, CATEGORIES_DIR, CANONICAL_DIR } from "../lib/paths.js";
 import type { RawTiddler } from "../schema/raw.js";
+import { CanonicalEntrySchema, type CanonicalEntry } from "../schema/canonical.js";
 import { classifyOne, type Category } from "./classify.js";
 import { extractTransclusions, extractLinks, extractMacros, extractHeadings } from "../lib/wikitext.js";
 import { parseName } from "../lib/name.js";
+import { sha256Hex } from "../lib/hash.js";
 
 const USAGE_EN: Record<string, string> = { 随意: "at-will", 遭遇: "encounter", 每日: "daily" };
 const TIER_EN: Record<string, string> = { 英雄: "heroic", 典范: "paragon", 传奇: "epic" };
@@ -217,8 +220,49 @@ function mergeIntroPages(items: Normalized[]): Normalized[] {
   return out;
 }
 
+export const CANONICAL_SCHEMA_VERSION = 1;
+
+// 规范层条目：在现有扁平 Normalized 基础上仅追加 schemaVersion 与 provenance（页面溯源 + 内容哈希），
+// 其余扁平计算字段原样保留（文本兜底 + 计算字段渐进提取）。
+function toCanonical(n: Normalized): Record<string, unknown> {
+  return {
+    ...n,
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
+    provenance: {
+      page: n.id,
+      contentHash: sha256Hex(n.sourceText),
+      modified: n.fields.modified,
+      modifier: n.fields.modifier,
+    },
+  };
+}
+
+export interface SyncChanges {
+  added: string[];
+  changed: string[];
+  removed: string[];
+}
+
+// 增量同步状态：以「上一次规范层 JSONL」为快照（contentHash 即条目逐字变化指纹）。
+// 从磁盘重建 { category -> { id -> CanonicalEntry } }。
+function loadPrevState(): Map<string, Map<string, CanonicalEntry>> {
+  const state = new Map<string, Map<string, CanonicalEntry>>();
+  if (!existsSync(CANONICAL_DIR)) return state;
+  for (const f of readdirSync(CANONICAL_DIR)) {
+    if (!f.endsWith(".jsonl")) continue;
+    const cat = f.slice(0, -6);
+    const m = new Map<string, CanonicalEntry>();
+    for (const e of readJsonl<CanonicalEntry>(join(CANONICAL_DIR, f))) m.set(e.id, e);
+    state.set(cat, m);
+  }
+  return state;
+}
+
 export function runNormalize(): Record<string, number> {
   const tiddlers = readJsonl<RawTiddler>(RAW_FILE);
+  const prev = loadPrevState();
+  const initial = prev.size === 0; // 无既有 canonical 状态 → 首次同步
+
   const byCat: Record<string, Normalized[]> = {};
   for (const t of tiddlers) {
     if (t.isSystem) continue;
@@ -226,11 +270,76 @@ export function runNormalize(): Record<string, number> {
     if (EXCLUDE_FROM_OUTPUT.has(n.category)) continue;
     (byCat[n.category] ??= []).push(n);
   }
+
   const counts: Record<string, number> = {};
+  const changes: SyncChanges = { added: [], changed: [], removed: [] };
+  const catStats: Record<string, { count: number; valid: number; invalid: number }> = {};
+  let validTotal = 0;
+  let invalidTotal = 0;
+
   for (const [cat, items] of Object.entries(byCat)) {
     const cleaned = mergeIntroPages(items);
+    // 派生层：保持现有结构/格式逐字节不变（前端 loaders 依赖，勿改）
     writeJson(join(CATEGORIES_DIR, cat + ".json"), cleaned);
+
+    const prevCat = prev.get(cat);
+    const canon: CanonicalEntry[] = [];
+    const nowIds = new Set<string>();
+    let v = 0;
+    let iv = 0;
+    for (const n of cleaned) {
+      const curHash = sha256Hex(n.sourceText);
+      const prevEntry = prevCat?.get(n.id);
+      nowIds.add(n.id);
+      // 内容哈希未变 → 沿用旧规范条目（字节稳定，git diff 干净，修订时间戳保留）
+      if (prevEntry && prevEntry.provenance.contentHash === curHash) {
+        canon.push(prevEntry);
+        v++;
+        continue;
+      }
+      const entry = toCanonical(n);
+      const res = CanonicalEntrySchema.safeParse(entry);
+      if (res.success) {
+        canon.push(res.data);
+        if (prevEntry) changes.changed.push(n.id);
+        else changes.added.push(n.id);
+        v++;
+      } else {
+        iv++;
+        console.error("[canonical] zod 校验失败 " + n.id + ": " + res.error.errors
+          .map((e) => "[" + e.path.join(".") + "] " + e.message).join("; "));
+      }
+    }
+    // 上一版存在、本轮消失的条目（来源被删除等）
+    if (prevCat) {
+      for (const pid of prevCat.keys()) if (!nowIds.has(pid)) changes.removed.push(pid);
+    }
+
+    writeJsonl(join(CANONICAL_DIR, cat + ".jsonl"), canon);
+    catStats[cat] = { count: cleaned.length, valid: v, invalid: iv };
+    validTotal += v;
+    invalidTotal += iv;
     counts[cat] = cleaned.length;
   }
+
+  writeJson(join(CANONICAL_DIR, "_meta.json"), {
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    initial,
+    changes: {
+      added: changes.added.length,
+      changed: changes.changed.length,
+      removed: changes.removed.length,
+    },
+    categories: catStats,
+    totals: { count: validTotal + invalidTotal, valid: validTotal, invalid: invalidTotal },
+  });
+  // 完整变更清单（供审计门禁/人工审查；首次同步量过大，仅存统计）
+  writeJson(join(CANONICAL_DIR, "_changes.json"), {
+    generatedAt: new Date().toISOString(),
+    initial,
+    ...(initial ? {} : changes),
+  });
+
   return counts;
 }
