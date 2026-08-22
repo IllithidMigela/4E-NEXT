@@ -6,3 +6,5 @@ web/public/data/
 *.tsbuildinfo
 *.log
 .DS_Store
+# 审计报告（派生产物，不入库）
+out/categories/_audit.json
