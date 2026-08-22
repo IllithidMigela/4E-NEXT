@@ -1257,6 +1257,7 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, pa
   if (detail) {
     return (
       <div className="class-detail">
+        <div className="cls-sum-class">{cleanDisplayName(entry.name)}</div>
         {trait && <div className="class-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(splitTraitLabels(trait), entry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />}
         {parsed?.intro && <div className="pf-intro"><WikiBody body={parsed.intro} fields={entry.fields} lookup={lookup} /></div>}
         {parsed && parsed.sections.length > 0 ? (
