@@ -230,7 +230,7 @@ function Shell() {
           {view === "search" && <SearchView />}
           {view === "learn" && <LearnView />}
           {view === "homebrew" && <HomebrewView />}
-          {view === "settings" && <SettingsView />}
+          {view === "settings" && <SettingsView layout={layout} />}
         </div>
       </main>
       {cardOpen && (

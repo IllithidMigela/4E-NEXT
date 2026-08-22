@@ -3,6 +3,7 @@ import { seedHexToTheme, themeToCssVars, applyCssVars, imageToSeedHex, type Seed
 import { downscaleImage } from "./lib/image";
 
 export type BgMode = "off" | "portrait" | "custom";
+export type FontMode = "serif" | "sans";
 
 interface ThemeContextValue {
   seedMode: SeedMode;
@@ -28,6 +29,8 @@ interface ThemeContextValue {
   bgFeather: number;
   setBgBlur: (v: number) => void;
   setBgFeather: (v: number) => void;
+  fontMode: FontMode;
+  setFontMode: (m: FontMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -59,6 +62,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [bgCustom, setBgCustom] = useState<string | null>(null);
   const [bgBlur, setBgBlur] = useState(2);
   const [bgFeather, setBgFeather] = useState(55);
+  const [fontMode, setFontModeState] = useState<FontMode>(() => {
+    const saved = localStorage.getItem("kcc.fontMode");
+    return saved === "sans" ? "sans" : "serif";
+  });
 
   const bgImage = useMemo(() => {
     if (bgMode === "portrait") return portraitOriginal;
@@ -106,12 +113,37 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setPortraitHex(DEFAULT_SEED);
   }
 
+  function setFontMode(m: FontMode) {
+    setFontModeState(m);
+    try { localStorage.setItem("kcc.fontMode", m); } catch { /* 忽略 */ }
+  }
+
+  // 字体切换：html[data-font] 驱动 CSS 变量。
+  // 547（无衬线体）的 result.css 自带全局 body 字体规则，切回衬线体时必须移除，
+  // 否则其规则会持续把 body/卡片字体覆盖为无衬线体。
+  useEffect(() => {
+    document.documentElement.dataset.font = fontMode;
+    const existing = document.querySelector('link[href*="zeoseven.com/547"]');
+    if (fontMode === "sans") {
+      if (!existing) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://fontsapi.zeoseven.com/547/main/result.css";
+        link.crossOrigin = "anonymous";
+        document.head.appendChild(link);
+      }
+    } else if (existing) {
+      existing.remove();
+    }
+  }, [fontMode]);
+
   const value: ThemeContextValue = {
     seedMode, seedHex, presetHex, portraitHex, bgHex, isDark,
     setSeedMode, setSeedHex, setPresetHex, setDark,
     portraitOriginal, portraitCropped, setPortrait, clearPortrait,
     bgMode, bgCustom, setBgMode, setBgCustom, bgImage,
     bgBlur, bgFeather, setBgBlur, setBgFeather,
+    fontMode, setFontMode,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

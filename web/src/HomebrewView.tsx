@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { Entry } from "./data/types";
 import {
   loadPools,
@@ -50,6 +50,8 @@ export default function HomebrewView() {
   const [sel, setSel] = useState<string | null>(null);
   const [cat, setCat] = useState<string>("all");
   const [newPoolName, setNewPoolName] = useState("");
+  const newPoolInput = useRef<HTMLInputElement>(null);
+  const [needPool, setNeedPool] = useState(false);
 
   const [bundled, setBundled] = useState<D4eBundle | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -157,13 +159,13 @@ export default function HomebrewView() {
         <span className="meta" style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
           <span>私设 · 第三方资源包 · 共 {allEntries.length} 条 / {pools.length} 包</span>
           <span className="ls-usage" title={"共 " + usage.keys + " 个存储项，上限约 5MB"}>
-            <span className="ls-usage-label">localStorage</span>
+            <span className="ls-usage-label">本地浏览器缓存用量</span>
             <span className="ls-usage-bar"><span className="ls-usage-fill" style={{ width: Math.max(2, usage.percent) + "%" }} /></span>
             <span className="ls-usage-text">{fmtBytes(usage.used)} / 5 MB（{usage.percent.toFixed(1)}%）</span>
           </span>
         </span>
         <span className="resource-actions">
-          <FilledButton onClick={() => { setEditing(null); setEditorOpen(true); }}>新建条目</FilledButton>
+          <FilledButton onClick={() => { if (pools.length === 0) { setNeedPool(true); newPoolInput.current?.focus(); return; } setEditing(null); setEditorOpen(true); }}>新建条目</FilledButton>
           <FilledButton onClick={() => fileInput?.click()}>导入 .d4e</FilledButton>
           <input ref={(el) => setFileInput(el)} type="file" accept=".d4e,.json" onChange={onFile} style={{ display: "none" }} />
           <FilledButton disabled={allEntries.length === 0} onClick={exportAll}>导出全部</FilledButton>
@@ -173,8 +175,9 @@ export default function HomebrewView() {
       {/* 包管理 */}
       <div className="hb-panels">
         <div className="hb-create">
-          <FilledTextField value={newPoolName} label="新包名称" onInput={(e) => setNewPoolName((e.target as HTMLInputElement).value ?? "")} />
+          <FilledTextField ref={newPoolInput as any} value={newPoolName} label="新包名称" onInput={(e) => { setNewPoolName((e.target as HTMLInputElement).value ?? ""); if (needPool) setNeedPool(false); }} />
           <OutlinedButton onClick={createEmpty}>新建包</OutlinedButton>
+          {needPool && <span className="hb-needpool">请先新建一个包，再创建条目。</span>}
         </div>
         {pools.length > 0 && (
           <div className="hb-pools">

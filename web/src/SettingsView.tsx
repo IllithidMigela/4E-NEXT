@@ -4,8 +4,8 @@ import { FilledSelect, SelectOption, Switch, FilledButton, Slider } from "./comp
 import { readFileAsDataUrl } from "./lib/image";
 import { NORD_PRESETS, type SeedMode } from "./theme";
 
-export default function SettingsView() {
-  const { seedMode, seedHex, presetHex, isDark, setSeedMode, setSeedHex, setPresetHex, setDark, bgMode, setBgMode, setBgCustom, bgImage, bgBlur, bgFeather, setBgBlur, setBgFeather } = useTheme();
+export default function SettingsView({ layout }: { layout: "single" | "double" }) {
+  const { seedMode, seedHex, presetHex, isDark, setSeedMode, setSeedHex, setPresetHex, setDark, bgMode, setBgMode, setBgCustom, bgImage, bgBlur, bgFeather, setBgBlur, setBgFeather, fontMode, setFontMode } = useTheme();
   const bgFileRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLInputElement>(null);
 
@@ -17,7 +17,7 @@ export default function SettingsView() {
   }
 
   return (
-    <div className="settings">
+    <div className={"settings" + (layout === "double" ? " double" : "")}>
       <section className="block">
         <h3 className="block-title">外观设置</h3>
         <div className="settings-row">
@@ -26,13 +26,28 @@ export default function SettingsView() {
           <span className="label">{isDark ? "深色" : "浅色"}</span>
         </div>
         <div className="settings-row">
+          <span className="field-label">全局字体</span>
+          <span className="flat-chips" role="radiogroup" aria-label="全局字体">
+            <button type="button" role="radio" aria-checked={fontMode === "serif"} className={"flat-chip" + (fontMode === "serif" ? " active" : "")} onClick={() => setFontMode("serif")}>
+              {fontMode === "serif" && <span className="material-symbols-outlined flat-chip-check">check</span>}
+              衬线体
+            </button>
+            <button type="button" role="radio" aria-checked={fontMode === "sans"} className={"flat-chip" + (fontMode === "sans" ? " active" : "")} onClick={() => setFontMode("sans")}>
+              {fontMode === "sans" && <span className="material-symbols-outlined flat-chip-check">check</span>}
+              无衬线体
+            </button>
+          </span>
+        </div>
+        <div className="settings-row">
           <span className="field-label">动态取色种子</span>
-          <FilledSelect value={seedMode} onChange={(e) => setSeedMode((e.target as any).value as SeedMode)}>
-            <SelectOption value="preset">预设</SelectOption>
-            <SelectOption value="picker">自选</SelectOption>
-            <SelectOption value="portrait">跟随立绘</SelectOption>
-            <SelectOption value="background">跟随背景</SelectOption>
-          </FilledSelect>
+          <span className="flat-chips" role="radiogroup" aria-label="动态取色种子">
+            {(["preset", "picker", "portrait", "background"] as SeedMode[]).map((m) => (
+              <button key={m} type="button" role="radio" aria-checked={seedMode === m} className={"flat-chip" + (seedMode === m ? " active" : "")} onClick={() => setSeedMode(m)}>
+                {seedMode === m && <span className="material-symbols-outlined flat-chip-check">check</span>}
+                {({ preset: "预设", picker: "自选", portrait: "跟随立绘", background: "跟随背景" } as Record<SeedMode, string>)[m]}
+              </button>
+            ))}
+          </span>
         </div>
         {seedMode === "preset" && (
           <div className="settings-row">
@@ -53,6 +68,7 @@ export default function SettingsView() {
         {seedMode === "portrait" && <p className="hint">取色来自车卡页上传的立绘原图（非裁切版本）。</p>}
         {seedMode === "background" && !bgImage && <p className="hint">尚未设置背景图，将回退到默认色。请先在下方「背景」中开启。</p>}
       </section>
+
 
       <section className="block">
         <h3 className="block-title">背景</h3>
@@ -89,7 +105,7 @@ export default function SettingsView() {
               <Slider min={50} max={90} step={1} value={bgFeather} onInput={(e) => setBgFeather((e.target as any).value)} />
               <span className="label">{bgFeather}%</span>
             </div>
-            <p className="hint">模糊：高斯模糊半径（0–16px，建议 0–8，过大会发白发糊）；羽化：底部渐隐区域占背景层高度的比例（最小 50%，S 曲线提前渐隐；图层外扩放大以避免白边）。</p>
+
           </>
         )}
 
@@ -112,6 +128,10 @@ export default function SettingsView() {
         <div className="settings-row">
           <span className="field-label">作者</span>
           <span className="label">KitaAkeru</span>
+        </div>
+        <div className="settings-row">
+          <span className="field-label">贡献者</span>
+          <span className="label">灵霜</span>
         </div>
       </section>
     </div>

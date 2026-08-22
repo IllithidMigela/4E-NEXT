@@ -78,6 +78,9 @@ export default function DrawView({ char, setChar, onExit, onFinish }: Props) {
   const [slots, setSlots] = useState<Record<DrawCat, string[]>>({ atWill: [], encounter: [], daily: [], utility: [] });
   const [featPicks, setFeatPicks] = useState<string[]>([]);
   const [boostSel, setBoostSel] = useState<AbilityKey[]>([]);
+  const [presetOrder, setPresetOrder] = useState<AbilityKey[]>([...ABILITY_KEYS]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
 
   useEffect(() => {
     void loadCategory("race").then(setRaces).catch(console.error);
@@ -195,6 +198,25 @@ export default function DrawView({ char, setChar, onExit, onFinish }: Props) {
     }
     advance();
   }
+  function onSorterDrop(i: number) {
+    if (dragIndex === null || dragIndex === i) { setDragIndex(null); setDragOver(null); return; }
+    setPresetOrder((o) => {
+      const arr = [...o];
+      const [moved] = arr.splice(dragIndex, 1);
+      arr.splice(i, 0, moved);
+      return arr;
+    });
+    setDragIndex(null);
+    setDragOver(null);
+  }
+  function applyDrawPreset(values: number[]) {
+    setAbilities((a) => {
+      const next = { ...a };
+      presetOrder.forEach((k, idx) => { next[k] = values[idx]; });
+      return next;
+    });
+  }
+
   function skipStep() {
     advance();
   }
@@ -314,11 +336,34 @@ export default function DrawView({ char, setChar, onExit, onFinish }: Props) {
             ))}
           </div>
           <div className="draw-presets-label">快速分配</div>
-          <div className="draw-presets">
-            {BUY_PRESETS.map((pr) => (
-              <button key={pr.label} type="button" className="mode-chip" title="应用该购点组合（按 力/体/敏/智/感/魅 顺序）" onClick={() => setAbilities(({ str: pr.values[0], con: pr.values[1], dex: pr.values[2], int: pr.values[3], wis: pr.values[4], cha: pr.values[5] } as Record<AbilityKey, number>))}>{pr.label}</button>
+          <div className="preset-sorter" title="拖动按钮调整属性取值顺序">
+            {presetOrder.map((k, i) => (
+              <button
+                key={k}
+                type="button"
+                draggable
+                className={"sorter-chip" + (dragOver === i ? " drag-over" : "")}
+                onDragStart={() => setDragIndex(i)}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(i); }}
+                onDragLeave={() => setDragOver(null)}
+                onDrop={() => onSorterDrop(i)}
+                onDragEnd={() => { setDragIndex(null); setDragOver(null); }}
+              >
+                <span className="material-symbols-outlined sorter-grip">drag_indicator</span>
+                {ABILITY_LABELS[k].zh}
+              </button>
             ))}
           </div>
+          <div className="preset-list">
+            {BUY_PRESETS.map((pr) => (
+              <button key={pr.label} type="button" className="preset-item" onClick={() => applyDrawPreset(pr.values)}>
+                <span className="preset-name">{presetOrder.map((k, idx) => ABILITY_LABELS[k].zh + " " + pr.values[idx]).join(" · ")}</span>
+                <span className="preset-label">{pr.label}</span>
+                <span className="preset-total">22/22</span>
+              </button>
+            ))}
+          </div>
+          <p className="preset-hint">上方按钮允许拖动排序，排序后，点击预设按当前顺序应用至属性，不含种族加值。</p>
           <div className="draw-nav">
             <FilledButton onClick={startDraws}>下一步：抽取威能</FilledButton>
           </div>
