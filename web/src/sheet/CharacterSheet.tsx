@@ -1318,6 +1318,7 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, pa
   }
   return (
     <div className="class-summary">
+      <div className="cls-sum-class">{cleanDisplayName(entry.name)}</div>
       {entry.fields["role"] && <div className="cls-sum-row"><span className="cls-sum-label">职位</span><span className="cls-sum-value">{entry.fields["role"]}</span></div>}
       {entry.fields["power source"] && <div className="cls-sum-row"><span className="cls-sum-label">威能来源</span><span className="cls-sum-value">{entry.fields["power source"]}</span></div>}
       {summary.map((s) => (
@@ -1497,7 +1498,7 @@ function autoDefenseBonuses(c: Character): Record<DefenseKey, Partial<Record<Def
 }
 
 // 合并手动加值与装备自动加值：防具/盾牌来源以装备为准（装备决定），其余保留手动录入值
-function mergeDefenseMods(k: DefenseKey, manual: Record<DefenseBonusSource, number>, auto: Partial<Record<DefenseBonusSource, number>>): Record<DefenseBonusSource, number> {
+function mergeDefenseMods(_k: DefenseKey, manual: Record<DefenseBonusSource, number>, auto: Partial<Record<DefenseBonusSource, number>>): Record<DefenseBonusSource, number> {
   return {
     feat: manual.feat ?? 0,
     enhance: manual.enhance ?? 0,
