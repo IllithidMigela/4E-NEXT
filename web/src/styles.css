@@ -110,7 +110,10 @@ body {
 .race-bonus { font-weight: 600; color: var(--md-sys-color-primary); }
 .race-bonus-row select { padding: 6px; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); }
 .ability-bonus { font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600; }
-.skill-table { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
+/* 技能表：按列排列（先填满第一列，再排第二列）；SKILL_TABLE 固定 17 项，第一列 8 行、第二列 9 行 */
+.skill-table { display: grid; grid-auto-flow: column; grid-template-rows: repeat(9, auto); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
+/* 第 9 项起显式放入第二列，使第一列只占 8 行 */
+.skill-table .skill-item:nth-child(n+9) { grid-column: 2; }
 .skill-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: transparent; cursor: pointer; text-align: left; color: var(--md-sys-color-on-surface); flex-wrap: wrap; }
 .skill-mods { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex-wrap: wrap; }
 .skill-mod { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; color: var(--md-sys-color-on-surface-variant); }
@@ -346,10 +349,13 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 
 /* 技能表 */
 .layout-double .skill-table { gap: 2px 10px; }
-.layout-double .skill-item { padding: 5px 8px; }
-.layout-double .skill-name { font-size: 12px; }
-.layout-double .skill-ability { font-size: 11px; }
-.layout-double .skill-total { font-size: 12px; }
+.layout-double .skill-item { padding: 5px 8px; flex-wrap: nowrap; gap: 3px; }
+.layout-double .skill-name { font-size: 12px; white-space: nowrap; flex: none; }
+.layout-double .skill-ability { font-size: 11px; white-space: nowrap; flex: none; }
+.layout-double .skill-total { font-size: 12px; white-space: nowrap; flex: none; }
+.layout-double .skill-mods { flex-wrap: nowrap; gap: 2px; }
+.layout-double .skill-mod { white-space: nowrap; gap: 1px; }
+.layout-double .skill-mod input { width: 28px; box-sizing: border-box; }
 
 /* 语言 / 行动点 */
 .layout-double .lang-ap-row { gap: 10px; }
@@ -365,9 +371,10 @@ md-filled-text-field, md-filled-select { min-width: 0; }
    td 正文自动换行填满剩余空间，避免窄栏下 nowrap 标签超出与正文重叠 */
 .layout-double .pc-details, .layout-double .fc-content, .layout-double .gc-text { overflow-wrap: anywhere; }
 /* 种族/典范/天命/职业特性正文里的表格：同样用内容自适应 + 强制换行，防窄栏下标签与正文重叠 */
-.race-trait table, .class-features table, .pf-body table { border-collapse: collapse; }
-.race-trait table th, .class-features table th, .pf-body table th { text-align: left; vertical-align: top; white-space: nowrap; }
+.race-trait table, .class-features table, .pf-body table { border-collapse: collapse; width: 100%; max-width: 100%; box-sizing: border-box; margin-left: 0 !important; margin-bottom: 4px; }
+.race-trait table th, .class-features table th, .pf-body table th { text-align: left; vertical-align: top; overflow-wrap: anywhere; font-weight: 700; }
 .race-trait table td, .class-features table td, .pf-body table td { vertical-align: top; overflow-wrap: anywhere; }
+.race-trait table tr.header td, .class-features table tr.header td, .pf-body table tr.header td { font-weight: 700; }
 .layout-double .race-trait, .layout-double .class-features, .layout-double .pf-body { overflow-wrap: anywhere; }
 .race-detail { min-width: 0; }
 /* 不分栏时正文章节内表格同样防溢出 */
@@ -433,6 +440,7 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 
 /* 职业能力：简略模式 */
 .class-summary { display: flex; flex-direction: column; gap: 6px; }
+.cls-sum-class { font-size: 17px; font-weight: 700; color: var(--md-sys-color-on-surface); margin-bottom: 6px; }
 .cls-sum-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
 .cls-sum-label { flex: none; min-width: 72px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); }
 .cls-sum-value { color: var(--md-sys-color-on-surface); }
@@ -506,8 +514,8 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .defense-value { font-size: 22px; font-weight: 700; }
 /* 单栏：总值下两栏（左 3 右 2） */
 .def-bonus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: column; grid-template-rows: repeat(3, auto); gap: 4px 10px; margin-top: 6px; }
-.def-bonus-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
-.def-bonus-item input { width: 44px; padding: 3px 6px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font-size: 12px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
+.def-bonus-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); white-space: nowrap; }
+.def-bonus-item input { width: 44px; box-sizing: border-box; padding: 3px 6px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font-size: 12px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
 .def-bonus-item input::-webkit-outer-spin-button, .def-bonus-item input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 /* 双栏：竖着排一排 */
 .layout-double .def-bonus { display: flex; flex-direction: column; gap: 5px; }
@@ -664,12 +672,15 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .cr-item:hover { background: var(--md-sys-color-surface-container); }
 .cr-item.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
 .class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: max-content; gap: 8px; overflow: auto; align-content: start; }
-.class-card { display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); cursor: pointer; text-align: left; color: var(--md-sys-color-on-surface); font: inherit; }
+.class-card { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); cursor: pointer; text-align: left; color: var(--md-sys-color-on-surface); font: inherit; }
 .class-card:hover { background: var(--md-sys-color-surface-container-high); }
 .class-card.selected { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.cc-ess { padding: 0 4px; border-radius: 4px; font-size: 10px; line-height: 1.5; color: var(--md-sys-color-on-tertiary-container); background: var(--md-sys-color-tertiary-container); }
 .cc-parent { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
+.cc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .cc-name { font-size: 14px; font-weight: var(--fw-body); }
 .cc-sub { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
+.cc-src { display: flex; justify-content: space-between; align-items: center; gap: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
 .hybrid-toggle { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 2px; font-size: 13px; border-bottom: 1px solid var(--md-sys-color-outline-variant); margin-bottom: 4px; }
 
 /* Nord 预设色板 */
@@ -770,7 +781,8 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .cls-feat-name { font-weight: 500; font-size: 13px; color: var(--md-sys-color-primary); }
 .cls-feat.unset .cls-feat-name { color: var(--md-sys-color-on-surface-variant); }
 .cls-feat-note, .cls-feat-compact-optname { font-size: 12px; line-height: 1.55; color: var(--md-sys-color-on-surface); }
-.cls-feat-opt { font-size: 12px; font-weight: 500; color: var(--md-sys-color-primary); }
+.cls-feat-opt { font-size: 12px; font-weight: 500; color: var(--md-sys-color-primary); position: relative; display: inline-block; }
+.cls-feat-opt:hover .cls-option-pop { display: block; }
 .cls-feat-sub, .cls-feat-count { font-size: 11.5px; color: var(--md-sys-color-on-surface-variant); }
 
 /* ---- 人物卡 ---- */
@@ -1306,23 +1318,39 @@ md-dialog.sheet-dialog-xw .picker-cards {
 .db-val { font-size: 15px; font-weight: 600; }
 
 /* 典范/天命特性块（结构化渲染） */
-.pf-list { display: flex; flex-direction: column; gap: 10px; }
+.pf-list { display: flex; flex-direction: column; gap: 12px; }
 .pf-item { padding: 2px 0; }
 .pf-title { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); margin-bottom: 4px; }
 .pf-title::before { content: ""; flex: none; align-self: stretch; width: 3px; border-radius: 2px; background: var(--md-sys-color-primary); }
 .pf-body { font-size: 13px; line-height: 1.6; color: var(--md-sys-color-on-surface); }
 .pf-body b { color: var(--md-sys-color-on-surface); }
+.pf-flavor { font-family: "KaiTi", "STKaiti", "Kaiti SC", "楷体", serif; font-style: italic; color: var(--md-sys-color-on-surface); }
 
 /* 典范/天命特性：威能卡容器 + 简洁模式 */
 .pf-power { display: flex; flex-direction: column; }
 .pf-power .power-card, .pf-power .feat-card, .pf-power .item-card, .pf-power .generic-card { height: 100%; }
 .pf-title-only { font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); padding: 2px 0; }
-.pf-list.compact { gap: 6px; }
+.pf-list.compact { gap: 8px; }
+
+
 
 /* 典范/天命条目标题与引言 */
 .pf-entry-title { font-size: 16px; font-weight: 600; color: var(--md-sys-color-primary); padding-bottom: 6px; border-bottom: 1px solid var(--md-sys-color-outline-variant); margin-bottom: 10px; }
 .pf-intro { font-size: 13px; line-height: 1.7; color: var(--md-sys-color-on-surface-variant); padding: 10px 12px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); margin-bottom: 12px; }
 .pf-power .pf-title { margin-bottom: 6px; }
+
+/* 精华职业特性折叠：未达前提等级时折叠为标题行，悬停预览内容 */
+.pf-fold { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: help; font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-thickness: 1px; text-decoration-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent); }
+.pf-fold:hover { text-decoration-style: solid; text-decoration-color: var(--md-sys-color-primary); }
+.pf-fold-level { font-size: 11px; font-weight: var(--fw-caption); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 999px; padding: 0 8px; background: var(--md-sys-color-surface-container-low); text-decoration: none; }
+.pf-fold-pop { display: none; position: absolute; top: calc(100% + 8px); left: 0; width: 420px; max-width: calc(100vw - 120px); z-index: 60; border-radius: var(--md-sys-shape-corner-medium); box-shadow: var(--md-sys-elevation-shadow-level3); pointer-events: none; }
+.pf-fold:hover .pf-fold-pop { display: block; }
+.pf-fold-pop > * { width: 100%; box-sizing: border-box; }
+.pf-fold-pop-body { padding: 12px 14px; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); border: 1px solid var(--md-sys-color-outline-variant); box-shadow: var(--md-sys-elevation-shadow-level2); font-size: 13px; line-height: 1.6; color: var(--md-sys-color-on-surface); }
+.pf-fold-pop-title { font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); margin-bottom: 6px; }
+.pf-fold-pop-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.pf-fold-pop-opt { padding: 6px 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
+.pf-fold-pop-opt-name { font-size: 12.5px; font-weight: 600; color: var(--md-sys-color-on-surface); margin-bottom: 2px; }
 
 /* 职业特性「选择一个」选项（参考选择阵营面板样式） */
 .cls-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
@@ -1330,9 +1358,29 @@ md-dialog.sheet-dialog-xw .picker-cards {
 .cls-option:hover { background: var(--md-sys-color-surface-container-high); }
 .cls-option.active { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; }
 .cls-options-hint { font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-top: 6px; }
+.cls-sub-hint { font-size: 12.5px; color: var(--md-sys-color-on-surface-variant); margin-top: 8px; }
+.cls-sub-title { font-weight: var(--fw-subheading); margin-top: 8px; }
 .cls-options-hint.ok { color: var(--md-sys-color-tertiary); }
+/* 兽王「成为兽王」区块 */
+.beast-type { margin-top: 4px; }
+.pf-sub-title { font-weight: 700; font-size: 12.5px; color: var(--md-sys-color-primary); margin: 8px 0 4px; }
+.beast-sub { margin-top: 6px; border: 1px dashed var(--md-sys-color-outline); border-radius: 6px; }
+.beast-sub summary { cursor: pointer; list-style: none; padding: 6px 10px; font-weight: 600; font-size: 12.5px; color: var(--md-sys-color-primary); display: flex; align-items: center; user-select: none; }
+.beast-sub summary::-webkit-details-marker { display: none; }
+.beast-sub summary::before { content: "▸"; margin-right: 6px; transition: transform .15s ease; }
+.beast-sub[open] summary::before { transform: rotate(90deg); }
+.beast-sub-body { padding: 0 10px 8px; }
+.beast-card { padding: 12px; background: var(--md-sys-color-surface-container); border-radius: var(--md-sys-shape-corner-medium); font-size: 12.5px; }
+.beast-card-title { font-weight: 700; margin-bottom: 6px; color: var(--md-sys-color-primary); }
+.beast-card-body { line-height: 1.65; color: var(--md-sys-color-on-surface); }
+/* 简洁模式下内联展示所选野兽伙伴的数据 */
+.compact-beast-card { margin-top: 6px; padding: 8px 10px; background: var(--md-sys-color-surface-container-low); border-radius: var(--md-sys-shape-corner-small); font-size: 12.5px; }
 .cls-choice-desc { margin-top: 8px; padding: 10px 12px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); font-size: 13px; line-height: 1.7; color: var(--md-sys-color-on-surface); }
 .cls-choice-desc > * + * { margin-top: 6px; }
+/* 选中契约/选项描述：嵌套子标题（如遗灵契约的「!!!! 使用遗灵」「!!!! 遗灵契约之赐」）用统一小号副标题，不用浏览器默认大标题 */
+.cls-choice-desc h4, .cls-feat-compact-optname h4,
+.cls-choice-desc h5, .cls-feat-compact-optname h5,
+.cls-choice-desc h6, .cls-feat-compact-optname h6 { margin: 8px 0 3px; font-size: 12.5px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); line-height: 1.5; }
 /* 选项按钮悬停预览（戏法等 [[链接]] 选项 → 威能卡片），参考简洁模式装备悬浮 */
 .cls-option { position: relative; }
 .cls-option-pop, .cls-choice-power-pop { display: none; position: absolute; top: calc(100% + 8px); left: 0; width: 400px; max-width: calc(100vw - 120px); z-index: 60; border-radius: var(--md-sys-shape-corner-medium); box-shadow: var(--md-sys-elevation-shadow-level3); pointer-events: none; }
@@ -1360,7 +1408,8 @@ md-dialog.sheet-dialog-xw .picker-cards {
 .wiki-ref-pop,
 .cls-option-pop,
 .cls-choice-power-pop,
-.compact-pop {
+.compact-pop,
+.pf-fold-pop {
   top: calc(100% + 8px);
   left: 0;
 }
@@ -1368,7 +1417,8 @@ md-dialog.sheet-dialog-xw .picker-cards {
 .wiki-ref-pop.p-up,
 .cls-option-pop.p-up,
 .cls-choice-power-pop.p-up,
-.compact-pop.p-up {
+.compact-pop.p-up,
+.pf-fold-pop.p-up {
   top: auto;
   bottom: calc(100% + 8px);
   left: 0;
@@ -1377,7 +1427,8 @@ md-dialog.sheet-dialog-xw .picker-cards {
 .wiki-ref-pop.p-right,
 .cls-option-pop.p-right,
 .cls-choice-power-pop.p-right,
-.compact-pop.p-right {
+.compact-pop.p-right,
+.pf-fold-pop.p-right {
   left: auto;
   right: 0;
 }

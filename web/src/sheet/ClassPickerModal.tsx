@@ -7,6 +7,13 @@ import type { Entry } from "../data/types";
 const SOURCES = ["武术", "奥术", "神术", "原力", "灵能", "影能"];
 const ROLES = ["防御者", "打击者", "控制者", "领导者"];
 
+// 精华（Essentials）子职业：选择职业界面右下角打「精华」角标
+const ESSENTIALS_VARIANTS = new Set([
+  "战争祭司", "学派法师", "杀手", "骑士", "盗贼", "魔剑士", "圣骑兵", "斥候", "猎人",
+  "哨兵", "吟唱诗人", "巫师", "保护者", "狂战士", "行刑者", "缚影师", "黑暗卫士",
+  "元素法师", "元素使", "剑咏士",
+]);
+
 interface Props {
   entries: Entry[];
   hybrid: boolean;
@@ -62,7 +69,7 @@ export default function ClassPickerModal({ entries, hybrid, selectedIds, onSelec
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog class-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">{hybridMode ? "选择混职职业（选 2 个）" : "选择英雄职阶"}</span>
+          <span className="picker-title">{hybridMode ? "选择混职职业（选 2 个）" : "选择英雄职业"}</span>
           <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
         </div>
         <div className="class-layout">
@@ -90,11 +97,18 @@ export default function ClassPickerModal({ entries, hybrid, selectedIds, onSelec
               {visible.map((e) => {
                 const { parent, variant } = parseVariant(e.name);
                 const isSel = selected.includes(e.id);
+                const isEss = !!variant && ESSENTIALS_VARIANTS.has(variant);
                 return (
-                  <button key={e.id} type="button" className={isSel ? "class-card selected" : "class-card"} onClick={() => toggle(e.id)}>
-                    {variant && <span className="cc-parent">{parent}</span>}
-                    <span className="cc-name">{variant ?? parent}</span>
-                    <span className="cc-sub">{e.role}{e.powerSource ? " · " + e.powerSource : ""}</span>
+                  <button key={e.id} type="button" className={(isSel ? "class-card selected" : "class-card") + (isEss ? " ess" : "")} onClick={() => toggle(e.id)}>
+                    <span className="cc-head">
+                      <span className="cc-name">{variant ?? parent}</span>
+                      {variant && <span className="cc-parent">{parent}</span>}
+                    </span>
+                    <span className="cc-sub">{e.role}</span>
+                    <span className="cc-src">
+                      {e.powerSource}
+                      {isEss && <span className="cc-ess">精华</span>}
+                    </span>
                   </button>
                 );
               })}

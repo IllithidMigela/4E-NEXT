@@ -1,6 +1,7 @@
 // wikitext → HTML 轻量渲染（供角色卡职业能力板块使用，不影响词条查询页）
 export function wikiToHtml(text: string, fields: Record<string, string>): string {
   return text
+    .replace(/<div class="sidebar">[\s\S]*?<\/div>/g, "") // 剥离词条侧边栏块（如守望者形态威能等补充说明），不混入角色卡正文
     .replace(/<<[^>]+>>/g, "")
     .replace(/<\$[^>]*\/?>/g, "")
     .replace(/@@\.\w+\s*/g, "")
@@ -9,12 +10,12 @@ export function wikiToHtml(text: string, fields: Record<string, string>): string
     .replace(/\{\{[^}]+\}\}/g, "") // 剔除 {{标题}} 转clusion（内容在独立词条中）
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
     .replace(/\[\[([^\]]+)\]\]/g, "$1")
-    .replace(/''([^'']*)''/g, "<b>$1</b>")
+    .replace(/''(.+?)''/g, "<b>$1</b>")
     .replace(/\/\/([^\/]*)\/\//g, "<i>$1</i>")
-    .replace(/^!{3} (.+)$/gm, "<h6>$1</h6>")
+    .replace(/^!{3,} (.+)$/gm, "<h6>$1</h6>")
     .replace(/^!{2} (.+)$/gm, "<h5>$1</h5>")
     .replace(/^! (.+)$/gm, "<h4>$1</h4>")
-    .replace(/^-{3,}\s*$/gm, "<hr/>");
+    .replace(/^-{3,}\s*$/gm, "");
 }
 
 // @@.classTrait """...""" 引言块
@@ -190,11 +191,32 @@ export interface ClassFeatureOptionsParse {
 // 覆盖：在以下选项中选择 / 从下列契约中选择一种 / 从下列选项中挑选一个 /
 // 选择下列(一个)选项 / 选择以下……中(一个) / 获得 N 个(由)你选择的……（戏法/原力协调类）
 const CLASS_CHOICE_INSTR =
-  /(在(以下|下列)(选项)?中选择|从(所列|下列|以下)[^。！？\n]{0,12}?中(选择|挑选)(一个|一项|一种)?|选择(下列|以下)?(其中|其一|一个|1个|一项|一种)|选择下列(选项|契约)?中?(一个|一项|一种)|选择(下列|以下)[^。！？\n]{0,25}?(中)?(一个|一项|一种)|(选择|挑选)[^。！？\n]{0,10}?(下列|以下)[^。！？\n]{0,18}?[0-9一二三四五六七八九十两]+个|获得[0-9一二三四五六七八九十两]*个?[^。！？\n]{0,12}?(由|你|由你)?选择)/;
+  /(在(以下|下列)(选项)?中选择|从(所列|下列|以下)[^。！？\n]{0,12}?中(选(择)?|挑选)(一个|一项|一种)?|选择(下列|以下)?(其中|其一|一个|1个|一项|一种)|选择下列(选项|契约)?中?(一个|一项|一种)|选择(下列|以下)[^。！？\n]{0,25}?(中)?(一个|一项|一种|之(?:[一二三四五六七八九十]{1,3}|两))|(选择|挑选)[^。！？\n]{0,10}?(下列|以下)[^。！？\n]{0,18}?[0-9一二三四五六七八九十两]+个|获得[0-9一二三四五六七八九十两]*个?[^。！？\n]{0,12}?(由|你|由你)?选择)/;
 
 // C 形态（[[链接]] 列表选项）额外要求：引言必须引用「下列/以下/所列」的列表，
 // 避免把正文中顺带提及的[[链接]]（如混职特性里的交叉引用）误判为选项列表
 const C_LINK_INSTR = /(下列|以下|所列)/;
+
+// 多替换组：正文含 ≥2 个相互独立的「可以选择[[A]](或[[B]])来替代[[C]]」句时，
+// 每个替换对都是一组独立单选（如牧师「引导神力」：神圣幸运↔神之恩惠、驱散不死↔医者仁心/亵渎之罚）。
+export interface ReplacementPairGroup { base: string; alts: string[] } // base=被替代项，alts=可选项
+export interface ReplacementPairParse {
+  intro?: string;                        // 剔除所有替换句后的引导正文
+  groups: ReplacementPairGroup[];
+}
+export function parseReplacementPairs(body: string): ReplacementPairParse | undefined {
+  const re = /你可以?选择(?:用)?\[\[([^\]]+)\]\]\s*(?:或\[\[([^\]]+)\]\]\s*)?来(?:替代|代替|替换)\[\[([^\]]+)\]\][。！？．.。;；！?]?/g;
+  const groups: ReplacementPairGroup[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    const altA = m[1].trim();
+    const altB = m[2] ? m[2].trim() : "";
+    const base = m[3].trim();
+    groups.push({ base, alts: altB ? [altA, altB] : [altA] });
+  }
+  if (groups.length < 2) return undefined; // 单个替换对走现有 4c/4b 逻辑；多替换才在此处理
+  return { intro: body.replace(re, "").replace(/\n\s*\n+/g, "\n").trim() || undefined, groups };
+}
 
 // 从引言中解析「需要选择几个」（如「获得4个」「中的3个威能」），无数字则默认 1。
 // 在「选择一个」指示语附近（前16/后50字）查找 N 个，避免引言前段的描述性文字
@@ -261,7 +283,21 @@ export function parseClassFeatureOptions(body: string | undefined): ClassFeature
       if (seen.has(o.label)) { dup = true; break; }
       seen.add(o.label);
     }
-    useHeaders = dup || labelOpts.length === 0;
+    // 若 ''选项：'' 条目全部位于 !!! 标题小节内部（即它们是各小节里的子增益，
+    // 如术士「法术本源」的巨龙之力/混沌爆发等），则 !!! 标题才是真正的可选项
+    let nested = false;
+    if (labelOpts.length > 0) {
+      nested = labelOpts.every((o) => {
+        let h = -1;
+        for (let i = 0; i < headOpts.length; i++) {
+          if (o.index >= headOpts[i].index) h = i; else break;
+        }
+        if (h < 0) return false;
+        const hEnd = h + 1 < headOpts.length ? headOpts[h + 1].index : body.length;
+        return o.index < hEnd;
+      });
+    }
+    useHeaders = dup || labelOpts.length === 0 || nested;
   }
   let firstIdx = -1;
   let options: ClassFeatureOption[] = [];
@@ -304,6 +340,39 @@ export function parseClassFeatureOptions(body: string | undefined): ClassFeature
           intro: introC,
           options: linkOpts.map((o) => ({ label: o.label, desc: "" })),
           count: parseChoiceCount(introC),
+        };
+      }
+    }
+    // 4b. 「替换」形态：「选择[[A]]或[[B]]…来替换[[C]]」→ 保留原威能 或 更换其为另一，故三选一（如圣武士「圣疗术」）
+    const replM = body.match(/选择\[\[([^\]]+)\]\]或\[\[([^\]]+)\]\]\s*来替换\[\[([^\]]+)\]\]/);
+    if (replM) {
+      const replA = replM[1].trim();
+      const replB = replM[2].trim();
+      const replDef = replM[3].trim();
+      if (replA && replB && replDef && replA !== replB) {
+      // 把「你可以选择[[A]]或[[B]]…来替换[[C]]」改写为「除C之外，你还可以选择另外两个威能」，避免引言残留「你可以」
+      const introR = body.replace(/你可以?选择\[\[([^\]]+)\]\]或\[\[([^\]]+)\]\]\s*来替换\[\[([^\]]+)\]\]/, "除[[$3]]之外，你还可以选择另外两个威能").replace(/\n?\s*-{3,}\s*$/g, "").trim();
+      return {
+        selectable: true,
+        intro: introR,
+        options: [{ label: replDef, desc: "" }, { label: replA, desc: "" }, { label: replB, desc: "" }],
+        count: 1,
+      };
+    }
+    }
+    // 4c. 「代替」形态：「可以选择用[[A]]来代替[[B]]」→ 保留 B 或改用 A，二选一（邪术师「魔能爆」= 魔能爆/魔能击）
+    const repl2M = body.match(/(?:你可以)?选择(?:用)?\[\[([^\]]+)\]\]来代替\[\[([^\]]+)\]\](?:威能)?/);
+    if (repl2M) {
+      const replA = repl2M[1].trim();
+      const replDef = repl2M[2].trim();
+      if (replA && replDef && replA !== replDef) {
+        // 引言仅保留改写后的选择提示（去除原正文里多余的说明段，如魔能爆的「所有邪术师都获得…」）
+        const introR = "除[[" + replDef + "]]之外，你还可以选择[[" + replA + "]]";
+        return {
+          selectable: true,
+          intro: introR,
+          options: [{ label: replDef, desc: "" }, { label: replA, desc: "" }],
+          count: 1,
         };
       }
     }
@@ -358,6 +427,8 @@ function protectHtmlBlocks(text: string): { text: string; blocks: string[] } {
   while (i < text.length) {
     const lt = text.indexOf("<", i);
     if (lt < 0) { out.push(text.slice(i)); break; }
+    // 保留 < 之前的普通文本（避免保护 HTML 块时吞掉前文）
+    if (lt > i) { out.push(text.slice(i, lt)); i = lt; continue; }
     // 仅识别完整的开标签
     const om = /^<([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?>/.exec(text.slice(lt));
     if (!om) { out.push(text[lt]); i = lt + 1; continue; }
@@ -367,6 +438,7 @@ function protectHtmlBlocks(text: string): { text: string; blocks: string[] } {
     let depth = 1;
     let j = lt + om[0].length;
     let end = -1;
+    let closeStart = -1;
     while (j < text.length) {
       const rest = text.slice(j);
       const o = openRe.exec(rest);
@@ -375,7 +447,7 @@ function protectHtmlBlocks(text: string): { text: string; blocks: string[] } {
       const ci = c ? j + c.index : -1;
       if (ci >= 0 && (oi < 0 || ci < oi)) {
         depth--;
-        if (depth === 0) { end = j + c!.index + c![0].length; break; }
+        if (depth === 0) { closeStart = j + c!.index; end = closeStart + c![0].length; break; }
         j = ci + c![0].length;
       } else if (oi >= 0) {
         depth++;
@@ -383,6 +455,13 @@ function protectHtmlBlocks(text: string): { text: string; blocks: string[] } {
       } else break;
     }
     if (end >= 0) {
+      // 词条侧边栏块（<div class="sidebar">…</div>）：保留内部规则文本（去掉 div 标签），
+      // 使其作为普通正文随小节渲染（如守望者「守望者形态威能」）
+      if (tag === "div" && /class=["']sidebar["']/.test(text.slice(lt, lt + 60))) {
+        out.push(text.slice(lt + om[0].length, closeStart));
+        i = end;
+        continue;
+      }
       blocks.push(text.slice(lt, end));
       out.push("\u0001" + (blocks.length - 1) + "\u0001");
       i = end;
@@ -399,6 +478,16 @@ export type WikiBodyToken =
   | { kind: "link"; target: string; alias: string } // [[目标|别名]] 超链接
   | { kind: "text"; html: string };          // 已转换文本（换行 → <br/>）
 
+// 文本段：换行→<br/>，并去掉紧贴标题（h4/h5/h6）的 <br/>，避免标题上下出现多余空行；
+// 标题靠自身的 CSS 边距留白即可。
+function textTokenHtml(segment: string, fields: Record<string, string>): string {
+  return wikiToHtml(segment, fields)
+    .replace(/\n/g, "<br/>")
+    // 去掉紧贴标题（h4/h5/h6）前后的 <br/>，避免标题上下出现多余空行；标题靠自身的 CSS 边距留白
+    .replace(/(<br\/>\s*)+(?=<h[1-6])/g, "")
+    .replace(/(<\/h[1-6]\s*>)(\s*<br\/>)+/g, "$1");
+}
+
 // 将职业特性正文拆为 token：原始 HTML 块原样保留；[[链接]] 供 hover 卡片查找；
 // 其余文本经 wikiToHtml 渲染并保留换行（<br/>）。
 export function tokenizeWikiBody(body: string, fields: Record<string, string>): WikiBodyToken[] {
@@ -408,11 +497,11 @@ export function tokenizeWikiBody(body: string, fields: Record<string, string>): 
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = linkRe.exec(text)) !== null) {
-    if (m.index > last) tokens.push({ kind: "text", html: wikiToHtml(text.slice(last, m.index), fields).replace(/\n/g, "<br/>") });
+    if (m.index > last) tokens.push({ kind: "text", html: textTokenHtml(text.slice(last, m.index), fields) });
     tokens.push({ kind: "link", target: m[1].trim(), alias: (m[2] ?? m[1]).trim() });
     last = m.index + m[0].length;
   }
-  if (last < text.length) tokens.push({ kind: "text", html: wikiToHtml(text.slice(last), fields).replace(/\n/g, "<br/>") });
+  if (last < text.length) tokens.push({ kind: "text", html: textTokenHtml(text.slice(last), fields) });
   // 还原 HTML 块占位符（同时移除占位符相邻的换行标记）
   for (const t of tokens) {
     if (t.kind === "text") {
