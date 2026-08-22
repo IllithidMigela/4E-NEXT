@@ -49,23 +49,54 @@ export interface PowerSlots {
   special: string[];
 }
 
+// 归一化加成结构：缺省的子字段补 0，避免求和时出现 undefined→NaN
+// （旧存档/导入文件可能存了空对象 {} 作为 defenseMods/initMods 等，仅顶层 ?? 判断无法兜底）
+function normDefenseMods(m: DefenseMods): DefenseMods {
+  const out = emptyDefenseMods();
+  for (const k of DEFENSE_BONUS_SOURCES) {
+    out.ac[k] = m.ac?.[k] ?? 0;
+    out.fort[k] = m.fort?.[k] ?? 0;
+    out.ref[k] = m.ref?.[k] ?? 0;
+    out.will[k] = m.will?.[k] ?? 0;
+  }
+  return out;
+}
+function normSpeedMods(m: SpeedMods): SpeedMods {
+  return { power: m.power ?? 0, feat: m.feat ?? 0, armor: m.armor ?? 0, item: m.item ?? 0, other: m.other ?? 0 };
+}
+function normInitMods(m: InitMods): InitMods {
+  return { other: m.other ?? 0 };
+}
+function normSkillMods(m: SkillMods): SkillMods {
+  const out = emptySkillMods();
+  for (const s of SKILL_TABLE) {
+    const e = m[s.name];
+    out[s.name] = { race: e?.race ?? 0, other: e?.other ?? 0, armor: e?.armor ?? 0 };
+  }
+  return out;
+}
+
 // 迁移旧存档：补齐新增字段（localStorage 中旧版本保存的角色缺少这些字段）
 export function migrateCharacter(c: Partial<Character>): Character {
   const base = { ...defaultCharacter(), ...(c as Character) };
   return {
     ...base,
-    defenseMods: base.defenseMods ?? emptyDefenseMods(),
-    speedMods: base.speedMods ?? emptySpeedMods(),
-    initMods: base.initMods ?? emptyInitMods(),
-    skillMods: base.skillMods ?? emptySkillMods(),
+    defenseMods: normDefenseMods(base.defenseMods ?? emptyDefenseMods()),
+    speedMods: normSpeedMods(base.speedMods ?? emptySpeedMods()),
+    initMods: normInitMods(base.initMods ?? emptyInitMods()),
+    skillMods: normSkillMods(base.skillMods ?? emptySkillMods()),
     combatMods: (() => {
       const c = base.combatMods ?? emptyCombatMods();
       // 旧存档可能把增强来源存为 -1（手动），现已删除手动，统一按 0（主手）处理
       const normAttack = (r: AttackRowData): AttackRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0, profSlot: (r.profSlot ?? -1) >= 0 ? r.profSlot : 0, profOverride: r.profOverride ?? false });
       const normDamage = (r: DamageRowData): DamageRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
+      const attacks = trimBlankRows((c.attacks ?? []).map(normAttack), isBlankAttack);
+      const damages = trimBlankRows((c.damages ?? []).map(normDamage), isBlankDamage);
+      // 存档中数组为空时，补回各一行的默认计算单元格（否则面板只有表头、无可计算单元格）；默认属性取角色最高属性
+      const fallback = emptyCombatMods(highestAbilityKey(base.abilities ?? {}));
       return {
-        attacks: trimBlankRows((c.attacks ?? []).map(normAttack), isBlankAttack),
-        damages: trimBlankRows((c.damages ?? []).map(normDamage), isBlankDamage),
+        attacks: attacks.length > 0 ? attacks : fallback.attacks,
+        damages: damages.length > 0 ? damages : fallback.damages,
       };
     })(),
     baseItems: (base as { baseItems?: Record<number, string> }).baseItems ?? {},
@@ -87,6 +118,8 @@ export function migrateCharacter(c: Partial<Character>): Character {
     consumableSlots: base.consumableSlots ?? [],
     trainedSkills: base.trainedSkills ?? [],
   classTrainedSkills: (base as { classTrainedSkills?: string[] }).classTrainedSkills ?? [],
+    // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除）
+    classGrantedPowerIds: (base as { classGrantedPowerIds?: string[] }).classGrantedPowerIds ?? [],
     languages: base.languages && base.languages.length ? base.languages : [""],
     actionPoints: base.actionPoints ?? 1,
     creation: base.creation ?? {
@@ -152,6 +185,8 @@ export interface Character {
   consumableSlots: (string | undefined)[];
   trainedSkills: string[];
   classTrainedSkills: string[]; // 职业选择型受训技能（用户从职业技能列表点选，更换职业时清除）
+  // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除，实现威能随职业走）
+  classGrantedPowerIds: string[];
   languages: string[];
   actionPoints: number;
   creation: CharacterCreation;
@@ -223,6 +258,7 @@ export function defaultCharacter(): Character {
     consumableSlots: [],
     trainedSkills: [],
     classTrainedSkills: [],
+    classGrantedPowerIds: [],
     languages: [""],
     actionPoints: 1,
     creation: { personality: "", concept: "", background: "", notes: "" },
@@ -246,6 +282,19 @@ export function toggleId(list: string[], id: string): string[] {
 
 export function flattenPowerSlots(slots: PowerSlots): string[] {
   return [...slots.atWill, ...slots.encounter, ...slots.daily, ...slots.utility];
+}
+
+// 职业特性授予的威能应进哪个威能面板空位：
+// - 特性/种族/专长/套装类威能（powerKind=feature/racial/feat/item-set）→ 种族/职业威能（不占用标准空位）
+// - 辅助威能 → 辅助空位；随意/遭遇/每日攻击 → 对应标准空位（占用标准空位）
+// - 无法判定的其他类型 → 归入种族/职业威能（视为额外威能）
+export function grantedPowerCategory(usage?: string, powerKind?: string): keyof PowerSlots | undefined {
+  if (powerKind === "racial" || powerKind === "feat" || powerKind === "feature" || powerKind === "item-set") return "special";
+  if (powerKind === "utility") return "utility";
+  if (usage === "at-will") return "atWill";
+  if (usage === "encounter") return "encounter";
+  if (usage === "daily") return "daily";
+  return "special";
 }
 
 export function setPowerSlot(slots: PowerSlots, cat: keyof PowerSlots, index: number, id: string): PowerSlots {
@@ -363,7 +412,7 @@ export function parseClassSkills(text: string): ClassSkill[] {
   if (!m) return [];
   const list = m[0].replace(/职业技能：/, "").replace(/''/g, "");
   const skills: ClassSkill[] = [];
-  const re = /([^\s、，,()]+)\((Str|Con|Dex|Int|Wis|Cha)\)/gi;
+  const re = /([^\s、，,()]+)\s*\((Str|Con|Dex|Int|Wis|Cha)\)/gi;
   let mm: RegExpExecArray | null;
   while ((mm = re.exec(list)) !== null) {
     const key = ABBR_TO_KEY[mm[2].toUpperCase()];
@@ -550,7 +599,7 @@ export interface DerivedStats {
   passivePerception: number;
 }
 
-export function deriveStats(c: Character, cls?: ClassStats, raceDefs?: RaceDefenseBonus): DerivedStats {
+export function deriveStats(c: Character, cls?: ClassStats, raceDefs?: RaceDefenseBonus, acKey?: AbilityKey): DerivedStats {
   const halfLevel = Math.floor(c.level / 2);
   const mod = abilityModifier;
   const mods: Record<AbilityKey, number> = {
@@ -570,10 +619,12 @@ export function deriveStats(c: Character, cls?: ClassStats, raceDefs?: RaceDefen
   };
   // 生命上限 = 职业起始 HP + 体质值 + 每级增加 HP ×（等级 − 1）
   const maxHp = cb.baseHp + c.abilities.con + cb.hpPerLevel * Math.max(0, c.level - 1);
+  // AC 属性调整：默认取敏捷/智力较高者；守护者之力（守望者）可改用体质/感知
+  const acMod = acKey ? Math.max(mods[acKey], mods.dex, mods.int) : Math.max(mods.dex, mods.int);
   return {
     mods,
     halfLevel,
-    ac: 10 + halfLevel + Math.max(mods.dex, mods.int) + dSum("ac"),
+    ac: 10 + halfLevel + acMod + dSum("ac"),
     fort: 10 + halfLevel + Math.max(mods.str, mods.con) + cb.fort + dSum("fort") + (rd.fort ?? 0),
     ref: 10 + halfLevel + Math.max(mods.dex, mods.int) + cb.ref + dSum("ref") + (rd.ref ?? 0),
     will: 10 + halfLevel + Math.max(mods.wis, mods.cha) + cb.will + dSum("will") + (rd.will ?? 0),
