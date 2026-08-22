@@ -423,6 +423,53 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .race-detail { display: flex; flex-direction: column; gap: 10px; }
 .race-trait { font-size: 13px; line-height: 1.9; }
 .race-trait b { font-weight: var(--fw-subheading); }
+/* 种族 lore 折叠小节（背景/外貌特征/态度信仰等扮演内容） */
+.race-lore { display: flex; flex-direction: column; gap: 6px; }
+.lore-fold { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
+.lore-fold > summary { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); user-select: none; }
+.lore-fold > summary::-webkit-details-marker { display: none; }
+.lore-fold > summary:hover { background: var(--md-sys-color-surface-container-highest); }
+.lore-fold-ic { margin-left: auto; font-size: 18px; color: var(--md-sys-color-on-surface-variant); transition: transform .15s ease; }
+.lore-fold[open] > summary .lore-fold-ic { transform: rotate(180deg); }
+.lore-fold > .class-features { padding: 2px 12px 10px; }
+.layout-double .lore-fold > .class-features { font-size: 12px; }
+/* 辅助威能：小节标题不折叠，仅各威能描述折叠 */
+.lore-powers { display: flex; flex-direction: column; gap: 6px; }
+.lore-powers-title { font-size: 13.5px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); padding: 2px 2px 0; }
+
+/* 种族特性面板：种族/亚种名称标题（位于「种族特性」标题之下、特性正文之上） */
+.race-panel-title { font-size: 17px; font-weight: 700; color: #000; padding: 6px 2px 4px; }
+
+/* 亚种功能：按钮横排显示，亚种按钮位于「简洁」按钮左侧；选择发生在种族特性正文中 */
+.race-head-actions { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.subrace-chip.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.subrace-chip.open { border-color: var(--md-sys-color-primary); }
+.subrace-chooser { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border: 1px dashed var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
+.subrace-chooser-label { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
+.subrace-opt { padding: 3px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font: inherit; font-size: 12.5px; cursor: pointer; }
+.subrace-opt:hover { background: var(--md-sys-color-surface-container-high); }
+.subrace-opt.active { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.subrace-opt.clear { color: var(--md-sys-color-error); }
+/* 基础特性行：被亚种替换时在原位显示提示句 */
+.race-trait-line { display: block; }
+.race-trait-replace-note { color: var(--md-sys-color-primary); font-weight: var(--fw-label); }
+/* 亚种增益区：每条增益 + 原版特性切换按钮 */
+.subrace-benefits { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
+.subrace-benefits-head { font-size: 12.5px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); }
+.subrace-note { font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.6; }
+.subrace-replace-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; padding: 6px 8px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface); }
+.subrace-replace-row.on { background: var(--md-sys-color-secondary-container); }
+.sr-title { flex: none; font-size: 13px; font-weight: var(--fw-subheading); color: var(--md-sys-color-on-surface); }
+.sr-desc { flex: 1 1 240px; min-width: 0; font-size: 12.5px; line-height: 1.6; color: var(--md-sys-color-on-surface-variant); }
+.sr-desc p { margin: 2px 0; }
+.sr-orig { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 3px 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font: inherit; font-size: 12px; cursor: pointer; }
+.sr-orig:hover { background: var(--md-sys-color-surface-container-high); }
+.sr-orig.active { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.sr-ic { font-size: 14px; line-height: 1; }
+/* 亚种 lore 折叠框角标（如【金矮人】） */
+.lore-fold-badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: var(--md-sys-shape-corner-full); font-size: 11px; font-weight: 600; line-height: 1.6; color: var(--md-sys-color-on-primary); background: var(--md-sys-color-primary); white-space: nowrap; }
+.lore-fold-sub { border-color: var(--md-sys-color-primary); }
+.lore-fold-sub > summary { background: var(--md-sys-color-primary-container); }
 .class-features { font-size: 13px; line-height: 1.7; }
 .class-features h4 { margin: 12px 0 4px; font-size: 14px; font-weight: var(--fw-subheading); }
 .class-features h5 { margin: 10px 0 3px; font-size: 13px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }
@@ -1632,3 +1679,101 @@ html[data-font="serif"] {
 .flat-chip:hover { background: var(--md-sys-color-surface-container-highest); }
 .flat-chip.active { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 .flat-chip-check { font-size: 16px; }
+
+/* ====================================================================
+   手机端响应式适配（≤ 768px）
+   - 隐藏双栏切换按钮：手机端强制单栏，不再提供双栏选项
+   - 顶栏立绘与信息纵向堆叠
+   - 各类网格塌缩为单/双列，宽表横向滚动
+   ==================================================================== */
+@media (max-width: 768px) {
+  /* 隐藏双栏切换按钮 */
+  .side-btn-layout.hidden-mobile,
+  .side-btn-layout[disabled] { display: none; }
+
+  /* 侧栏：手机端更窄的图标导轨，留出更多内容宽度 */
+  .app { padding-left: 48px; }
+  .side-bar { width: 48px; padding: 8px 0; }
+  .side-btn { width: 40px; padding: 6px 0; }
+  .side-btn .material-symbols-outlined { font-size: 20px; }
+  .side-sep { width: 22px; }
+  .rail-version { font-size: 9px; }
+
+  /* 内容区减小边距，保留滚动余量 */
+  .content { padding: 12px 10px 24px; }
+
+  /* 通用块/章节内边距收窄 */
+  .block { padding: 10px 12px; }
+  .section-body { padding: 10px 12px; }
+  .topbar { padding: 10px 12px; }
+
+  /* 顶栏：立绘列与信息列纵向堆叠 */
+  .topbar-flex { flex-direction: column; gap: 12px; }
+  .portrait-col { width: 100%; align-items: center; }
+  .portrait-col .portrait-frame { width: 116px; height: 156px; }
+  .lt-cell .topbar .portrait-col { width: 100%; }
+  .lt-cell .topbar .portrait-frame { width: 116px; height: 156px; }
+
+  /* 顶栏信息行：减少列数，避免字段过窄 */
+  .info-row { gap: 8px; }
+  .info-row.row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .info-row.row-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .info-row.row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lt-cell .topbar .row-2,
+  .lt-cell .topbar .row-3,
+  .lt-cell .topbar .row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* 属性/防御/战斗/资源等网格塌缩 */
+  .stat-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 8px 0; }
+  .combat-row { grid-template-columns: minmax(0, 1fr); }
+  .combat-grid { grid-template-columns: repeat(2, 1fr); }
+  .defense-grid { grid-template-columns: 1fr 1fr; }
+  .power-grid { grid-template-columns: minmax(0, 1fr); }
+  .card-grid { grid-template-columns: minmax(0, 1fr); }
+  .skill-table,
+  .skill-compact { grid-template-columns: minmax(0, 1fr); }
+  .lang-ap-row { grid-template-columns: minmax(0, 1fr); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .layout-top-row { grid-template-columns: minmax(0, 1fr); }
+
+  /* 战斗表列数多，窄屏横向滚动（保留完整列结构） */
+  .combat-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .combat-table.attack .ct-head,
+  .combat-table.attack .ct-row { min-width: 600px; }
+  .combat-table.damage .ct-head,
+  .combat-table.damage .ct-row { min-width: 540px; }
+
+  /* 装备/职业弹窗内左右布局纵向堆叠 */
+  .equip-layout { flex-direction: column; gap: 10px; }
+  .equip-nav { position: static; flex-direction: row; flex-wrap: wrap; width: 100%; max-height: none; }
+  .base-dialog-layout .equip-nav { width: 100%; min-width: 0; }
+  .class-layout { grid-template-columns: minmax(0, 1fr); }
+  .base-dialog .class-layout { grid-template-rows: none; }
+
+  /* 选择弹窗内卡片网格单列 */
+  .picker-cards { grid-template-columns: minmax(0, 1fr); }
+  md-dialog.sheet-dialog-xw .picker-cards { grid-template-columns: minmax(0, 1fr); }
+  .impl-group .picker-cards { grid-template-columns: minmax(0, 1fr); }
+
+  /* 弹窗内边距收窄，避免内容被挤 */
+  md-dialog.sheet-dialog .sheet-dialog-head { padding: 12px 16px 10px; }
+  .picker-dialog { width: min(94vw, 900px); padding: 12px; }
+
+  /* 抽卡：等级/属性提升网格保持紧凑两列 */
+  .draw-boost { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  /* 设置页行内边距收窄 */
+  .settings-row { flex-wrap: wrap; gap: 8px; }
+
+  /* 悬浮弹出层宽度更贴近视口 */
+  .hp-pop,
+  .wiki-ref-pop,
+  .cls-option-pop,
+  .cls-choice-power-pop,
+  .compact-pop,
+  .base-pop { width: min(400px, calc(100vw - 24px)); max-width: calc(100vw - 24px); }
+
+  /* 亚种选择 / 增益区：手机端撑满整行 */
+  .subrace-chooser,
+  .subrace-benefits { width: 100%; box-sizing: border-box; }
+}

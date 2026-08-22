@@ -35,8 +35,19 @@ function featherMask(feather: number): string {
 function Shell() {
   const { bgImage, bgBlur, bgFeather } = useTheme();
   const [view, setView] = useState<View>("sheet");
-  const [layout, setLayout] = useState<Layout>(() => (localStorage.getItem("kcc-layout") !== "single" ? "double" : "single"));
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches);
+  // 手机端强制单栏：不再提供双栏选项
+  const [layoutRaw, setLayoutRaw] = useState<Layout>(() => (localStorage.getItem("kcc-layout") !== "single" ? "double" : "single"));
+  const layout: Layout = isMobile ? "single" : layoutRaw;
   const [mode, setMode] = useState<"edit" | "render">("edit");
+
+  // 监听手机端断点变化（横竖屏切换 / 窗口缩放）
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
   const [cards, setCards] = useState<SavedCard[]>(() => {
     const loaded = loadCards().map((card) => ({ ...card, char: migrateCharacter(card.char) }));
     if (loaded.length > 0) return loaded;
@@ -65,7 +76,7 @@ function Shell() {
   }, [char, activeId]);
 
   function toggleLayout() {
-    setLayout((p) => {
+    setLayoutRaw((p) => {
       const next = p === "single" ? "double" : "single";
       localStorage.setItem("kcc-layout", next);
       return next;
@@ -217,7 +228,7 @@ function Shell() {
         <div className="rail-spacer" />
         <div className="side-sep" />
         <button type="button" className="side-btn" title={mode === "edit" ? "切换到渲染模式" : "切换到编辑模式"} onClick={() => setMode((m) => (m === "edit" ? "render" : "edit"))}><span className="material-symbols-outlined">{mode === "edit" ? "edit" : "lock"}</span><span className="sb-label">{mode === "edit" ? "编辑" : "渲染"}</span></button>
-        <button type="button" className="side-btn" title={layout === "single" ? "切换到双栏布局" : "切换到单栏布局"} onClick={toggleLayout}><span className="material-symbols-outlined">{layout === "single" ? "view_module" : "view_agenda"}</span><span className="sb-label">{layout === "single" ? "双栏" : "单栏"}</span></button>
+        <button type="button" className={"side-btn side-btn-layout" + (isMobile ? " hidden-mobile" : "")} title={layout === "single" ? "切换到双栏布局" : "切换到单栏布局"} onClick={toggleLayout} disabled={isMobile}><span className="material-symbols-outlined">{layout === "single" ? "view_module" : "view_agenda"}</span><span className="sb-label">{layout === "single" ? "双栏" : "单栏"}</span></button>
         <div className="rail-version">v{__APP_VERSION__}A</div>
       </nav>
       <main className="content">

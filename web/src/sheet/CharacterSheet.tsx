@@ -17,7 +17,7 @@ import { collectProficiencyTokens, collectProficiencySources, isProficient, feat
 import { SmartHover } from "./SmartHover";
 import { collectClassSources, collectFeatSources } from "./combat-source";
 import { stripWiki } from "../lib/text";
-import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, parseFeatureSections, parseClassFeatureOptions, tokenizeWikiBody, type FeatureSection } from "../lib/wikirender";
+import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, tokenizeWikiBody, parseRaceTraitLines, type FeatureSection } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
 import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
@@ -26,6 +26,42 @@ import ClassPickerModal from "./ClassPickerModal";
 import SheetDialog from "../components/SheetDialog";
 
 const ABILITIES: AbilityKey[] = ["str", "con", "dex", "int", "wis", "cha"];
+
+// 种族出处 → 系列分组排序：系列属主键，同一系列内按规则书优先级排序（仅用于种族选择弹窗展示顺序）。
+// [系列序, 书内序]；核心系列优先，其次精华、扩展、世设、补充，纯参考书垫底。未知出处归入末尾。
+const RACE_SERIES: Record<string, [number, number]> = {
+  // 核心系列
+  PH: [0, 0], PH2: [0, 1], PH3: [0, 2], PP: [0, 2],
+  DMG: [0, 3], DMG2: [0, 4],
+  MM: [0, 5], MM2: [0, 6], MM3: [0, 7],
+  // 精华系列（Essentials）
+  HoFL: [1, 0], HoFK: [1, 1], HoS: [1, 2], HoF: [1, 3], HoEC: [1, 4],
+  DMK: [1, 5], MV: [1, 6],
+  // 扩展
+  AV: [2, 0], AV2: [2, 1], MME: [2, 2], MP: [2, 3], MP2: [2, 4],
+  AP: [2, 5], DP: [2, 6], PriP: [2, 7], PsiP: [2, 8],
+  PHRD: [2, 9], PHRT: [2, 10],
+  Dragon: [2, 11], Dra: [2, 11],
+  // 世设
+  FRCS: [3, 0], FRPG: [3, 1], ECS: [3, 2], EPG: [3, 3],
+  DSCS: [3, 4], DSCC: [3, 5], NCS: [3, 6],
+  // 补充
+  BoVD: [4, 0], DSH: [4, 1], DEM: [4, 2], DMD: [4, 3], DCD: [4, 4],
+  MotP: [4, 5], OG: [4, 6], TPA: [4, 7], TPB: [4, 8],
+  // 参考书
+  PSG: [5, 0], RC: [5, 1],
+};
+function sortRaces(list: Entry[]): Entry[] {
+  const aIsHuman = (e: Entry) => e.nameEn === "Human" || e.name === "人类";
+  return [...list].sort((a, b) => {
+    if (aIsHuman(a) !== aIsHuman(b)) return aIsHuman(a) ? -1 : 1;
+    const ka = RACE_SERIES[a.source ?? ""] ?? [9, 0];
+    const kb = RACE_SERIES[b.source ?? ""] ?? [9, 0];
+    if (ka[0] !== kb[0]) return ka[0] - kb[0];
+    if (ka[1] !== kb[1]) return ka[1] - kb[1];
+    return 0;
+  });
+}
 
 // 灵能职业（每日灵能点来源）：炽念使/战魂/心灵术士共用同一阶梯表；武僧不消耗灵能点，故排除。
 const PSIONIC_PP_CLASSES = new Set(["炽念使 Ardent", "战魂 Battlemind", "心灵术士 Psion"]);
@@ -693,6 +729,8 @@ export default function CharacterSheet({
   setChar: React.Dispatch<React.SetStateAction<Character>>;
 }) {
   const [races, setRaces] = useState<Entry[]>([]);
+  // 种族选择弹窗展示顺序：按出处系列分组排序（不影响数据存储与逻辑查找）
+  const sortedRaces = useMemo(() => sortRaces(races), [races]);
   const [classes, setClasses] = useState<Entry[]>([]);
   const [paragonPaths, setParagonPaths] = useState<Entry[]>([]);
   const [epicDestinies, setEpicDestinies] = useState<Entry[]>([]);
@@ -719,7 +757,8 @@ export default function CharacterSheet({
   const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: "fixed" | "other" | "consumable"; index: number }>(null);
   const [basePicker, setBasePicker] = useState<null | { kind: "weapon" | "armor"; index: number }>(null);
   const [skillDetail, setSkillDetail] = useState(true);
-  const [raceDetail, setRaceDetail] = useState(true);
+  const [raceDetail, setRaceDetail] = useState(false);
+  const [subraceOpen, setSubraceOpen] = useState(false);
   const [pathDetail, setPathDetail] = useState(true);
   const [destinyDetail, setDestinyDetail] = useState(true);
   const [presetOrder, setPresetOrder] = useState<AbilityKey[]>([...ABILITIES]);
@@ -1076,6 +1115,55 @@ export default function CharacterSheet({
   const isBoostLevel = levelInfo?.abilityBoost === "两个 +1";
   const raceTrait = useMemo(() => (raceEntry ? raceTraitHtml(raceEntry.sourceText) : undefined), [raceEntry]);
   const raceBody = useMemo(() => (raceEntry ? raceBodyHtml(raceEntry.sourceText) : undefined), [raceEntry]);
+  const raceLoreSections = useMemo(() => (raceBody ? splitRaceLore(raceBody) : []), [raceBody]);
+  // 亚种：解析所有含「属于[[原种族]]的亚种」的条目，按键为原种族显示名（如「矮人 Dwarf」）
+  const subracesByBase = useMemo(() => {
+    const map = new Map<string, Entry[]>();
+    for (const r of races) {
+      const info = parseSubraceInfo(r.sourceText);
+      if (info) {
+        const list = map.get(info.baseRaceName) ?? [];
+        list.push(r);
+        map.set(info.baseRaceName, list);
+      }
+    }
+    return map;
+  }, [races]);
+  const raceBaseName = raceEntry ? `${raceEntry.name} ${raceEntry.nameEn ?? ""}`.trim() : "";
+  const subraces = raceEntry ? (subracesByBase.get(raceBaseName) ?? []) : [];
+  const subraceEntry = useMemo(() => (char.subraceId ? subraces.find((s) => s.id === char.subraceId) : undefined), [char.subraceId, subraces]);
+  const subraceInfo = useMemo(() => (subraceEntry ? parseSubraceInfo(subraceEntry.sourceText) : undefined), [subraceEntry]);
+  const subraceName = subraceEntry?.name ?? "";
+  // 选择/清除亚种：选中时默认应用全部增益（替代对应基础特性），清除时清空
+  const setSubrace = (id?: string) => {
+    if (!id) {
+      setChar({ ...char, subraceId: undefined, subraceBenefits: {} });
+      return;
+    }
+    const entry = subraces.find((s) => s.id === id);
+    const info = entry ? parseSubraceInfo(entry.sourceText) : undefined;
+    const applied: Record<string, boolean> = {};
+    if (info) for (const b of info.benefits) applied[b.title] = true;
+    setChar({ ...char, subraceId: id, subraceBenefits: applied });
+  };
+  // 切换某个亚种增益：true=使用替代版（默认），false=回到原版基础特性
+  const toggleSubraceBenefit = (title: string) => {
+    const next = { ...(char.subraceBenefits ?? {}) };
+    next[title] = !next[title];
+    setChar({ ...char, subraceBenefits: next });
+  };
+  // 基础特性名称 → 可替换它的亚种增益（如「矮人武器擅长」→金矮人武器擅长）
+  const subraceReplByName = useMemo(() => {
+    const map = new Map<string, { title: string }>();
+    if (subraceInfo) for (const b of subraceInfo.benefits) if (b.replaces) map.set(b.replaces, b);
+    return map;
+  }, [subraceInfo]);
+  // 基础种族 classTrait 的结构化特性行（raceTraitHtml 已剔除体型/速度/视觉）
+  const raceTraits = useMemo(() => {
+    if (!raceEntry) return [];
+    const body = raceTraitHtml(raceEntry.sourceText);
+    return body ? parseRaceTraitLines(body) : [];
+  }, [raceEntry]);
   const slotCounts = levelInfo ? levelInfo.powers : { atWill: 0, encounter: 0, daily: 0, utility: 0 };
   const featSlotCount = levelInfo ? levelInfo.feats : 0;
   const effFeatCount = char.featSlotOverride ?? featSlotCount;
@@ -1311,7 +1399,7 @@ export default function CharacterSheet({
               <TextField label="姓名" value={char.name} onChange={(v) => setChar({ ...char, name: v })} mode={mode} big />
             </div>
             <div className="info-row row-2">
-              <PickField label="种族" displayName={raceEntry?.name} mode={mode} onClick={() => setPicker("race")} />
+              <PickField label="种族" displayName={subraceEntry ? subraceEntry.name : raceEntry?.name} mode={mode} onClick={() => setPicker("race")} />
               <PickField label="英雄职阶" displayName={classDisplay} mode={mode} onClick={() => setPicker("class")} />
               <PickField label={char.level >= 11 ? "典范之道" : "典范之道（11级解锁）"} displayName={paragonPathEntry?.name} disabled={char.level < 11} mode={mode} onClick={() => setPicker("paragon")} />
               <PickField label={char.level >= 21 ? "传奇天命" : "传奇天命（21级解锁）"} displayName={epicDestinyEntry?.name} disabled={char.level < 21} mode={mode} onClick={() => setPicker("epic")} />
@@ -1562,17 +1650,151 @@ export default function CharacterSheet({
     <><section className="block">
         <div className="block-head">
           <h3 className="block-title">种族特性</h3>
-          <button type="button" className="mode-chip" onClick={() => setRaceDetail((p) => !p)}>
-            <span className="material-symbols-outlined mode-chip-ic">{raceDetail ? "density_small" : "density_large"}</span>
-            {raceDetail ? "简洁" : "详细"}
-          </button>
+          <div className="race-head-actions">
+            {raceEntry && subraces.length > 0 && (
+              <button
+                type="button"
+                className={`mode-chip subrace-chip${subraceOpen || char.subraceId ? " active" : ""}${subraceOpen ? " open" : ""}`}
+                onClick={() => setSubraceOpen((p) => !p)}
+                title="选择亚种：亚种增益可替换基础种族的对应特性"
+              >
+                <span className="material-symbols-outlined mode-chip-ic">category</span>
+                {char.subraceId ? `亚种：${subraceName}` : "亚种"}
+              </button>
+            )}
+            <button type="button" className="mode-chip" onClick={() => setRaceDetail((p) => !p)}>
+              <span className="material-symbols-outlined mode-chip-ic">{raceDetail ? "density_small" : "density_large"}</span>
+              {raceDetail ? "简洁" : "详细"}
+            </button>
+          </div>
         </div>
         {raceEntry ? (
-          <div className="race-detail">
-            {raceTrait && <div className="race-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(raceTrait, raceEntry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />}
-            {raceDetail && raceBody && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(raceBody, raceEntry.fields) }} />}
-            {!raceTrait && !raceBody && <pre className="feature-text">{stripWiki(raceEntry.sourceText)}</pre>}
-          </div>
+          <>
+            <div className="race-panel-title">{subraceEntry ? subraceEntry.name : raceEntry.name}</div>
+            {subraces.length > 0 && subraceOpen && (
+              <div className="subrace-chooser">
+                <span className="subrace-chooser-label">亚种：</span>
+                {subraces.map((s) => {
+                  const sinfo = parseSubraceInfo(s.sourceText);
+                  const tip = sinfo?.benefits.map((b) => `${b.title}（替代「${b.replaces ?? "原特性"}」）`).join("；") ?? "选择该亚种以替换对应的种族特性";
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`subrace-opt${char.subraceId === s.id ? " active" : ""}`}
+                      onClick={() => setSubrace(char.subraceId === s.id ? undefined : s.id)}
+                      title={tip}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+                {char.subraceId && (
+                  <button type="button" className="subrace-opt clear" onClick={() => setSubrace(undefined)}>基础种族</button>
+                )}
+              </div>
+            )}
+            <div className="race-detail">
+              {raceTraits.length > 0 && (
+                <div className="race-trait">
+                  {raceTraits.map((t, i) => {
+                    const repl = subraceReplByName.get(t.name);
+                    const useReplacement = repl && char.subraceBenefits?.[repl.title] !== false;
+                    if (useReplacement) {
+                      return (
+                        <div key={i} className="race-trait-line">
+                          <span className="race-trait-replace-note">{`【${repl.title}：你可以选择用此特性替代原本的特性】`}</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={i} className="race-trait-line" dangerouslySetInnerHTML={{ __html: wikiToHtml(`''${t.name}：''${t.body}`, raceEntry.fields).replace(/\n/g, "<br/>") }} />
+                    );
+                  })}
+                </div>
+              )}
+              {subraceInfo && subraceInfo.benefits.length > 0 && (
+                <div className="subrace-benefits">
+                  <div className="subrace-benefits-head">亚种增益（{subraceName}）</div>
+                  {subraceInfo.note && <div className="subrace-note">{subraceInfo.note}</div>}
+                  {subraceInfo.benefits.map((b, i) => {
+                    const applied = char.subraceBenefits?.[b.title] !== false;
+                    const orig = b.replaces ? raceTraits.find((t) => t.name === b.replaces) : undefined;
+                    return (
+                      <div key={i} className={`subrace-replace-row${applied ? " on" : ""}`}>
+                        <span className="sr-title">{b.title}</span>
+                        <span className="sr-desc" dangerouslySetInnerHTML={{ __html: wikiToHtml(b.body, raceEntry.fields) }} />
+                        {b.replaces && (
+                          <button
+                            type="button"
+                            className={`sr-orig${applied ? "" : " active"}`}
+                            onClick={() => toggleSubraceBenefit(b.title)}
+                            title={orig ? `原版「${b.replaces}」：${orig.body}` : `回到原版基础特性「${b.replaces}」`}
+                          >
+                            <span className="material-symbols-outlined sr-ic">swap_horiz</span>
+                            原版：{b.replaces}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {raceLoreSections.length > 0 && (
+                <div className="race-lore">
+                  {raceLoreSections.map((sec, i) => {
+                    // 辅助威能：小节标题不折叠，仅各威能的描述文本折叠
+                    if (sec.title?.includes("辅助威能")) {
+                      const aux = splitAuxPowers(sec.body);
+                      return (
+                        <div key={i} className="lore-powers">
+                          <div className="lore-powers-title">{sec.title}</div>
+                          {aux.intro && (
+                            <details key={`${raceDetail}-aux-intro-${i}`} className="lore-fold" {...(raceDetail ? { open: true } : {})}>
+                              <summary>
+                                <span className="lore-fold-title">简介</span>
+                                <span className="material-symbols-outlined lore-fold-ic">expand_more</span>
+                              </summary>
+                              <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(aux.intro, raceEntry.fields) }} />
+                            </details>
+                          )}
+                          {aux.powers.map((p, j) => (
+                            <details key={`${raceDetail}-aux-${i}-${j}`} className="lore-fold" {...(raceDetail ? { open: true } : {})}>
+                              <summary>
+                                <span className="lore-fold-title">{p.title}</span>
+                                <span className="material-symbols-outlined lore-fold-ic">expand_more</span>
+                              </summary>
+                              {p.body && <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(p.body, raceEntry.fields) }} />}
+                            </details>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return (
+                      <details key={`${raceDetail}-lore-${i}`} className="lore-fold" {...(raceDetail ? { open: true } : {})}>
+                        <summary>
+                          <span className="lore-fold-title">{sec.title ?? "种族背景"}</span>
+                          <span className="material-symbols-outlined lore-fold-ic">expand_more</span>
+                        </summary>
+                        <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(sec.body, raceEntry.fields) }} />
+                      </details>
+                    );
+                  })}
+                  {subraceInfo && subraceInfo.loreSections.map((sec, i) => (
+                    <details key={`${raceDetail}-sub-lore-${i}`} className="lore-fold lore-fold-sub" {...(raceDetail ? { open: true } : {})}>
+                      <summary>
+                        <span className="lore-fold-badge">{`【${subraceName}】`}</span>
+                        <span className="lore-fold-title">{sec.title ?? "种族背景"}</span>
+                        <span className="material-symbols-outlined lore-fold-ic">expand_more</span>
+                      </summary>
+                      <div className="class-features" dangerouslySetInnerHTML={{ __html: wikiToHtml(sec.body, raceEntry.fields) }} />
+                    </details>
+                  ))}
+                </div>
+              )}
+              {!raceTrait && !raceBody && <pre className="feature-text">{stripWiki(raceEntry.sourceText)}</pre>}
+            </div>
+          </>
         ) : <p className="hint">请先选择种族。</p>}
       </section>
 
@@ -2110,11 +2332,21 @@ return (
       {picker === "race" && (
         <PickerModal
           title="选择种族"
-          entries={races}
+          entries={sortedRaces}
           selectedId={char.raceId}
           onSelect={(id) => {
             const race = races.find((x) => x.id === id);
-            setChar({ ...char, raceId: id, vision: race?.vision, size: race?.size ?? char.size });
+            // 若所选条目本身是亚种（如「金矮人」），自动转为父种族的种族身份并应用对应亚种状态（显示父种族面板）
+            const subInfo = race ? parseSubraceInfo(race.sourceText) : undefined;
+            const baseRace = subInfo ? races.find((x) => (x.name + " " + (x.nameEn ?? "")).trim() === subInfo.baseRaceName) : undefined;
+            if (race && baseRace) {
+              const applied: Record<string, boolean> = {};
+              for (const b of subInfo!.benefits) applied[b.title] = true;
+              setChar({ ...char, raceId: baseRace.id, subraceId: race.id, subraceBenefits: applied, vision: baseRace?.vision, size: baseRace?.size ?? char.size });
+            } else {
+              setChar({ ...char, raceId: id, subraceId: undefined, subraceBenefits: {}, vision: race?.vision, size: race?.size ?? char.size });
+            }
+            setSubraceOpen(false);
           }}
           onClose={() => setPicker(null)}
           renderSub={(e) => [e.abilityOne, e.abilityTwo, e.size ? "体型 " + e.size : "", e.speed ? "速度 " + e.speed : ""].filter(Boolean).join(" · ")}

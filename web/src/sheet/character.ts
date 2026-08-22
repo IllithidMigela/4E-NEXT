@@ -120,6 +120,8 @@ export interface Character {
   combatMods: CombatMods;
   raceId?: string;
   raceAbility2Choice?: AbilityKey;
+  subraceId?: string; // 所选亚种 id（如「金矮人」），无则为基础种族
+  subraceBenefits?: Record<string, boolean>; // 已应用的亚种增益（键 = 增益名）
   classId?: string;
   classId2?: string;
   hybrid?: boolean;
@@ -193,6 +195,8 @@ export function defaultCharacter(): Character {
     level: 1,
     abilities,
     xp: "",
+    subraceId: undefined,
+    subraceBenefits: {},
     gender: "",
     age: "",
     size: "",
