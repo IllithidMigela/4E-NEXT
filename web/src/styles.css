@@ -115,7 +115,7 @@ body {
 /* 第 9 项起显式放入第二列，使第一列只占 8 行 */
 .skill-table .skill-item:nth-child(n+9) { grid-column: 2; }
 .skill-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: transparent; cursor: pointer; text-align: left; color: var(--md-sys-color-on-surface); flex-wrap: wrap; }
-.skill-mods { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.skill-mods { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .skill-mod { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; color: var(--md-sys-color-on-surface-variant); }
 .skill-mod input { width: 30px; padding: 2px 3px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font-size: 11px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
 .skill-mod-minus { font-weight: var(--fw-label); }
@@ -131,9 +131,9 @@ body {
 .skill-compact-row .sc-total { font-weight: var(--fw-display); color: var(--md-sys-color-primary); }
 .skill-item.trained { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 .skill-check { width: 16px; text-align: center; }
-.skill-name { font-size: 14px; margin-right: auto; }
-.skill-ability { font-size: 12px; opacity: 0.7; }
-.skill-total { font-size: 14px; font-weight: 600; }
+.skill-name { font-size: 14px; }
+.skill-ability { font-size: 12px; flex: none; white-space: nowrap; margin: 0 24px; color: var(--md-sys-color-on-surface-variant); }
+.skill-total { font-size: 14px; font-weight: 600; line-height: 1; }
 
 /* 职业技能受训点选 */
 .cls-skill-pick { margin-top: 8px; }
@@ -432,10 +432,17 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .race-trait b { font-weight: var(--fw-subheading); }
 /* 种族 lore 折叠小节（背景/外貌特征/态度信仰等扮演内容） */
 .race-lore { display: flex; flex-direction: column; gap: 6px; }
-.lore-fold { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
+.lore-fold { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
 .lore-fold > summary { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); user-select: none; }
 .lore-fold > summary::-webkit-details-marker { display: none; }
 .lore-fold > summary:hover { background: var(--md-sys-color-surface-container-highest); }
+/* 辅助威能「选择/取消选择」按钮：md3 描边胶囊按钮，选中时实心填充 */
+.lore-powers-toggle { display: inline-flex; align-items: center; flex: none; padding: 2px 11px; border: 1px solid var(--md-sys-color-primary); border-radius: var(--md-sys-shape-corner-full); background: transparent; color: var(--md-sys-color-primary); font: inherit; font-size: 11.5px; line-height: 1.7; cursor: pointer; }
+.lore-powers-toggle:hover { background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent); }
+.lore-powers-toggle.on { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+/* 辅助威能标题：悬停弹出威能卡（弹出层可逃逸折叠块，故 .lore-fold 未设 overflow:hidden） */
+.lore-powers-hover { position: relative; }
+.lore-powers-hover:hover .wiki-ref-pop { display: block; }
 .lore-fold-ic { margin-left: auto; font-size: 18px; color: var(--md-sys-color-on-surface-variant); transition: transform .15s ease; }
 .lore-fold[open] > summary .lore-fold-ic { transform: rotate(180deg); }
 .lore-fold > .class-features { padding: 2px 12px 10px; }
@@ -460,23 +467,18 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 /* 基础特性行：被亚种替换时在原位显示提示句 */
 .race-trait-line { display: block; }
 .race-trait-replace-note { color: var(--md-sys-color-primary); font-weight: var(--fw-label); }
-/* 亚种增益区：每条增益 + 原版特性切换按钮 */
-.subrace-benefits { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
-.subrace-benefits-head { font-size: 12.5px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); }
-.subrace-note { font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.6; }
-.subrace-replace-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; padding: 6px 8px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface); }
-.subrace-replace-row.on { background: var(--md-sys-color-secondary-container); }
-.sr-title { flex: none; font-size: 13px; font-weight: var(--fw-subheading); color: var(--md-sys-color-on-surface); }
-.sr-desc { flex: 1 1 240px; min-width: 0; font-size: 12.5px; line-height: 1.6; color: var(--md-sys-color-on-surface-variant); }
-.sr-desc p { margin: 2px 0; }
-.sr-orig { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 3px 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font: inherit; font-size: 12px; cursor: pointer; }
-.sr-orig:hover { background: var(--md-sys-color-surface-container-high); }
-.sr-orig.active { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+/* 可用亚种特性替换的基础特性：前置标签 + 原特性 + 展开的候选特性 */
+.race-trait-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+/* 三选一（基础 / 替代 / 亚种增益）候选按钮组：同一特性同时被基础内部替代与亚种增益替换时使用 */
+.race-trait-opts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; margin-top: 2px; }
+.sr-tag { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 1px 9px; margin-top: 2px; border: none; border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); font: inherit; font-size: 11.5px; line-height: 1.7; cursor: pointer; }
+.sr-tag .sr-ic { font-size: 13px; }
+.sr-tag:hover { background: color-mix(in srgb, var(--md-sys-color-primary) 14%, var(--md-sys-color-surface-container-high)); }
+.sr-tag.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.race-trait-content { min-width: 0; }
 .sr-ic { font-size: 14px; line-height: 1; }
-/* 亚种 lore 折叠框角标（如【金矮人】） */
-.lore-fold-badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: var(--md-sys-shape-corner-full); font-size: 11px; font-weight: 600; line-height: 1.6; color: var(--md-sys-color-on-primary); background: var(--md-sys-color-primary); white-space: nowrap; }
-.lore-fold-sub { border-color: var(--md-sys-color-primary); }
-.lore-fold-sub > summary { background: var(--md-sys-color-primary-container); }
+/* 亚种 lore 折叠框角标（仅显示亚种名，不起切换功能） */
+.lore-fold-badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: var(--md-sys-shape-corner-full); font-size: 11px; font-weight: 600; line-height: 1.6; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); white-space: nowrap; }
 .class-features { font-size: 13px; line-height: 1.7; }
 .class-features h4 { margin: 12px 0 4px; font-size: 14px; font-weight: var(--fw-subheading); }
 .class-features h5 { margin: 10px 0 3px; font-size: 13px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }

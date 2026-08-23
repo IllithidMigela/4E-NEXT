@@ -53,6 +53,7 @@ export function raceTraitHtml(text: string): string | undefined {
 export interface RaceTraitLine {
   name: string;
   body: string;
+  replaces?: string; // 若该特性是可替代型（如「龙惧」替代「龙息」），此处为被替代的基础特性名
 }
 export function parseRaceTraitLines(classTraitBody: string): RaceTraitLine[] {
   const out: RaceTraitLine[] = [];
@@ -63,7 +64,10 @@ export function parseRaceTraitLines(classTraitBody: string): RaceTraitLine[] {
   for (let i = 0; i < segs.length; i++) {
     const end = i + 1 < segs.length ? segs[i + 1].start : classTraitBody.length;
     const body = classTraitBody.slice(segs[i].end, end).replace(/^\s*$/gm, "").trim();
-    if (body) out.push({ name: segs[i].name, body });
+    if (body) {
+      const replaces = body.match(/替代「([^」]+)」/)?.[1];
+      out.push({ name: segs[i].name, body, ...(replaces ? { replaces } : {}) });
+    }
   }
   return out;
 }
