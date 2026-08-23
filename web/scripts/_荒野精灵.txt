@@ -1,0 +1,12 @@
+!! 荒野精灵增益 Wild Elf Benefits
+@@.indent
+当创造荒野精灵角色时，你可以从下列增益中挑选。
+
+''狡黠步：''Wild elves train for battle from the time they can walk, and their teachers place early emphasis on evasion and escape. By the time wild elves are of warrior age, those childhood lessons allow them to move deeper into battle as well as to break free of it.
+
+增益：每遭遇一次，你能以一个移动动作快步最多等同于你的速度的格数。此增益替代「精灵之精准」
+
+''荒野精灵武器擅长：''Though eladrin might devote themselves to the longsword, wild elves have for millennia relied on the spears that are their traditional hunting weapons.
+
+增益：你获得标枪、矛和长矛的擅长。此增益替代「团体警觉」
+@@

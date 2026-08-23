@@ -1,0 +1,20 @@
+!! 卡帕克龙人增益 Kapak Draconian Benefits
+@@.indent
+当创造卡帕克龙人角色时，你可以从下列增益中挑选。
+
+''杀戮之眼：''You instinctively exploit your foes' weakness.
+
+增益：你对迟缓、定身或虚弱的敌人具有战斗优势。此增益替代「龙裔之怒」
+
+''飞掠本能：''Although your wings are neither large enough nor strong enough to sustain flight for long, your battleground mobility is still quite extraordinary.
+
+增益：你获得飞行速度6（高度限制1）。如果你负重超过了普通载重（力量值×10磅），则你不能使用此飞行速度。在你的回合结束时你必须着陆。此增益替代「龙之传统」
+
+''油滑机敏：''Your movements are quick and precise, your lean muscles a study in economy.
+
+增益：你获得+2敏捷，+2魅力的属性调整。此增益替代标准龙裔的属性调整
+
+''腐蚀传统：''You have poison in your mouth and acidic blood.
+
+增益：你获得[[剧毒唾液 Toxic Saliva]]和[[酸蚀复仇 Acidic Revenge]]威能。此增益替代「龙息」
+@@

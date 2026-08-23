@@ -1,0 +1,12 @@
+!! 盾矮人增益 Shied Dwarf Benefits
+@@.indent
+当创造盾矮人角色时，你可以从下列增益中挑选。因为这些增益都会替代「矮人武器擅长」，所以你只能选择其中一个
+
+''盾矮人武器擅长：''Shield dwarves spend more time aboveground and in forested areas than their gold dwarf cousins. This has led to them relying on axes as tools and weapons.
+
+增益：你获得手斧和战斧的擅长。此增益替代「矮人武器擅长」
+
+''盾牌擅长：''Besieged by numerous threats such as orcs and goblins, the shield dwarves take the name of their people seriously. Many are trained to use a shield regardless of duty or station.
+
+增益：你获得轻盾的擅长。此增益替代「矮人武器擅长」
+@@

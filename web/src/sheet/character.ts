@@ -120,6 +120,8 @@ export function migrateCharacter(c: Partial<Character>): Character {
   classTrainedSkills: (base as { classTrainedSkills?: string[] }).classTrainedSkills ?? [],
     // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除）
     classGrantedPowerIds: (base as { classGrantedPowerIds?: string[] }).classGrantedPowerIds ?? [],
+    // 种族授予、已加入威能面板的辅助威能 id（更换种族时据此从威能面板移除）
+    raceGrantedPowerIds: (base as { raceGrantedPowerIds?: string[] }).raceGrantedPowerIds ?? [],
     languages: base.languages && base.languages.length ? base.languages : [""],
     actionPoints: base.actionPoints ?? 1,
     creation: base.creation ?? {
@@ -153,6 +155,9 @@ export interface Character {
   combatMods: CombatMods;
   raceId?: string;
   raceAbility2Choice?: AbilityKey;
+  subraceId?: string; // 所选亚种 id（如「金矮人」），无则为基础种族
+  subraceBenefits?: Record<string, boolean>; // 已应用的亚种增益（键 = 增益名）
+  raceSwaps?: Record<string, boolean>; // 基础种族内部可替代特性的选择（键 = 替代特性名，如「龙惧」）
   classId?: string;
   classId2?: string;
   hybrid?: boolean;
@@ -185,6 +190,8 @@ export interface Character {
   classTrainedSkills: string[]; // 职业选择型受训技能（用户从职业技能列表点选，更换职业时清除）
   // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除，实现威能随职业走）
   classGrantedPowerIds: string[];
+  // 种族授予、已加入威能面板的辅助威能 id（更换种族时据此从威能面板移除）
+  raceGrantedPowerIds: string[];
   languages: string[];
   actionPoints: number;
   creation: CharacterCreation;
@@ -228,6 +235,8 @@ export function defaultCharacter(): Character {
     level: 1,
     abilities,
     xp: "",
+    subraceId: undefined,
+    subraceBenefits: {},
     gender: "",
     age: "",
     size: "",
@@ -255,6 +264,7 @@ export function defaultCharacter(): Character {
     trainedSkills: [],
     classTrainedSkills: [],
     classGrantedPowerIds: [],
+    raceGrantedPowerIds: [],
     languages: [""],
     actionPoints: 1,
     creation: { personality: "", concept: "", background: "", notes: "" },

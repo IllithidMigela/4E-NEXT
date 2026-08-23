@@ -1,0 +1,105 @@
+
+===== 波扎克龙人 (Bozak Draconian) =====
+[benefit] 奥术之血
+  replaces=龙裔之怒
+  body=The essence of your draconic forebears surges through your veins. Born to a legacy of arcane might, you have learned to 
+[benefit] 飞掠本能
+  replaces=龙之传统
+  body=Although your wings are neither large enough nor strong enough to sustain flight for long, your battleground mobility is
+[benefit] 复仇震击
+  replaces=龙息
+  body=You have learned to trigger your death throes prematurely as a last resort, through a mixture of self-discipline and arc
+
+===== 盾矮人 (Shied Dwarf) =====
+[benefit] 盾矮人武器擅长
+  replaces=矮人武器擅长
+  body=Shield dwarves spend more time aboveground and in forested areas than their gold dwarf cousins. This has led to them rel
+[benefit] 盾牌擅长
+  replaces=矮人武器擅长
+  body=Besieged by numerous threats such as orcs and goblins, the shield dwarves take the name of their people seriously. Many 
+
+===== 荒野精灵 (Wild Elf) =====
+[benefit] 狡黠步
+  replaces=精灵之精准
+  body=Wild elves train for battle from the time they can walk, and their teachers place early emphasis on evasion and escape. 
+[benefit] 荒野精灵武器擅长
+  replaces=团体警觉
+  body=Though eladrin might devote themselves to the longsword, wild elves have for millennia relied on the spears that are the
+
+===== 金矮人 (Gold Dwarf) =====
+[benefit] 钢铁意志
+  replaces=铁胃
+  body=Gold dwarves have developed a resistance to protect against the depredations of aberrant creatures from the Underdark.
+
+
+[benefit] 金矮人武器擅长
+  replaces=矮人武器擅长
+  body=Though gold dwarves rely on the hammer as a tool as much as do any of their kin, carving their homes from the living roc
+
+===== 卡帕克龙人 (Kapak Draconian) =====
+[benefit] 杀戮之眼
+  replaces=龙裔之怒
+  body=You instinctively exploit your foes' weakness.
+
+增益：你对迟缓、定身或虚弱的敌人具有战斗优势。此增益替代「龙裔之怒」
+
+''飞掠本能：''
+[benefit] 飞掠本能
+  replaces=龙之传统
+  body=Although your wings are neither large enough nor strong enough to sustain flight for long, your battleground mobility is
+[benefit] 油滑机敏
+  replaces=<无>
+  body=Your movements are quick and precise, your lean muscles a study in economy.
+
+增益：你获得+2敏捷，+2魅力的属性调整。此增益替代标准龙裔的属性调整
+
+''腐蚀传统
+[benefit] 腐蚀传统
+  replaces=龙息
+  body=You have poison in your mouth and acidic blood.
+
+增益：你获得[[剧毒唾液 Toxic Saliva]]和[[酸蚀复仇 Acidic Revenge]]威能。此增益替代「龙息」
+@@
+
+===== 利维尔精灵 (Llewyrr Elf) =====
+[benefit] 洞悉历史
+  replaces=<无>
+  body=Armed with a voracious appetite for studying the antiquity of humanoid culture, you have an uncanny ability to discern t
+[benefit] 精灵武器擅长
+  replaces=雅灵武器擅长
+  body=Elves and eladrin of all stripes take time to learn the traditional weapons of their people.
+
+增益：你获得长弓和短弓的擅长。此增益替代「雅灵武器擅
+
+===== 木精灵 (Wood Elf) =====
+[benefit] 直觉威胁
+  replaces=精灵之精准
+  body=Wood elves hone their senses against the most subtle perils, whether in the wilderness or at the negotiating table.
+
+增益：
+[benefit] 反应隐秘
+  replaces=团体警觉
+  body=Wood elf clans focus on avoiding trouble by hiding from the world. As a result, many wood elves develop the instinct to 
+
+===== 日精灵 (Sun Elf) =====
+[benefit] 技能奖励
+  replaces=<无>
+  body=The complex intrigues of sun elf courts require a subtlety and discernment that sun elves find useful in their relations
+[benefit] 法师法器擅长
+  replaces=雅灵武器擅长
+  body=The legendary magical skill of sun elves comes from a devotion to the use of arcane magic that extends as far back as th
+[benefit] 精灵武器擅长
+  replaces=雅灵教育
+  body=Elves and eladrin of all stripes take time to learn the traditional weapons of their people.
+
+增益：你获得长弓和短弓的擅长。此增益替代「雅灵教育」
+
+===== 月精灵 (Moon Elf) =====
+[benefit] 技能奖励
+  replaces=<无>
+  body=Moon elves usually devote themselves to the study of magic and history. However, some find that their travels make under
+[benefit] 精灵武器擅长
+  replaces=雅灵教育
+  body=Elves and eladrin of all stripes take time to learn the traditional weapons of their people.
+
+增益：你获得长弓和短弓的擅长。此增益替代「雅灵教育」

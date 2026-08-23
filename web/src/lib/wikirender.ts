@@ -49,12 +49,142 @@ export function raceTraitHtml(text: string): string | undefined {
   return lines.join("\n").trim();
 }
 
+// 解析 classTrait 里的 ''名称：''正文 条目（用于亚种替换交互，按名称定位可替换的种族特性）
+export interface RaceTraitLine {
+  name: string;
+  body: string;
+  replaces?: string; // 若该特性是可替代型（如「龙惧」替代「龙息」），此处为被替代的基础特性名
+}
+export function parseRaceTraitLines(classTraitBody: string): RaceTraitLine[] {
+  const out: RaceTraitLine[] = [];
+  const re = /''([^：:]+?)\s*[：:]\s*''/g;
+  const segs: { start: number; end: number; name: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(classTraitBody)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, name: m[1].trim() });
+  for (let i = 0; i < segs.length; i++) {
+    const end = i + 1 < segs.length ? segs[i + 1].start : classTraitBody.length;
+    const body = classTraitBody.slice(segs[i].end, end).replace(/^\s*$/gm, "").trim();
+    if (body) {
+      const replaces = body.match(/替代「([^」]+)」/)?.[1];
+      out.push({ name: segs[i].name, body, ...(replaces ? { replaces } : {}) });
+    }
+  }
+  return out;
+}
+
 // 种族正文（classTrait 块之后），仅详细模式渲染
 export function raceBodyHtml(text: string): string | undefined {
   const m = text.match(/@@\.classTrait\s+"""[\s\S]*?"""/);
   if (!m || m.index === undefined) return undefined;
   const rest = text.slice(m.index + m[0].length).trim();
   return rest.length > 0 ? rest : undefined;
+}
+
+// 种族 lore 分段：按「!! 章节标题」切分为独立小节，供折叠展示（背景/外貌特征/态度信仰等）
+export interface RaceLoreSection {
+  title?: string;
+  body: string;
+}
+export function splitRaceLore(body: string): RaceLoreSection[] {
+  const out: RaceLoreSection[] = [];
+  const heads: { index: number; title: string }[] = [];
+  const re = /^!!\s+(.+?)\s*$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) heads.push({ index: m.index, title: m[1].trim() });
+  if (heads.length === 0) {
+    const t = body.trim();
+    if (t) out.push({ body: t });
+    return out;
+  }
+  // 首个章节标题之前的引言（背景概述）作为独立小节
+  if (heads[0].index > 0) {
+    const pre = body.slice(0, heads[0].index).replace(/^\s*$/gm, "").trim();
+    if (pre) out.push({ title: "种族背景", body: pre });
+  }
+  for (let i = 0; i < heads.length; i++) {
+    const end = i + 1 < heads.length ? heads[i + 1].index : body.length;
+    const secBody = body.slice(heads[i].index, end).replace(/^!!\s+.+$/m, "").replace(/^\s*$/gm, "").trim();
+    if (secBody) out.push({ title: heads[i].title, body: secBody });
+  }
+  return out;
+}
+
+// 辅助威能小节拆分：小节标题不折叠，仅各威能的描述文本折叠
+export interface AuxPowerSection {
+  intro?: string; // 首个威能之前的简介描述（@@.indent 块）
+  powers: { title: string; body?: string }[]; // 各威能：标题 + 描述（剔除 {{威能}} 引用）
+}
+export function splitAuxPowers(body: string): AuxPowerSection {
+  const out: AuxPowerSection = { powers: [] };
+  const firstHead = body.search(/^!!! /m);
+  if (firstHead < 0) {
+    const t = body.replace(/^\s*$/gm, "").trim();
+    if (t) out.intro = t;
+    return out;
+  }
+  const introRaw = body.slice(0, firstHead).replace(/^\s*$/gm, "").trim();
+  if (introRaw) out.intro = introRaw;
+  const parts = body.slice(firstHead).split(/^(?=!!! )/m);
+  for (const part of parts) {
+    const m = part.match(/^!!!\s+(.+?)\s*$/m);
+    if (!m) continue;
+    const b = part
+      .replace(/^!!!\s+.+$/m, "")
+      .replace(/\{\{[^}]+\}\}/g, "")
+      .replace(/^\s*$/gm, "")
+      .trim();
+    out.powers.push({ title: m[1].trim(), body: b.length > 0 ? b : undefined });
+  }
+  return out;
+}
+
+// 亚种解析：源文本含「属于[[原种族]]的亚种」模板的种族条目
+export interface SubraceBenefit {
+  title: string; // 增益名，如「钢铁意志」
+  body: string; // 完整描述（风味 + 增益效果）
+  replaces?: string; // 替代的标准种族特性，如「铁胃」
+}
+export interface SubraceInfo {
+  baseRaceName: string; // 原种族显示名，如「矮人 Dwarf」
+  note?: string; // 增益选择说明（如"只能选择其中一个"）
+  loreSections: RaceLoreSection[]; // 亚种自身的 lore 小节（背景/角色扮演等）
+  benefits: SubraceBenefit[];
+}
+export function parseSubraceInfo(sourceText: string): SubraceInfo | undefined {
+  const mk = sourceText.match(/属于\[\[([^\]|]+)(?:\|[^\]]+)?\]\]的亚种/);
+  if (!mk) return undefined;
+  const baseRaceName = mk[1].trim();
+  // 切出「XX增益」章节
+  const benefitHead = sourceText.match(/^!!\s+.+增益.*$/m);
+  const lorePart = benefitHead ? sourceText.slice(0, benefitHead.index) : sourceText;
+  const benefitsPart = benefitHead ? sourceText.slice(benefitHead.index) : "";
+  // lore：去掉「<<< 属于XX的亚种 <<<」标记块、通用说明（以"当你创建…亚种角色"开头）与分隔线
+  const loreClean = lorePart
+    .replace(/^<<<[\s\S]*?^<<<$/m, "")
+    .replace(/@@\.indent\n当你创建一个亚种角色时[\s\S]*?^@@$/m, "")
+    .replace(/^---$/m, "")
+    .replace(/^\s*$/gm, "")
+    .trim();
+  const loreSections = loreClean ? splitRaceLore(loreClean) : [];
+  // 增益块：''标题：''风味… 增益：效果…（替代「XX」）
+  const benefits: SubraceBenefit[] = [];
+  const re = /''([^：:]+?)\s*[：:]\s*''/g;
+  const segs: { start: number; end: number; title: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(benefitsPart)) !== null) segs.push({ start: m.index, end: m.index + m[0].length, title: m[1].trim() });
+  let note: string | undefined;
+  if (segs.length > 0) {
+    const intro = benefitsPart.slice(0, segs[0].start).replace(/^!!\s+.+$/m, "").replace(/^@@\.indent$/m, "").replace(/^\s*$/gm, "").trim();
+    if (intro) note = intro;
+  }
+  for (let i = 0; i < segs.length; i++) {
+    const end = i + 1 < segs.length ? segs[i + 1].start : benefitsPart.length;
+    const body = benefitsPart.slice(segs[i].end, end).replace(/^\s*$/gm, "").trim();
+    if (!body) continue;
+    const replaces = body.match(/替代「([^」]+)」/)?.[1];
+    benefits.push({ title: segs[i].title, body, replaces });
+  }
+  return { baseRaceName, note, loreSections, benefits };
 }
 
 // 简略模式：防具擅长 / 武器擅长 / 法器（无法器则不显示）
