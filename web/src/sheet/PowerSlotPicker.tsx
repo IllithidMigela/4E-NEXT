@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { useIncremental } from "../lib/incremental";
 import { createPortal } from "react-dom";
-import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
 import { POWER_CATEGORIES, powerCategory, type PowerCategoryKey } from "../lib/colors";
 import { baseClassName } from "./character";
 import type { Entry } from "../data/types";
+import { DeepSearchField, matchByName, matchDeep } from "./DeepSearch";
 
 const LEVEL_MODES = [
   { key: "current", label: "当前及以下" },
@@ -22,6 +22,7 @@ interface Props {
   raceEntry?: Entry;
   category: PowerCategoryKey;
   currentLevel: number;
+  fixedLevel?: number; // 指定该空位应填充的威能等级（由升级表推导）；提供时强制只显示该等级
   currentId?: string;
   onSelect: (id: string) => void;
   onClear?: () => void;
@@ -32,13 +33,15 @@ function lv(e: Entry): number {
   return parseInt(String(e.level ?? "0"), 10) || 0;
 }
 
-export default function PowerSlotPicker({ entries, loading, relations, classEntry, classEntry2, raceEntry, category, currentLevel, currentId, onSelect, onClear, onClose }: Props) {
+export default function PowerSlotPicker({ entries, loading, relations, classEntry, classEntry2, raceEntry, category, currentLevel, fixedLevel, currentId, onSelect, onClear, onClose }: Props) {
   const [cat, setCat] = useState<PowerCategoryKey>(category);
-  const [levelMode, setLevelMode] = useState<"current" | "range" | "all">("current");
-  const [minLevel, setMinLevel] = useState(Math.max(1, currentLevel));
-  const [maxLevel, setMaxLevel] = useState(Math.max(1, currentLevel));
+  // 空位等级已由升级表推导时，锁定「指定等级」模式并固定为该等级
+  const [minLevel, setMinLevel] = useState(fixedLevel ?? Math.max(1, currentLevel));
+  const [maxLevel, setMaxLevel] = useState(fixedLevel ?? Math.max(1, currentLevel));
+  const [levelMode, setLevelMode] = useState<"current" | "range" | "all">(fixedLevel !== undefined ? "range" : "current");
   const [sourceMode, setSourceMode] = useState<"default" | "class" | "race" | "all">("default");
   const [query, setQuery] = useState("");
+  const [deep, setDeep] = useState(false); // 全文搜索开关
 
   const conf = POWER_CATEGORIES.find((c) => c.key === cat);
 
@@ -86,11 +89,11 @@ export default function PowerSlotPicker({ entries, loading, relations, classEntr
             if (!wantClass && wantRace && !inRace) return false;
           }
         }
-        if (q && !(p.name + " " + (p.nameEn ?? "")).toLowerCase().includes(q)) return false;
+        if (q && !(deep ? matchDeep(p, q) : matchByName(p, q))) return false;
         return true;
       })
       .sort((a, b) => lv(a) - lv(b));
-  }, [entries, cat, levelMode, minLevel, maxLevel, currentLevel, sourceMode, classIds, raceIds, query]);
+  }, [entries, cat, levelMode, minLevel, maxLevel, currentLevel, sourceMode, classIds, raceIds, query, deep]);
 
 
   const { visible, sentinelRef, done } = useIncremental(filtered, 90);
@@ -98,7 +101,7 @@ export default function PowerSlotPicker({ entries, loading, relations, classEntr
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">选择{conf?.label ?? "威能"}</span>
+          <span className="picker-title">选择{fixedLevel !== undefined ? fixedLevel + "级" : ""}{conf?.label ?? "威能"}</span>
           <div className="picker-head-btns">
             {currentId && onClear && <button type="button" className="crop-btn" onClick={() => { onClear(); onClose(); }}>清空槽位</button>}
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
@@ -125,6 +128,10 @@ export default function PowerSlotPicker({ entries, loading, relations, classEntr
           </div>
           <div className="slot-filter-row">
             <span className="sf-label">等级</span>
+            {fixedLevel !== undefined ? (
+              <span className="sf-chip active">{fixedLevel}级</span>
+            ) : (
+              <>
             {LEVEL_MODES.map((m) => (
               <button key={m.key} type="button" className={levelMode === m.key ? "sf-chip active" : "sf-chip"} onClick={() => setLevelMode(m.key)}>{m.label}</button>
             ))}
@@ -135,9 +142,11 @@ export default function PowerSlotPicker({ entries, loading, relations, classEntr
                 <input type="number" min={1} max={30} value={maxLevel} onChange={(e) => setMaxLevel(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} />
               </span>
             )}
+              </>
+            )}
           </div>
         </div>
-        <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
+        <DeepSearchField value={query} deep={deep} onChange={setQuery} onToggleDeep={() => setDeep((d) => !d)} />
         <div className="meta">显示 {filtered.length} 条</div>
         <div className="picker-cards">
           {loading && entries.length === 0 && <p className="hint">正在加载威能数据…</p>}
