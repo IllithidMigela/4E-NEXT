@@ -110,18 +110,35 @@ export function migrateCharacter(c: Partial<Character>): Character {
     featSlots: base.featSlots ?? [],
     featChoices: (base as { featChoices?: Record<number, string> }).featChoices ?? {},
     classFeatureChoices: (base as { classFeatureChoices?: Record<string, string> }).classFeatureChoices ?? {},
-    equipmentSlots: base.equipmentSlots ?? [],
+    equipmentSlots: (base.equipmentSlots ?? []).slice(0, 12), // 原下标 12（奇物）已迁移至 wondrousSlots
     adventureItems: base.adventureItems && base.adventureItems.length ? base.adventureItems.map((x) => (typeof x === "string" ? { name: x, cost: 0 } : (x as { name: string; cost: number }))) : [{ name: "", cost: 0 }, { name: "", cost: 0 }],
     money: base.money ?? { earned: 0, spent: 0 },
     equipmentEnhance: base.equipmentEnhance ?? {},
     otherSlots: base.otherSlots ?? [],
     consumableSlots: base.consumableSlots ?? [],
+    wondrousSlots: (() => {
+      const fromField = (base as { wondrousSlots?: (string | undefined)[] }).wondrousSlots ?? [];
+      if (fromField.length) return fromField;
+      const old = (base.equipmentSlots ?? [])[12];
+      return old ? [old] : [];
+    })(),
     trainedSkills: base.trainedSkills ?? [],
   classTrainedSkills: (base as { classTrainedSkills?: string[] }).classTrainedSkills ?? [],
     // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除）
     classGrantedPowerIds: (base as { classGrantedPowerIds?: string[] }).classGrantedPowerIds ?? [],
     // 种族授予、已加入威能面板的辅助威能 id（更换种族时据此从威能面板移除）
     raceGrantedPowerIds: (base as { raceGrantedPowerIds?: string[] }).raceGrantedPowerIds ?? [],
+    // 种族特性自动授予的威能 id（特性内 [[威能]]，随基础替代/亚种增益切换变化）
+    raceAutoGrantedPowerIds: (base as { raceAutoGrantedPowerIds?: string[] }).raceAutoGrantedPowerIds ?? [],
+    // 职业赠送专长 id（不占用常规专长槽位，更换职业时据此清除）
+    classGrantedFeatIds: (base as { classGrantedFeatIds?: string[] }).classGrantedFeatIds ?? [],
+    // 仪式槽位与职业赠送仪式（不占用常规仪式槽位，更换职业时据此清除）
+    ritualSlots: (base as { ritualSlots?: (string | undefined)[] }).ritualSlots ?? [],
+    ritualSlotOverride: (base as { ritualSlotOverride?: number }).ritualSlotOverride,
+    classGrantedRitualIds: (base as { classGrantedRitualIds?: string[] }).classGrantedRitualIds ?? [],
+    classGrantedRitualSources: (base as { classGrantedRitualSources?: Record<string, string> }).classGrantedRitualSources ?? {},
+    // 专长赠送威能记录（旧存档缺省为空对象）
+    featGrantedPowerIds: (base as { featGrantedPowerIds?: Record<number, string[]> }).featGrantedPowerIds ?? {},
     languages: base.languages && base.languages.length ? base.languages : [""],
     actionPoints: base.actionPoints ?? 1,
     creation: base.creation ?? {
@@ -186,12 +203,24 @@ export interface Character {
   baseItems: Record<number, string>;
   otherSlots: (string | undefined)[];
   consumableSlots: (string | undefined)[];
+  wondrousSlots: (string | undefined)[];
   trainedSkills: string[];
   classTrainedSkills: string[]; // 职业选择型受训技能（用户从职业技能列表点选，更换职业时清除）
   // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除，实现威能随职业走）
   classGrantedPowerIds: string[];
   // 种族授予、已加入威能面板的辅助威能 id（更换种族时据此从威能面板移除）
   raceGrantedPowerIds: string[];
+  // 种族特性自动授予的威能 id（特性内 [[威能]]，随基础替代/亚种增益切换变化；区别于手动选择的辅助威能）
+  raceAutoGrantedPowerIds: string[];
+  // 职业赠送专长 id（如德鲁伊/神导士的「仪式施法者」奖励专长；不占用常规专长槽位）
+  classGrantedFeatIds: string[];
+  // 仪式槽位（默认随角色等级，可手动覆盖数量）
+  ritualSlots: (string | undefined)[];
+  ritualSlotOverride?: number; // 仪式槽位数覆盖（undefined = 随等级）
+  classGrantedRitualIds: string[]; // 职业赠送仪式 id（不占用常规仪式槽位，更换职业时据此清除）
+  classGrantedRitualSources: Record<string, string>; // 赠送仪式 id → 来源职业特性名
+  // 专长槽位下标 → 该专长赠送的威能 id（选择专长自动加入威能面板；清空/更换专长时据此移除）
+  featGrantedPowerIds: Record<number, string[]>;
   languages: string[];
   actionPoints: number;
   creation: CharacterCreation;
@@ -261,10 +290,17 @@ export function defaultCharacter(): Character {
     baseItems: {},
     otherSlots: [],
     consumableSlots: [],
+    wondrousSlots: [],
     trainedSkills: [],
     classTrainedSkills: [],
     classGrantedPowerIds: [],
     raceGrantedPowerIds: [],
+    raceAutoGrantedPowerIds: [],
+    classGrantedFeatIds: [],
+    ritualSlots: [],
+    classGrantedRitualIds: [],
+    classGrantedRitualSources: {},
+    featGrantedPowerIds: {},
     languages: [""],
     actionPoints: 1,
     creation: { personality: "", concept: "", background: "", notes: "" },
@@ -301,6 +337,48 @@ export function grantedPowerCategory(usage?: string, powerKind?: string): keyof 
   if (usage === "encounter") return "encounter";
   if (usage === "daily") return "daily";
   return "special";
+}
+
+// 威能名尾缀 → 槽位归类（自设/homebrew 威能常用「攻击N/辅助N」编码等级与频率）：
+// - 攻击1 → 随意(atWill)；攻击N(N∈遭遇级) → 遭遇；攻击N(N∈每日级) → 每日
+// - 辅助N → 辅助(utility)
+// 用于种族/职业/专长赠送威能时，优先按名称尾缀决定落入哪个威能面板空位。
+export const ENCOUNTER_POWER_LEVELS = new Set([3, 7, 11, 13, 17, 23, 27]);
+export const DAILY_POWER_LEVELS = new Set([5, 9, 15, 19, 20, 25, 29]);
+export function powerNameSlot(name?: string): keyof PowerSlots | undefined {
+  if (!name) return undefined;
+  let m = name.match(/(?:^|\s)攻击(\d+)\s*$/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n === 1) return "atWill";
+    if (ENCOUNTER_POWER_LEVELS.has(n)) return "encounter";
+    if (DAILY_POWER_LEVELS.has(n)) return "daily";
+    return undefined;
+  }
+  m = name.match(/(?:^|\s)辅助(\d+)\s*$/);
+  if (m) return "utility";
+  return undefined;
+}
+
+// 各频率「等级槽位」获得的角色等级（官方升级表；用于推导每个空位应填充的威能等级）
+export const ENCOUNTER_SLOT_LEVELS = [1, 3, 7, 13, 17, 23, 27];
+export const DAILY_SLOT_LEVELS = [1, 5, 9, 15, 19, 25, 29];
+export const UTILITY_SLOT_LEVELS = [2, 6, 10, 16, 22];
+// 典范/传奇槽位对应的具体威能等级（典范遭遇=11、典范每日=20、典范辅助=12、传奇辅助=26；随意无典范/传奇）
+export const PARAGON_SLOT_LEVELS = { atWill: 1, encounter: 11, daily: 20, utility: 12 } as const;
+export const LEGENDARY_SLOT_LEVEL = 26;
+// 槽位等级：数字 = 具体等级；"paragon"/"legendary" = 典范/传奇槽位（无等级数字）
+export type SlotLevel = number | "paragon" | "legendary";
+
+// 授予威能应落入哪个槽位：优先按名称尾缀，否则回退到 usage/powerKind 规则。
+// 种族/职业/专长赠送的辅助威能（如牧师「治愈真言」）不占 2/6/10/… 标准辅助槽位，一律送入「种族/职业威能」。
+export function grantedPowerSlot(usage?: string, powerKind?: string, name?: string): keyof PowerSlots {
+  const fromName = powerNameSlot(name);
+  if (fromName === "utility") return "special";
+  if (fromName) return fromName;
+  const cat = grantedPowerCategory(usage, powerKind);
+  if (cat === "utility") return "special";
+  return cat ?? "special";
 }
 
 export function setPowerSlot(slots: PowerSlots, cat: keyof PowerSlots, index: number, id: string): PowerSlots {
@@ -340,6 +418,20 @@ export function setEquipmentSlot(slots: (string | undefined)[], index: number, i
 }
 
 export function clearEquipmentSlot(slots: (string | undefined)[], index: number): (string | undefined)[] {
+  const arr = [...slots];
+  if (arr[index] !== undefined) arr[index] = undefined;
+  return arr;
+}
+
+// 仪式槽位（默认随角色等级；index 超出时自动补空槽）
+export function setRitualSlot(slots: (string | undefined)[], index: number, id: string): (string | undefined)[] {
+  const arr = [...slots];
+  while (arr.length <= index) arr.push(undefined);
+  arr[index] = id;
+  return arr;
+}
+
+export function clearRitualSlot(slots: (string | undefined)[], index: number): (string | undefined)[] {
   const arr = [...slots];
   if (arr[index] !== undefined) arr[index] = undefined;
   return arr;
