@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
 import CharacterSheet from "./sheet/CharacterSheet";
+import { exportCharacterCard, type ExportFormat } from "./lib/exportImage";
 import SearchView from "./SearchView";
 import SettingsView from "./SettingsView";
 import LearnView from "./LearnView";
@@ -59,6 +60,10 @@ function Shell() {
   const [char, setChar] = useState<Character>(() => cards.find((c) => c.id === activeId)?.char ?? defaultCharacter());
   const [cardOpen, setCardOpen] = useState(false);
   const [drawOpen, setDrawOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
+  const [exporting, setExporting] = useState(false);
+  const captureRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -201,6 +206,50 @@ function Shell() {
     reader.readAsText(file);
   }
 
+  // 导出角色卡：捕获可见角色卡（临时切到渲染模式以获得干净卡片），输出 PNG / JPG / PDF
+  async function doExport() {
+    const node = captureRef.current;
+    if (!node) return;
+    const prevMode = mode;
+    const prevLayoutRaw = layoutRaw;
+    const forceSingle = exportFormat === "pdf";
+    setMode("render");
+    // PDF 分页需要单栏布局，便于按面板不跨页排版
+    if (forceSingle) setLayoutRaw("single");
+    setExporting(true);
+    try {
+      // 等待渲染模式 / 单栏布局重渲染完成
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      await new Promise((r) => setTimeout(r, 250));
+      // 图片格式：左右两侧留白（PDF 由 A4 页边距提供留白）
+      if (!forceSingle) node.style.padding = "0 48px";
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      const base = (char.name || "角色").replace(/[\\/:*?"<>|]/g, "_");
+      const bg = getComputedStyle(document.body).backgroundColor;
+      await exportCharacterCard(node, exportFormat, base, bg);
+    } catch (e) {
+      console.error(e);
+      window.alert("导出失败，请重试。");
+    } finally {
+      node.style.padding = "";
+      if (forceSingle) setLayoutRaw(prevLayoutRaw);
+      setMode(prevMode);
+      setExporting(false);
+    }
+  }
+
+  function runExport() {
+    // 若当前不在人物页，先切到人物页等待挂载后再导出
+    if (view !== "sheet") {
+      setView("sheet");
+      setTimeout(() => {
+        void doExport();
+      }, 500);
+    } else {
+      void doExport();
+    }
+  }
+
   const bgStyle = bgImage
     ? {
         backgroundImage: "url(" + bgImage + ")",
@@ -220,6 +269,7 @@ function Shell() {
         <button type="button" className={view === "overview" ? "side-btn active" : "side-btn"} title="速览" onClick={() => setView("overview")}><span className="material-symbols-outlined">overview</span><span className="sb-label">速览</span></button>
         <div className="side-sep" />
         <button type="button" className="side-btn" title="存档" onClick={() => setCardOpen(true)}><span className="material-symbols-outlined">folder</span><span className="sb-label">存档</span></button>
+        <button type="button" className="side-btn" title="导出角色卡" onClick={() => setExportOpen(true)}><span className="material-symbols-outlined">download</span><span className="sb-label">导出</span></button>
         <button type="button" className={view === "homebrew" ? "side-btn active" : "side-btn"} title="私设" onClick={() => setView("homebrew")}><span className="material-symbols-outlined">extension</span><span className="sb-label">私设</span></button>
         <button type="button" className={"side-btn" + (view === "draw" ? " active" : "")} title="抽卡" onClick={() => setDrawOpen(true)}><span className="material-symbols-outlined">casino</span><span className="sb-label">抽卡</span></button>
         <button type="button" className={view === "search" ? "side-btn active" : "side-btn"} title="词条" onClick={() => setView("search")}><span className="material-symbols-outlined">search</span><span className="sb-label">词条</span></button>
@@ -233,7 +283,11 @@ function Shell() {
       </nav>
       <main className="content">
         <div className="view-anim" key={view}>
-          {view === "sheet" && <CharacterSheet layout={layout} mode={mode} char={char} setChar={setChar} />}
+          {view === "sheet" && (
+            <div ref={captureRef}>
+              <CharacterSheet layout={layout} mode={mode} char={char} setChar={setChar} />
+            </div>
+          )}
           {view === "reserve" && <ReserveView layout={layout} char={char} setChar={setChar} />}
           {view === "background" && <BackgroundView mode={mode} char={char} setChar={setChar} />}
           {view === "draw" && <DrawView char={char} setChar={setChar} onExit={() => setView("sheet")} onFinish={finishDraw} />}
@@ -290,6 +344,27 @@ function Shell() {
               <span className="preset-label">自动新建一个空白人物卡，原卡不受影响</span>
             </button>
           </div>
+        </SheetDialog>
+      )}
+      {exportOpen && (
+        <SheetDialog open headline="导出角色卡" sub={char.name || "角色"} onClose={() => setExportOpen(false)} actions={
+          <>
+            <TextButton onClick={() => setExportOpen(false)}>取消</TextButton>
+            <TextButton disabled={exporting} onClick={runExport}>{exporting ? "导出中…" : "导出"}</TextButton>
+          </>
+        }>
+          <div className="export-format-row">
+            {([["png", "PNG"], ["jpg", "JPG"], ["pdf", "PDF"]] as const).map(([f, label]) => (
+              <button key={f} type="button" className={"export-format-btn" + (exportFormat === f ? " active" : "")} onClick={() => setExportFormat(f)}>{label}</button>
+            ))}
+          </div>
+          <p className="hint">
+            {exportFormat === "pdf"
+              ? "以渲染模式生成当前人物卡，并按 A4 纸张分页输出为 PDF 文件。"
+              : exportFormat === "jpg"
+                ? "以渲染模式生成当前人物卡，输出为 JPG 图片（有损压缩，文件较小）。"
+                : "以渲染模式生成当前人物卡，输出为 PNG 图片（无损，文件较大）。"}
+          </p>
         </SheetDialog>
       )}
     </div>
