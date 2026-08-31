@@ -238,6 +238,18 @@ function wikiLinkTargets(text?: string): string[] {
   return out;
 }
 
+// 正文「如果你有[[X]]威能」等条件句中的链接：仅为前提说明，不是本次特性授予的威能，
+// 不应随普通特性自动加入威能面板（如法师（学派法师）19级「每日威能」中的[[召唤暗影仆从]]，
+// 它只是「若已有该威能可选新召唤生物」的条件提及）。
+function conditionalGrantLinks(text?: string): Set<string> {
+  const out = new Set<string>();
+  if (!text) return out;
+  const re = /(?:如果你|若你|如果你已|若你已)(?:拥有|持有|有|已有)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.add(m[1].trim());
+  return out;
+}
+
 // 选项值归一化为字符串数组（choiceKey 存 string 或 string[]）
 function choiceVals(v: string | string[] | undefined): string[] {
   return Array.isArray(v) ? v : v ? [v] : [];
@@ -941,7 +953,7 @@ function OptionOrSubChoice({ label, desc, innerKey, innerChosen, onChoose, field
   lookup: (target: string) => Entry | undefined;
   compact?: boolean;
 }) {
-  const { flavor, rest } = useMemo(() => splitFlavor(desc), [desc]);
+  const { flavor, rest } = useMemo(() => splitOptFlavorMulti(desc), [desc]);
   // 选项本身可能引用一个生物/魔宠条目（如元素法师「灵魔仆从」的土魔/风魔/炎魔/水魔），
   // 选中后把该生物的数据卡内联展示，并随选项切换更换。
   const creature = useMemo(() => (label ? lookup(label) : undefined), [label, lookup]);
@@ -1096,16 +1108,7 @@ function featureLevel(title: string): number {
   return m ? parseInt(m[1], 10) : 1;
 }
 
-// 层级条目（典范之道 / 传奇天命）是否「相关于」当前职业：其前提(prerequisite)文本包含该职业名即视为相关。
-// 用于带层级表职业的典范/传奇层级展示判定：选择了与职业相关的条目才显示该层级表与特性（数据才生效）；
-// 否则（未选择，或所选条目前提不含本职业）隐藏该层级表与特性、数据不生效。
-function tierEntryRelevant(prereq: string | undefined, className: string): boolean {
-  if (!prereq) return false;
-  const norm = (s: string) => s.replace(/\s+/g, "");
-  const p = norm(prereq);
-  const c = norm(className);
-  return !!c && (p.includes(c) || c.includes(p));
-}
+
 
 // 职业特性是否在 `level` 级可用：无等级前缀（如「混职天赋选项」「原力守护者」）恒可用；
 // 带「X级：」前缀且 X ≤ level 才可用（体现逐级获得职业特性，如「5级：进阶用毒」）。
@@ -1544,6 +1547,23 @@ function splitFlavor(body: string): { flavor: string; rest: string } {
   return { flavor: first.slice(0, end), rest: body.slice(end) };
 }
 
+// 在 splitFlavor 基础上扩展「连续多个风味段落」：当首段已判定为风味后，继续累积其后紧随的
+// 纯英文叙述段（不含中文字符），直至遇到含中文的规则段、粗体规则标签「''X：''」或列表「*/数字」。 
+// 用于正确吸收如哨兵「自然循环之侍从」各季节选项前连续的两段英文风味，避免第二段被当作规则正文。
+function splitOptFlavorMulti(body: string): { flavor: string; rest: string } {
+  const base = splitFlavor(body);
+  if (!base.flavor || !base.rest) return base; // 首段无风味或风味即全文：无扩展空间
+  const parts = base.rest.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
+  let flavor = base.flavor;
+  let keep = 0;
+  for (const p of parts) {
+    if (/[\u4e00-\u9fff]/.test(p) || /^''[^'\n]*[：:]''/.test(p) || /^\*|^\d+\./.test(p)) break;
+    flavor += "\n\n" + p;
+    keep++;
+  }
+  return { flavor, rest: parts.slice(keep).join("\n\n") };
+}
+
 // 渲染特性正文：开头风味句用斜体楷书，其余规则正文照常
 // hideFlavor 时仅输出规则正文（简洁模式隐藏风味文字）
 function FeatureBody({ body, fields, lookup, className, hideFlavor }: {
@@ -1629,6 +1649,216 @@ function SummonedSteedData({ section, detail, fields, lookup }: {
         </div>
       </div>
     </details>
+  );
+}
+
+// —— 哨兵「动物伙伴」专属渲染 ——
+// 该特性按结构重组为：风味引进 → 收益（增益）行 → 所选季节的动物伙伴（位于收益下方）→ 折叠的规则小节。
+// {{狼动物伙伴…}} 等生物转clusion 在 parseFeatureSections 时已作为 powerRefs 提取并保留（正文中被剔除），
+// 故按「季节↔伙伴」关键词在 refs 中匹配 creature 条目渲染其数据卡。
+const SEASON_TO_COMPANION: Record<string, string> = { "春": "狼", "夏": "熊", "荒原": "活体微风" };
+// 取「自然循环之侍从」所选季节对应的伙伴关键词（返回如「狼」「熊」「活体微风」），无法判定返回 undefined
+function companionKwOf(season?: string): string | undefined {
+  if (!season) return undefined;
+  return Object.entries(SEASON_TO_COMPANION).find(([s]) => season.includes(s))?.[1];
+}
+
+// 伙伴 creature 数据卡（低层）：渲染为 beast-sub 折叠，详图默认展开、简洁默认收起
+function AnimalCompanionData({ creature, detail, fields }: {
+  creature: Entry;
+  detail: boolean;
+  fields: Record<string, string>;
+}) {
+  if (!creature.sourceText) return null;
+  return (
+    <details className="beast-sub" open={detail}>
+      <summary>{cleanDisplayName(creature.name)}数据</summary>
+      <div className="beast-sub-body">
+        <div className="pf-body">
+          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(creature.sourceText, fields) }} />
+        </div>
+      </div>
+    </details>
+  );
+}
+
+interface AnimalCompanionSub {
+  title: string;         // !!! 子小节标题（含中英文）
+  body: string;          // 子小节正文
+  kind: "fold" | "companion"; // fold=需折叠的规则小节（动物伙伴动作/独立动作）；companion=与季节对应的伙伴小节
+}
+interface AnimalCompanionParse {
+  intro: string;         // 特性开头风味引进（增益行之前）
+  benefit: string;       // ''增益：''… 收益行
+  rules: string;         // 收益行之后、首个 !!! 之前的规则文本（折叠为「你的动物伙伴」）
+  subs: AnimalCompanionSub[];
+}
+// 解析「动物伙伴」特性正文为上述结构
+function parseAnimalCompanion(body: string): AnimalCompanionParse {
+  const benM = body.match(/''增益[：:]\s*''/);
+  const intro = benM ? body.slice(0, benM.index).trim() : body;
+  const post = benM ? body.slice(benM.index) : "";
+  const nlPos = post.indexOf("\n");
+  const benefit = (nlPos >= 0 ? post.slice(0, nlPos) : post).trim();
+  const after = nlPos >= 0 ? post.slice(nlPos) : "";
+  const subIdx = after.search(/^!!! /m);
+  const rules = (subIdx >= 0 ? after.slice(0, subIdx) : after).replace(/^\s*$/gm, "").trim();
+  const subsRaw = subIdx >= 0 ? after.slice(subIdx) : "";
+  const raw: { title: string; body: string }[] = [];
+  let cur: { title: string; body: string[] } | null = null;
+  for (const line of subsRaw.split("\n")) {
+    const h = line.match(/^!!! (.+)$/);
+    if (h) {
+      if (cur) raw.push({ title: cur.title, body: cur.body.join("\n") });
+      cur = { title: h[1].trim(), body: [] };
+    } else if (cur) {
+      cur.body.push(line);
+    }
+  }
+  if (cur) raw.push({ title: cur.title, body: cur.body.join("\n") });
+  const subs: AnimalCompanionSub[] = raw.map((s) => ({
+    title: s.title,
+    body: s.body,
+    // 规则小节：标题含「动作」（动物伙伴动作/动物伙伴独立动作）；其余为与季节对应的伙伴小节
+    kind: s.title.includes("动作") ? "fold" : "companion",
+  }));
+  return { intro, benefit, rules, subs };
+}
+
+// 「动物伙伴」特性主渲染：重组风味/收益/伙伴/折叠规则。
+function AnimalCompanionBlock({ section, detail, fields, season, lookup }: {
+  section: FeatureSection;
+  detail: boolean;
+  fields: Record<string, string>;
+  season?: string; // 「自然循环之侍从」所选季节（联动伙伴）
+  lookup: (target: string) => Entry | undefined;
+}) {
+  const refs = section.powerRefs ?? [];
+  const { intro, benefit, rules, subs } = useMemo(() => parseAnimalCompanion(section.body ?? ""), [section.body]);
+  // 所选季节对应伙伴小节的子标题正文（如「春之德鲁伊：狼 Druid of Spring: Wolf + 英文风味」）
+  const selSub = useMemo(() => subs.find((s) => s.kind === "companion" && s.title.includes(season?.split(" ")[0] ?? season ?? "")), [subs, season]);
+  // 所选季节对应伙伴数据卡
+  const companion = useMemo(() => {
+    const kw = companionKwOf(season);
+    if (!kw) return undefined;
+    const full = refs.find((r) => lookup(r)?.category === "creature" && r.includes(kw));
+    return full ? lookup(full) : undefined;
+  }, [refs, season, lookup, selSub]);
+  const foldSubs = subs.filter((s) => s.kind === "fold");
+
+  // 折叠规则小节的摘要名：去英文后的中文名（如「动物伙伴动作」「动物伙伴独立动作」）
+  const foldName = (t: string) => cnTitle(t).trim();
+
+  if (!detail) {
+    // 简洁模式：隐藏风味，仅显示特性名 + 收益 + 所选伙伴数据卡；规则小节折叠收起
+    return (
+      <div className="cls-feat set">
+        <div className="cls-feat-name">{cleanDisplayName(featTitle(section.title))}</div>
+        {benefit && <div className="cls-feat-note"><WikiBody body={prose(benefit)} fields={fields} lookup={lookup} indent /></div>}
+        {selSub && <div className="ac-companion-name">{cleanDisplayName(selSub.title)}</div>}
+        {companion && <AnimalCompanionData creature={companion} detail={false} fields={fields} />}
+        {rules && <details className="beast-sub"><summary>你的动物伙伴</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(rules)} fields={fields} lookup={lookup} indent /></div></div></details>}
+        {foldSubs.map((s) => (
+          <details className="beast-sub" key={s.title}><summary>{foldName(s.title)}</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(s.body)} fields={fields} lookup={lookup} indent /></div></div></details>
+        ))}
+      </div>
+    );
+  }
+  // 详图模式：风味 → 收益 → 所选伙伴（收益下方）→ 折叠规则
+  return (
+    <div className="pf-item">
+      <div className="pf-title">{featTitle(section.title)}</div>
+      {intro && <div className="pf-body"><span className="pf-flavor"><WikiBody body={prose(intro)} fields={fields} lookup={lookup} /></span></div>}
+      {benefit && <div className="pf-body"><div className="pf-rest"><WikiBody body={prose(benefit)} fields={fields} lookup={lookup} indent /></div></div>}
+      {selSub && companion && (
+        <div className="ac-companion">
+          <div className="ac-opt-name">{cleanDisplayName(selSub.title)}</div>
+          {selSub.body && <div className="pf-body"><span className="pf-flavor"><WikiBody body={prose(selSub.body)} fields={fields} lookup={lookup} /></span></div>}
+          <AnimalCompanionData creature={companion} detail fields={fields} />
+        </div>
+      )}
+      {!season && <div className="ac-companion-hint">请先在『自然循环之侍从』中选择季节</div>}
+      {rules && <details className="beast-sub"><summary>你的动物伙伴</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(rules)} fields={fields} lookup={lookup} indent /></div></div></details>}
+      {foldSubs.map((s) => (
+        <details className="beast-sub" key={s.title}><summary>{foldName(s.title)}</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(s.body)} fields={fields} lookup={lookup} indent /></div></div></details>
+      ))}
+    </div>
+  );
+}
+
+// —— 哨兵季节变体特性（13级自然循环典范 / 17级动物伙伴威能）——
+// 结构与「动物伙伴」相似但更简单：引言 + 春/夏/荒原三个「!!!」小节，各含「''增益：''」收益。
+// 根据「自然循环之侍从」所选季节，仅显示/生效对应小节。
+interface SeasonVariantPart { title: string; body: string }
+function splitSeasonVariant(body: string): { intro: string; subs: SeasonVariantPart[] } {
+  const subIdx = body.search(/^!!! /m);
+  const intro = (subIdx >= 0 ? body.slice(0, subIdx) : body).replace(/^\s*$/gm, "").trim();
+  const raw = subIdx >= 0 ? body.slice(subIdx) : "";
+  const subs: SeasonVariantPart[] = [];
+  let cur: SeasonVariantPart | null = null;
+  for (const line of raw.split("\n")) {
+    const h = line.match(/^!!! (.+)$/);
+    if (h) {
+      if (cur) subs.push(cur);
+      cur = { title: h[1].trim(), body: "" };
+    } else if (cur) {
+      cur.body += (cur.body ? "\n" : "") + line;
+    }
+  }
+  if (cur) subs.push(cur);
+  return { intro, subs };
+}
+// 取正文中与所选季节匹配的那一个「!!!」小节；未选季节或无法匹配时返回 undefined
+function seasonSubOf(body: string, season?: string): SeasonVariantPart | undefined {
+  if (!season) return undefined;
+  const seasonCJK = Object.keys(SEASON_TO_COMPANION).find((s) => season.includes(s));
+  if (!seasonCJK) return undefined;
+  return splitSeasonVariant(body).subs.find((x) => x.title.includes(seasonCJK));
+}
+
+// 「自然循环典范/动物伙伴威能」主渲染：引言风味 + 所选季节小节（风味 + 收益），并按季节过滤展示。
+function SeasonVariantBlock({ section, detail, fields, season, lookup }: {
+  section: FeatureSection;
+  detail: boolean;
+  fields: Record<string, string>;
+  season?: string;
+  lookup: (target: string) => Entry | undefined;
+}) {
+  const { intro } = useMemo(() => splitSeasonVariant(section.body ?? ""), [section.body]);
+  const selSub = useMemo(() => seasonSubOf(section.body ?? "", season), [section.body, season]);
+  if (!detail) {
+    // 简洁模式：隐藏风味，仅显示特性名 + 所选季节的收益；规则收益用紧凑样式
+    return (
+      <div className="cls-feat set">
+        <div className="cls-feat-name">{cleanDisplayName(featTitle(section.title))}</div>
+        {selSub && <div className="cls-feat-note"><WikiBody body={prose(selSub.body)} fields={fields} lookup={lookup} indent /></div>}
+      </div>
+    );
+  }
+  // 详图模式：引言风味 → 所选季节小节（小节名 + 风味 + 收益）
+  return (
+    <div className="pf-item">
+      <div className="pf-title">{featTitle(section.title)}</div>
+      {intro && <div className="pf-body"><span className="pf-flavor"><WikiBody body={prose(intro)} fields={fields} lookup={lookup} /></span></div>}
+      {selSub && (
+        <div className="ac-companion">
+          <div className="ac-opt-name">{cleanDisplayName(selSub.title)}</div>
+          <SeasonVariantBody body={selSub.body} fields={fields} lookup={lookup} />
+        </div>
+      )}
+      {!season && <div className="ac-companion-hint">请先在『自然循环之侍从』中选择季节</div>}
+    </div>
+  );
+}
+
+// 季节小节正文：分隔风味（英文叙述）与「''增益：''」规则收益后分别渲染
+function SeasonVariantBody({ body, fields, lookup }: { body: string; fields: Record<string, string>; lookup: (target: string) => Entry | undefined }) {
+  const { flavor, rest } = useMemo(() => splitOptFlavorMulti(body), [body]);
+  return (
+    <div className="pf-body">
+      {flavor && <span className="pf-flavor"><WikiBody body={prose(flavor)} fields={fields} lookup={lookup} /></span>}
+      {rest && <div className="pf-rest"><WikiBody body={prose(rest)} fields={fields} lookup={lookup} indent /></div>}
+    </div>
   );
 }
 
@@ -2578,7 +2808,7 @@ function mageMaMaster(optA: MageSchool | undefined, optB: MageSchool | undefined
 }
 
 // 单个职业的能力块（classTrait + 职业特性以条目展示 / 简略擅长行）
-function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, classes, magicSchools, panelIds, onAddPowers, onTrackClassPowers, onRemovePowers, onTrackClassFeats, onRemoveFeats, onTrackClassRituals, onRemoveClassRituals, featureOnly, paragonPrereq, epicPrereq, domains }: {
+function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, classes, magicSchools, panelIds, onAddPowers, onTrackClassPowers, onRemovePowers, onTrackClassFeats, onRemoveFeats, onTrackClassRituals, onRemoveClassRituals, featureOnly, domains }: {
   entry: Entry;
   detail: boolean;
   level: number;
@@ -2596,8 +2826,6 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
   onTrackClassRituals?: (rituals: { entry: Entry; source: string }[]) => void; // 记录职业赠送仪式 id 及来源特性名（不占用仪式槽位）
   onRemoveClassRituals?: (ids: string[]) => void; // 特性选择变化时移除「不再赠送」的仪式
   featureOnly?: boolean; // 混职职业能力模式：仅渲染职业名 + 职业特性（隐藏该职业自己的 trait 与 lore，因已由合并块展示）
-  paragonPrereq?: string; // 所选典范之道的 prerequisite（用于判定典范层级是否与本职业相关）
-  epicPrereq?: string; // 所选传奇天命的 prerequisite（用于判定传奇层级是否与本职业相关）
   domains?: Entry[]; // 全量领域条目（战争祭司「领域」选择用）
 }) {
   // 带层级表的职业（如黑暗卫士）：提取各层级表（英雄/典范/传奇），按层级插入到对应层级的第一个特性前，
@@ -2619,8 +2847,10 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
   // 未选择对应条目时视为相关（显示该职业本层级的默认特性）；只有明确选了「无关」条目才隐藏该层级。
   // 没有层级表的职业不受影响（恒显示全部层级特性）。
   const hasLevelTable = levelTables.length > 0;
-  const paragonRelevant = !hasLevelTable || !paragonPrereq || tierEntryRelevant(paragonPrereq, entry.name);
-  const epicRelevant = !hasLevelTable || !epicPrereq || tierEntryRelevant(epicPrereq, entry.name);
+  // 取消典范/传奇相关性对职业特性的影响：无论选择相关或无关的典范道/传奇天命，
+  // 职业的典范(11-20)与传奇(21+)层级特性及层级表都始终显示、数据始终生效。
+  const paragonRelevant = true;
+  const epicRelevant = true;
   const tierVisible = useCallback((title: string): boolean => {
     if (!hasLevelTable) return true;
     const lv = featureLevel(title);
@@ -2746,6 +2976,13 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
   // 保护者「召唤自然盟友」：抽出单独渲染（含按等级折叠的野兽数据）
   const summonSection = useMemo(() => (parsed ? parsed.sections.find((s) => cnTitle(s.title) === "召唤自然盟友") : undefined), [parsed]);
   const summonAspect = useMemo(() => resolvePrimalAspect(choices, [entry]), [choices, entry]);
+  // 哨兵「动物伙伴」季节联动：读取「自然循环之侍从」所选季节，联动展示对应动物伙伴数据卡
+  const seasonSection = useMemo(() => (parsed ? parsed.sections.find((s) => cnTitle(s.title).includes("自然循环之侍从")) : undefined), [parsed]);
+  const companionSeason = useMemo(() => {
+    if (!seasonSection) return undefined;
+    const v = choices[entry.id + "::" + seasonSection.title];
+    return Array.isArray(v) ? v[0] : typeof v === "string" ? v : undefined;
+  }, [seasonSection, choices, entry.id]);
   // 刺客（行刑者）：三工会选择（血红正义/低语联盟/忍者之道）；选中的工会落地相应武器擅长与赠送威能
   const exe = useMemo(() => executionerGuilds(entry.sourceText), [entry.sourceText]);
   const exeKey = exe ? entry.id + "::刺客公会" : undefined;
@@ -2823,6 +3060,26 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
     if (Array.isArray(own)) own.forEach((x) => t.delete(x));
     else if (typeof own === "string") t.delete(own);
     return t;
+  };
+  // 游侠·猎人「射艺流派 ↔ 强化破坏射击」联动：
+  // 13级「强化破坏射击」按 1级所选远程武器自动匹配（弓之猎人→齐射弓箭，弩之猎人→惩戒弩箭）。
+  // 仅作为未显式选择时的建议默认值；玩家若刻意选择另一款武器特性（如弓弩双修）仍可手动覆盖。
+  const ARROW_VOLLEY = "齐射弓箭 Volley of Arrows";
+  const BOLT_PUNISH = "惩戒弩箭 Punishing Quarrel";
+  const archeryLinkedDefault = useMemo(() => {
+    const style = parsed?.sections.find((s) => cnTitle(s.title) === "1级：射艺流派");
+    const v = style ? choices[entry.id + "::" + style.title] : "";
+    if (typeof v === "string" && v) {
+      if (/弩之猎人|Crossbow/i.test(v)) return BOLT_PUNISH;
+      if (/弓之猎人|Bow/i.test(v)) return ARROW_VOLLEY;
+    }
+    return undefined;
+  }, [parsed, entry.id, choices]);
+  const isEnhancedShot = (title: string) => cnTitle(title).replace(/^\d+级[：:]\s*/, "") === "强化破坏射击";
+  const effSectionChosen = (title: string) => {
+    const v = choices[entry.id + "::" + title];
+    if (isEnhancedShot(title) && (v == null || v === "")) return archeryLinkedDefault;
+    return v;
   };
   const normalSections = useMemo(() => (parsed ? parsed.sections.filter((s) => !groups.has(s.title) && !altSet.has(s.title) && s !== signsSection && s !== summonSection && !viceDescTitles.has(s.title.trim()) && !pactDescTitles.has(s.title.trim()) && !virtDescTitles.has(s.title.trim()) && !exeGuildTitles.has(cnTitle(s.title)) && !(exe && cnTitle(s.title) === "刺客公会") && tierVisible(s.title) && !extraSet.has(s.title)) : []), [parsed, groups, altSet, signsSection, summonSection, viceDescTitles, pactDescTitles, virtDescTitles, exeGuildTitles, exe, tierVisible, extraSet]);
   // 兽王：把「兽王」特性抽出来单独渲染（排到特性列表末尾），并据此启用「成为兽王」互斥逻辑
@@ -3038,9 +3295,28 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
         }
       }
     } else {
-      // 普通特性：正文内所有 [[威能]] 链接均授予；但「N级时，你获得[[X]]」的威能需达到对应等级才加入（如野蛮人「狂暴打击」5级）
+      // 哨兵季节变体特性（13级自然循环典范 / 17级动物伙伴威能）：只对所选季节的小节生效，
+      // 只授予该季节小节内的 [[威能]]（如17级仅授予暴狼扑击/巨熊耐力/微风携运中的对应一个），
+      // 随季节切换自动增删。
+      const seasonSub = seasonSubOf(s.body ?? "", companionSeason);
+      if (seasonSub) {
+        const { intro } = splitSeasonVariant(s.body ?? "");
+        const filtered = (intro + "\n" + seasonSub.body).replace(/^\s*$/gm, "").trim();
+        const gates = levelGatedWikiLinks(filtered);
+        for (const t of wikiLinkTargets(filtered)) {
+          const g = gates.get(t);
+          if (g !== undefined && level < g) continue;
+          add(lookup(t));
+        }
+        addGrantedText(seasonSub.body);
+        return { powers, feats, rituals };
+      }
+      // 普通特性：正文内所有 [[威能]] 链接均授予；但「N级时，你获得[[X]]」的威能需达到对应等级才加入（如野蛮人「狂暴打击」5级）；
+      // 「如果你有[[X]]」等条件句中的链接只是前提说明，不授予（如法师（学派法师）19级「每日威能」的[[召唤暗影仆从]]）。
       const gates = levelGatedWikiLinks(s.body);
+      const cond = conditionalGrantLinks(s.body);
       for (const t of wikiLinkTargets(s.body)) {
+        if (cond.has(t)) continue;
         const g = gates.get(t);
         if (g !== undefined && level < g) continue;
         add(lookup(t));
@@ -3302,14 +3578,12 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
                 const grp = groups.get(s.title);
                 const extraGroup = groupOfExtra(s.title);
                 const isExtra = extraGroup !== undefined;
+                const isCompanion = cnTitle(s.title).includes("动物伙伴") && !cnTitle(s.title).includes("威能") && !grp && !isExtra && !pl;
+                // 哨兵季节变体普通特性（13级自然循环典范 / 17级动物伙伴威能）：仅展示所选季节对应小节
+                const seasonSub = seasonSubOf(s.body ?? "", companionSeason);
                 const lvInserts = levelTables.map((t, ti) => {
                   const anchor = levelTableAnchors[ti];
                   if (!emitted.has(ti) && L >= anchor && tierVisible(s.title)) {
-                    // 典范/传奇层级表仅在对应层级与本职业相关（选了相关典范道/天命）时展示
-                    if ((anchor === 11 && !paragonRelevant) || (anchor === 21 && !epicRelevant)) {
-                      emitted.add(ti);
-                      return null;
-                    }
                     emitted.add(ti);
                     return <div key={`lv-table-${ti}`} className="hero-level-table"><WikiBody body={t} fields={entry.fields} lookup={lookup} /></div>;
                   }
@@ -3331,8 +3605,12 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
                         innerKey={entry.id + "::" + grp.base.title + "::inner"}
                         innerChosen={choices[entry.id + "::" + grp.base.title + "::inner"]}
                         onChoose={onChoose} lookup={lookup} />
+                    ) : isCompanion ? (
+                      <AnimalCompanionBlock section={s} detail fields={entry.fields} season={companionSeason} lookup={lookup} />
+                    ) : seasonSub ? (
+                      <SeasonVariantBlock section={s} detail fields={entry.fields} season={companionSeason} lookup={lookup} />
                     ) : (
-                      <ClassFeatureItem section={s} fields={entry.fields} choiceKey={entry.id + "::" + s.title} chosen={choices[entry.id + "::" + s.title]} innerChosen={choices[entry.id + "::" + s.title + "::inner"]} onChoose={onChoose} lookup={lookup} />
+                      <ClassFeatureItem section={s} fields={entry.fields} choiceKey={entry.id + "::" + s.title} chosen={effSectionChosen(s.title)} innerChosen={choices[entry.id + "::" + s.title + "::inner"]} onChoose={onChoose} lookup={lookup} />
                     )}
                     {featureOnly && !grp && !isExtra && (() => { const oi = originalFeatureInfo(s.body ?? "", s.title, classes); return oi ? (
                       <details className="hy-orig-fold">
@@ -3490,7 +3768,7 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
             const isExtra = extraGroup !== undefined;
             const opt = parseClassFeatureOptions(s.body);
             const choiceKey = entry.id + "::" + s.title;
-            const chosen = choices[choiceKey];
+            const chosen = effSectionChosen(s.title);
             const chosenVals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
             if (isExtra) {
               return <Fragment key={i}><ExtraStanceBlock section={s} detail={false} choiceKey={choiceKey} options={extraGroup.options} chosen={chosen} taken={takenFor(s)} onChoose={onChoose} lookup={lookup} /></Fragment>;
@@ -3510,6 +3788,15 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
               return <Fragment key={i}><PoisonUseBlock section={s} detail={false} fields={entry.fields} choiceKey={choiceKey} chosen={chosen} level={level} onChoose={onChoose} lookup={lookup} /></Fragment>;
             }
             if (!opt.selectable) {
+              if (cnTitle(s.title).includes("动物伙伴") && !cnTitle(s.title).includes("威能")) {
+                // 哨兵「动物伙伴」：简洁模式走专属渲染（风味隐藏、收益+所选伙伴、规则折叠）
+                return <Fragment key={i}><AnimalCompanionBlock section={s} detail={false} fields={entry.fields} season={companionSeason} lookup={lookup} /></Fragment>;
+              }
+              const seasonSubC = seasonSubOf(s.body ?? "", companionSeason);
+              if (seasonSubC) {
+                // 哨兵季节变体特性（13级自然循环典范 / 17级动物伙伴威能）：简洁模式仅显示所选季节的收益
+                return <Fragment key={i}><SeasonVariantBlock section={s} detail={false} fields={entry.fields} season={companionSeason} lookup={lookup} /></Fragment>;
+              }
               // 普通特性：直接展示机械效果正文（风味段已随章节切分被排除）。
               // 若该特性以「获得下列N个威能」列出子威能小节（如专业射手），简洁模式直接剔除这些子威能块，
               // 因为威能已展示在威能面板，避免与正文重复堆叠。
@@ -4541,7 +4828,15 @@ export default function CharacterSheet({
     const armorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
     return !(armorBase?.kind === "armor" && armorBase.armor?.category === "重甲");
   })();
-  const druidAcKey = primalAspectChoice.startsWith("原力守护者") && noHeavyArmor ? ("con" as const) : undefined;
+  // 哨兵（德鲁伊（哨兵））的「原力守护者 Primal Guardian」是固定特性，无选择键，需按职业正文静态判定
+  const sentinelGuardian = (() => {
+    for (const e of [classEntry, classEntry2]) {
+      if (e && /^!!\s*[^\n]*原力守护者 Primal Guardian/m.test(e.sourceText)) return true;
+    }
+    return false;
+  })();
+  // 原力守护者（德鲁伊选择型 或 哨兵固定型）：未穿重甲时 AC 用体质调整值代替敏捷/智力
+  const druidAcKey = (primalAspectChoice.startsWith("原力守护者") || sentinelGuardian) && noHeavyArmor ? ("con" as const) : undefined;
   const primalPredatorSpeed = primalAspectChoice.startsWith("原力掠食者") && noHeavyArmor ? 1 : 0;
   // 巡者「巡者束约 Seeker's Bond」之「灵魂束约 Spiritbond」：未穿重甲时 AC 用力量调整值替代敏捷/智力
   const seekerBondChoice = (() => {
@@ -6286,10 +6581,10 @@ export default function CharacterSheet({
         {classEntry ? (
           <>
             {char.hybrid && classEntry2 && <HybridAbilityBlock entry={classEntry} entry2={classEntry2} detail={classFeatDetail} />}
-            <ClassFeatureBlock key={classEntry.id} entry={classEntry} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} classes={classes} magicSchools={magicSchools} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} onTrackClassFeats={trackClassFeats} onRemoveFeats={onRemoveClassFeats} onTrackClassRituals={trackClassRituals} onRemoveClassRituals={onRemoveClassRituals} featureOnly={char.hybrid} paragonPrereq={paragonPathEntry?.prerequisite} epicPrereq={epicDestinyEntry?.prerequisite} domains={domains} />
+            <ClassFeatureBlock key={classEntry.id} entry={classEntry} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} classes={classes} magicSchools={magicSchools} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} onTrackClassFeats={trackClassFeats} onRemoveFeats={onRemoveClassFeats} onTrackClassRituals={trackClassRituals} onRemoveClassRituals={onRemoveClassRituals} featureOnly={char.hybrid} domains={domains} />
             {classEntry2 && (
               <div className="hy-class-feat-sep">
-                <ClassFeatureBlock key={classEntry2.id} entry={classEntry2} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} classes={classes} magicSchools={magicSchools} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} onTrackClassFeats={trackClassFeats} onRemoveFeats={onRemoveClassFeats} onTrackClassRituals={trackClassRituals} onRemoveClassRituals={onRemoveClassRituals} featureOnly={char.hybrid} paragonPrereq={paragonPathEntry?.prerequisite} epicPrereq={epicDestinyEntry?.prerequisite} domains={domains} />
+                <ClassFeatureBlock key={classEntry2.id} entry={classEntry2} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} classes={classes} magicSchools={magicSchools} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} onTrackClassFeats={trackClassFeats} onRemoveFeats={onRemoveClassFeats} onTrackClassRituals={trackClassRituals} onRemoveClassRituals={onRemoveClassRituals} featureOnly={char.hybrid} domains={domains} />
               </div>
             )}
           </>
