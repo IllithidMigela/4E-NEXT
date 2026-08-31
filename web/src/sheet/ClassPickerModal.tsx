@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Switch } from "../components/md";
 import { parseVariant } from "./character";
@@ -14,6 +14,14 @@ const ESSENTIALS_VARIANTS = new Set([
   "元素法师", "元素使", "剑咏士",
 ]);
 
+// 来源基础职业：剥掉「混职」前缀与「（变体）」括号，用于限制同一职业的多个混职版本不可同时选择
+// （如「混职圣武士」与「混职圣武士（黑暗卫士）」同源 圣武士；「混职法师（秘法师）」源 法师）。
+const sourceOf = (name: string) => {
+  let n = name.startsWith("混职") ? name.slice(2) : name;
+  const m = n.match(/^(.+?)（(.+)）$/);
+  return (m ? m[1] : n).trim();
+};
+
 interface Props {
   entries: Entry[];
   hybrid: boolean;
@@ -27,6 +35,14 @@ export default function ClassPickerModal({ entries, hybrid, selectedIds, onSelec
   const [selected, setSelected] = useState<string[]>(selectedIds);
   const [source, setSource] = useState("");
   const [role, setRole] = useState("");
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
 
   const visible = useMemo(() => {
     return entries.filter((e) => {
@@ -53,11 +69,23 @@ export default function ClassPickerModal({ entries, hybrid, selectedIds, onSelec
     let next: string[];
     if (has) {
       next = selected.filter((x) => x !== id);
-    } else if (selected.length >= 2) {
+      setSelected(next);
       return;
-    } else {
-      next = [...selected, id];
     }
+    if (selected.length >= 2) {
+      return;
+    }
+    // 限制同源混职：第二个选择必须与第一个来源基础职业不同，冲突时提示
+    if (selected.length === 1) {
+      const first = entries.find((e) => e.id === selected[0]);
+      const cur = entries.find((e) => e.id === id);
+      if (first && cur && sourceOf(first.name) === sourceOf(cur.name)) {
+        const pv = parseVariant(first.name);
+        showToast(`您已经选择了${pv.variant ?? pv.parent}，不能再选择来自同一职业的混职`);
+        return;
+      }
+    }
+    next = [...selected, id];
     setSelected(next);
     if (next.length === 2) {
       onSelect(next, true);
@@ -98,8 +126,12 @@ export default function ClassPickerModal({ entries, hybrid, selectedIds, onSelec
                 const { parent, variant } = parseVariant(e.name);
                 const isSel = selected.includes(e.id);
                 const isEss = !!variant && ESSENTIALS_VARIANTS.has(variant);
+                // 同源置灰只为混职服务：已选一个时，其余与首选项「来源基础职业」相同的卡片置灰
+                // （混职不可再选同源版本）。常规单选模式下该规则不生效。
+                const firstSel = hybridMode && selected.length === 1 ? entries.find((x) => x.id === selected[0]) : undefined;
+                const blocked = !!firstSel && !isSel && sourceOf(firstSel.name) === sourceOf(e.name);
                 return (
-                  <button key={e.id} type="button" className={(isSel ? "class-card selected" : "class-card") + (isEss ? " ess" : "")} onClick={() => toggle(e.id)}>
+                  <button key={e.id} type="button" className={(isSel ? "class-card selected" : "class-card") + (isEss ? " ess" : "") + (blocked ? " blocked" : "")} onClick={() => toggle(e.id)}>
                     <span className="cc-head">
                       <span className="cc-name">{variant ?? parent}</span>
                       {variant && <span className="cc-parent">{parent}</span>}
@@ -116,6 +148,7 @@ export default function ClassPickerModal({ entries, hybrid, selectedIds, onSelec
             </div>
           </div>
         </div>
+        {toast && <div className="ct-toast" role="status">{toast}</div>}
       </div>
     </div>,
     document.body

@@ -42,6 +42,7 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
   const tierImps = implList.filter((im) => tier === "all" ? true : tier === "basic" ? !im.superior : !!im.superior);
   const [wcat, setWcat] = useState(implMode ? "法器" : "");
   const [whand, setWhand] = useState("");
+  const [wgroup, setWgroup] = useState("");
   const [implG, setImplG] = useState("");
   // view：grid=可选武器网格；prof=已擅长武器；unprof=未擅长武器
   const [view, setView] = useState<"grid" | "prof" | "unprof">("grid");
@@ -92,8 +93,11 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
     else if (whand === "双手") { if (!w.category.includes("·双手") && !w.category.includes("双头")) return false; }
     else if (whand === "远程") { if (!w.category.includes("远程")) return false; }
     else if (whand === "弹药") { if (!w.category.includes("·弹药")) return false; }
+    if (wgroup && !w.group.split(/[，,]/).includes(wgroup)) return false;
     return true;
   };
+  // 武器组筛选按钮：从当前池动态提取实际存在的武器组
+  const weaponGroups = Array.from(new Set(pool.map((w) => w.group.split(/[，,]/)).flat())).filter(Boolean);
   const visibleWeapons = pool.filter(filterWeapon);
 
   const proficientNames = new Set(proficientInfos.map((p) => p.name));
@@ -134,6 +138,14 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
             <button type="button" className={whand === "" ? "cr-item active" : "cr-item"} onClick={() => setWhand("")}>全部持握</button>
             {["单手", "双手", "远程", "弹药"].map((h) => (
               <button key={h} type="button" className={whand === h ? "cr-item active" : "cr-item"} onClick={() => setWhand(h)}>{h}</button>
+            ))}
+          </div>
+        )}
+        {!implMode && (view !== "grid" || wcat !== "法器") && weaponGroups.length > 0 && (
+          <div className="class-roles">
+            <button type="button" className={wgroup === "" ? "cr-item active" : "cr-item"} onClick={() => setWgroup("")}>全部武器组</button>
+            {weaponGroups.map((g) => (
+              <button key={g} type="button" className={wgroup === g ? "cr-item active" : "cr-item"} onClick={() => setWgroup(g)}>{g}</button>
             ))}
           </div>
         )}

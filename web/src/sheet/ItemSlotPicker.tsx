@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useIncremental } from "../lib/incremental";
 import { createPortal } from "react-dom";
-import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
 import type { Entry } from "../data/types";
+import { DeepSearchField, matchByName, matchDeep } from "./DeepSearch";
 
 const SLOT_CATEGORY: Record<string, string> = {
   主手: "武器", 副手: "武器", 佩戴: "", 头部: "头部", 颈部: "颈部", 护甲: "护甲",
@@ -24,6 +24,7 @@ interface Props {
 export default function ItemSlotPicker({ entries, loading, slotName, currentId, onSelect, onClear, onClose }: Props) {
   const [cat, setCat] = useState<string>(SLOT_CATEGORY[slotName] ?? "");
   const [query, setQuery] = useState("");
+  const [deep, setDeep] = useState(false); // 全文搜索开关
 
   const cats = useMemo(() => [...new Set(entries.map((e) => e.itemCategory).filter((v): v is string => !!v))].sort(), [entries]);
 
@@ -31,10 +32,10 @@ export default function ItemSlotPicker({ entries, loading, slotName, currentId, 
     const q = query.trim().toLowerCase();
     return entries.filter((e) => {
       if (cat && e.itemCategory !== cat) return false;
-      if (q && !(e.name + " " + (e.nameEn ?? "")).toLowerCase().includes(q)) return false;
+      if (q && !(deep ? matchDeep(e, q) : matchByName(e, q))) return false;
       return true;
     });
-  }, [entries, cat, query]);
+  }, [entries, cat, query, deep]);
   const { visible, sentinelRef, done } = useIncremental(filtered, 90);
 
   return createPortal(
@@ -54,7 +55,7 @@ export default function ItemSlotPicker({ entries, loading, slotName, currentId, 
             <button key={c} type="button" className={cat === c ? "sf-chip active" : "sf-chip"} onClick={() => setCat(c)}>{c}</button>
           ))}
         </div>
-        <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
+        <DeepSearchField value={query} deep={deep} onChange={setQuery} onToggleDeep={() => setDeep((d) => !d)} />
         <div className="meta">显示 {filtered.length} 条</div>
         <div className="picker-cards">
           {loading && entries.length === 0 && <p className="hint">正在加载装备数据…</p>}
