@@ -1,14 +1,13 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, Switch } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, ENCOUNTER_SLOT_LEVELS, DAILY_SLOT_LEVELS, UTILITY_SLOT_LEVELS, PARAGON_SLOT_LEVELS, LEGENDARY_SLOT_LEVEL, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots, grantedPowerCategory } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import PowerSlotPicker from "./PowerSlotPicker";
 import FeatSlotPicker from "./FeatSlotPicker";
 import FeatChoiceDialog from "./FeatChoiceDialog";
-import PowerReplacementDialog, { type ReplSlotGroup } from "./PowerReplacementDialog";
 import WeaponPalette, { type WeapInfo, implGroup } from "./WeaponPalette";
 import ItemSlotPicker from "./ItemSlotPicker";
 import EntryCard from "./EntryCard";
@@ -18,15 +17,13 @@ import { collectProficiencyTokens, collectProficiencySources, isProficient, feat
 import { SmartHover } from "./SmartHover";
 import { collectClassSources, collectFeatSources } from "./combat-source";
 import { stripWiki } from "../lib/text";
-import { hybridTalentGroups, resolveHybridOption, isHybridTalentFeat, hybridTalentProfTokens, mergedClassTraitText, originalFeatureInfo, type HybridTalentGroup } from "../lib/hybrid";
-import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitClassLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, parseReplacementPairs, tokenizeWikiBody, parseRaceTraitLines, type FeatureSection } from "../lib/wikirender";
-import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, BASE_SHIELDS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
+import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, parseReplacementPairs, tokenizeWikiBody, parseRaceTraitLines, type FeatureSection } from "../lib/wikirender";
+import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
 import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import PickerModal from "./PickerModal";
 import ClassPickerModal from "./ClassPickerModal";
 import SheetDialog from "../components/SheetDialog";
-import RitualPicker, { ritualMarketPrice } from "./RitualPicker";
 
 const ABILITIES: AbilityKey[] = ["str", "con", "dex", "int", "wis", "cha"];
 
@@ -129,31 +126,6 @@ function psionicPowerPoints(classId: string | undefined, level: number): number 
   return 15;
 }
 
-// 混职灵能点选项：当角色职业能力面板中存在「灵能强化（混职）」特性（即某个混职职业为灵能职业）时启用。
-// 灵能点 = Σ(每门「可强化」(keywords 含该词) 的随意攻击威能按等级折算：≤10→2，≤20→4，否则→6)。
-function entryGrantsPsionicAugmentation(entry: Entry | undefined): boolean {
-  return !!entry && /^!!\s*灵能强化/m.test(entry.sourceText || "");
-}
-function hybridPowerPoints(
-  clazz: { classId?: string; classId2?: string; powerSlots: PowerSlots },
-  resolveClass: (id: string) => Entry | undefined,
-  resolvePower: (id: string) => Entry | undefined
-): number | undefined {
-  if (!clazz.classId2) return undefined; // 非混职
-  const e1 = clazz.classId ? resolveClass(clazz.classId) : undefined;
-  const e2 = clazz.classId2 ? resolveClass(clazz.classId2) : undefined;
-  if (!entryGrantsPsionicAugmentation(e1) && !entryGrantsPsionicAugmentation(e2)) return undefined;
-  let sum = 0;
-  for (const id of clazz.powerSlots.atWill) {
-    if (!id) continue;
-    const pw = resolvePower(id);
-    if (!pw || !(pw.keywords || "").split(/[,，]/).map((s) => s.trim()).includes("可强化")) continue;
-    const lv = parseInt(String(pw.level ?? ""), 10);
-    sum += Number.isNaN(lv) ? 2 : lv <= 10 ? 2 : lv <= 20 ? 4 : 6;
-  }
-  return sum;
-}
-
 // 22 购点常用预设（数值数组按 ABILITIES 顺序，均恰好 22 点；应用时按玩家拖动的属性顺序分配）
 const BUY_PRESETS: { label: string; values: number[] }[] = [
   { label: "16 16 12 11 11 8", values: [16, 16, 12, 11, 11, 8] },
@@ -178,50 +150,6 @@ function resizeSlots(arr: (string | undefined)[], n: number): (string | undefine
   return out;
 }
 
-// 截断数组到 n：仅移除末尾的空槽（""/undefined），绝不丢弃已填充槽位的数据。
-// 用于「减少槽位 / 恢复」时，让实际渲染的槽位数可以随 −/恢复 收缩，同时又保护已填入的内容不丢失。
-function trimTrailingEmpty<T extends string | undefined>(arr: T[], n: number): T[] {
-  const out = [...arr];
-  while (out.length > n) {
-    const last = out[out.length - 1];
-    if (last === "" || last === undefined) out.pop();
-    else break; // 末尾是已填充内容，不再截断以防数据丢失
-  }
-  return out;
-}
-
-// 扩容到 n：用空串补齐，保持元素类型不变（string[] → string[]）。
-function padEmpty<T extends string | undefined>(arr: T[], n: number): T[] {
-  const out = [...arr];
-  while (out.length < n) out.push("" as T);
-  return out;
-}
-
-// 由升级表推导各「等级槽位」应填充的威能等级。
-// 遭遇/每日最多 3 个不同等级（取 3 个最近获得的等级）+ 1 个典范槽位；辅助逐个递增（2/6/10/…）再加典范/传奇；
-// 返回数组第 i 项 = 第 i 个该类别威能空位的标签等级（"paragon"/"legendary" 为无等级数字的典范/传奇槽位）。
-function powerSlotLevels(cat: "atWill" | "encounter" | "daily" | "utility", level: number): SlotLevel[] {
-  if (cat === "atWill") return [1, 1];
-  const points = cat === "encounter" ? ENCOUNTER_SLOT_LEVELS : cat === "daily" ? DAILY_SLOT_LEVELS : UTILITY_SLOT_LEVELS;
-  const leveled = points.filter((p) => p <= level).reverse(); // 从高到低
-  let arr: SlotLevel[] = cat === "utility" ? leveled : leveled.slice(0, 3); // 遭遇/每日最多 3 个不同等级
-  if (cat === "encounter" && level >= PARAGON_SLOT_LEVELS.encounter) arr = ["paragon", ...arr];
-  if (cat === "daily" && level >= PARAGON_SLOT_LEVELS.daily) arr = ["paragon", ...arr];
-  if (cat === "utility") {
-    if (level >= PARAGON_SLOT_LEVELS.utility) arr = ["paragon", ...arr];
-    if (level >= LEGENDARY_SLOT_LEVEL) arr = ["legendary", ...arr];
-  }
-  return arr;
-}
-
-// 空位按钮文字：典范/传奇槽位标注为「选择典范/传奇遭遇威能」；普通等级槽位一律「选择遭遇威能」
-// （高等级兼容低等级，无需在按钮上标注具体等级，点击后可选 ≤ 当前等级的威能）。
-function slotLevelText(sl: SlotLevel | undefined, catLabel: string): string {
-  if (sl === "paragon") return "选择典范" + catLabel;
-  if (sl === "legendary") return "选择传奇" + catLabel;
-  return "选择" + catLabel;
-}
-
 // —— 职业特性授予威能的提取 / 加入威能面板 ——
 
 // 从 wiki 文本提取全部 [[链接]] 目标（去重，保留顺序）
@@ -238,26 +166,10 @@ function wikiLinkTargets(text?: string): string[] {
   return out;
 }
 
-// 正文「如果你有[[X]]威能」等条件句中的链接：仅为前提说明，不是本次特性授予的威能，
-// 不应随普通特性自动加入威能面板（如法师（学派法师）19级「每日威能」中的[[召唤暗影仆从]]，
-// 它只是「若已有该威能可选新召唤生物」的条件提及）。
-function conditionalGrantLinks(text?: string): Set<string> {
-  const out = new Set<string>();
-  if (!text) return out;
-  const re = /(?:如果你|若你|如果你已|若你已)(?:拥有|持有|有|已有)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) out.add(m[1].trim());
-  return out;
-}
-
 // 选项值归一化为字符串数组（choiceKey 存 string 或 string[]）
 function choiceVals(v: string | string[] | undefined): string[] {
   return Array.isArray(v) ? v : v ? [v] : [];
 }
-
-// —— 混职天赋 Hybrid Talent 的解析与效果解析已在 lib/hybrid.ts ——
-// CharacterSheet 在此仅需从 lib/hybrid 导入：hybridTalentGroups / resolveHybridOption /
-// isHybridTalentFeat / hybridTalentProfTokens / HybridTalentGroup。
 
 // 选项描述中授予的威能：若含「选择用[[A]]来代替[[B]]」子二选一（如炼狱契约炼狱叱喝/阿弗纳斯赠礼），
 // 则只取当前选中的（未选时默认保留原威能 B）；否则描述里所有 [[威能]] 链接都视为授予。
@@ -275,9 +187,6 @@ function optionGrantedPowers(desc: string, innerChosen: string | string[] | unde
     add(vals.includes(alt) ? alt : keep);
     return out;
   }
-  // 「选择[[A]]威能来替换[[B]]」：选中该替代时只授予新威能 A，不连带授予被替代的 B（如骑士「精野守卫者」先前的双赠 bug）
-  const replL = desc.match(/(?:你可以)?选择\[\[([^\]]+)\]\]威能来替换\[\[([^\]]+)\]\]/);
-  if (replL) { add(replL[1].trim()); return out; }
   for (const t of wikiLinkTargets(desc)) add(t);
   return out;
 }
@@ -297,158 +206,23 @@ function levelGatedWikiLinks(body?: string): Map<string, number> {
   return gates;
 }
 
-// 正文中「获得[[专长]]作为(奖励|额外)专长」「获得[[专长]]专长作为…」等赠送句提取专长链接目标。
-// 只把明确写「获得…作为…专长」的当作职业赠送专长，不把被动提及/引用的专长当作赠送。
-function grantedFeatLinks(text?: string): string[] {
-  if (!text) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  // 匹配「获得[[X]]专长」（X 被明确获得）及「获得[[X]]作为奖励/额外专长」两种赠送句式；
-  // 前者如战士（骑士）1级「盾牌娴熟」：你获得[[盾牌娴熟 Shield Finesse]]专长。
-  const re = /获得\[\[([^\]|]+)(?:\|[^\]]+)?\]\](?:专长作为(?:一个)?(?:奖励|额外)专长|作为(?:一个)?(?:奖励|额外)专长|专长)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const t = m[1].trim();
-    if (!seen.has(t)) { seen.add(t); out.push(t); }
-  }
-  return out;
-}
-
-// 职业赠送仪式：正文提到「仪式书」时，收集句中 [[…]] 链接并过滤出仪式类条目
-// （如德鲁伊的[[动物信使]]、机关术士的[[调制药水]]、神导士的[[命运之手]]）。
-// 用「仪式书」作前提避免把被动提及/引用的仪式（如游侠野兽伙伴正文里与[[死者复活]]的对比）误判为赠送。
-// 「选择[[A]]或者[[B]]」的互斥选择（如心灵术士的传讯术/谭森飘浮碟）不自动赠送，玩家需自行选择其一。
-function grantedRitualLinks(text?: string, lookup?: (t: string) => Entry | undefined): string[] {
-  if (!text || !text.includes("仪式书")) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  // 先收集互斥选择中的仪式标题（如「选择[[传讯术]]或者[[谭森飘浮碟]]」），随后从结果中排除
-  const exclusive = new Set<string>();
-  const choiceRe = /选择\s*\[\[([^\]|]+)(?:\|[^\]]+)?\]\]\s*(?:或|或者)\s*\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
-  let cm: RegExpExecArray | null;
-  while ((cm = choiceRe.exec(text)) !== null) {
-    for (let i = 1; i <= 2; i++) {
-      const t = cm[i].trim();
-      const e = lookup ? lookup(t) : undefined;
-      if (e && e.category === "ritual") exclusive.add(t);
-    }
-  }
-  const re = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const t = m[1].trim();
-    if (seen.has(t) || exclusive.has(t)) continue;
-    const e = lookup ? lookup(t) : undefined;
-    if (e && e.category === "ritual") { seen.add(t); out.push(t); }
-  }
-  return out;
-}
-
-// —— 专长赠送威能 / 威能替换 ——
-
-// 专长正文（前提 + 增益 + 特殊）拼接，用于扫描其中赠送/替换威能的表述
-function featBodyText(f: Entry): string {
-  return [f.prerequisite, f.benefit, (f as { fields?: { special?: string } }).fields?.special].filter(Boolean).join("\n");
-}
-
-// 专长简洁模式正文：专长名后的增益文字（去 wiki 标记与 HTML 标签；[[链接]] 只留中文名）
-function compactFeatText(f: Entry): string {
-  const src = f.benefit || (f as { fields?: { special?: string } }).fields?.special || "";
-  const text = src.replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, (_m, t: string) => zhName(t));
-  return stripWiki(text)
-    .replace(/<br\s*\/?>/gi, " ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// 专长赠送的威能：正文「获得[[威能]]威能」的明确赠送句。
-// 排除否定语境（不/不会/不再/没有/未曾获得）与被动引用（「获得[[X]]的通常效果」），
-// 也不把替换型专长（单独用 featReplacementInfo 处理）算作普通赠送。
-function featGrantedPowers(f: Entry, lookup: (t: string) => Entry | undefined): Entry[] {
-  const out: Entry[] = [];
-  const text = featBodyText(f);
-  const re = /获得\[\[([^\]|]+)(?:\|[^\]]+)?\]\](?:威能)?(?![^。！？!?.,，、\n])/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const before = text.slice(Math.max(0, m.index - 3), m.index);
-    if (/(不|不会|不再|没有|未曾|并非)$/.test(before)) continue;
-    const e = lookup(m[1].trim());
-    if (e && e.category === "power" && !out.some((x) => x.id === e.id)) out.push(e);
-  }
-  return out;
-}
-
-// 专长前提是否与「职业特性」相关：前提中出现「」引用的职业特性名或「职业特性」字样（如「引导神力」职业特性）。
-// 相关时，该专长赠送的威能应送入「种族/职业威能」（special），而非标准攻击/辅助空位。
-function featPrereqClassFeature(f: Entry): boolean {
-  const p = f.prerequisite ?? "";
-  if (!p) return false;
-  return /「[^」]+」/.test(p) || /职业特性/.test(p);
-}
-
-// 专长将旧威能替换为新威能：识别三类替换表述，返回新威能与目标说明（供选择后弹面板询问填入哪个格子）。
-//  - 「获得[[新]]专长威能，它会替换你的N级辅助威能」
-//  - 「[[新]]专长威能替换你的一个N级或更高级的辅助威能」
-//  - 「将你的[[旧]]种族威能替换成[[新]]威能」
-export interface FeatReplacement {
-  newPower: Entry;
-  hint: string; // 目标说明文字（如「替换你的一个16级或更高级的辅助威能」）
-  targetCat?: keyof PowerSlots; // 被替换威能所在的槽位类别（供替换弹窗只显示相关槽位）
-}
-// 从目标说明片段解析被替换威能的槽位类别
-function replTargetCat(fragment: string): keyof PowerSlots | undefined {
-  if (/辅助/.test(fragment)) return "utility";
-  if (/遭遇攻击|遭遇/.test(fragment)) return "encounter";
-  if (/每日攻击|每日/.test(fragment)) return "daily";
-  if (/种族威能/.test(fragment)) return "special";
-  return undefined;
-}
-function featReplacementInfo(f: Entry, lookup: (t: string) => Entry | undefined): FeatReplacement | undefined {
-  const text = featBodyText(f);
-  const resolve = (t: string): Entry | undefined => {
-    const e = lookup(t.trim());
-    return e && e.category === "power" ? e : undefined;
-  };
-  let m: RegExpMatchArray | null;
-  // 「将一个N级或更高级的X威能替换成[[新]]威能」/「你将一个N级或更高级的X威能替换成[[新]]威能」
-  m = text.match(/(?:你可以)?将一个(\d+)级或更高级的(辅助|遭遇攻击|每日攻击)威能替换成\[\[([^\]]+)\]\](?:威能)?/);
-  if (m) {
-    const np = resolve(m[3]);
-    if (np) {
-      const cat = m[2] === "辅助" ? "utility" : m[2] === "遭遇攻击" ? "encounter" : "daily";
-      return { newPower: np, hint: "替换你的" + m[1] + "级或更高级的" + m[2] + "威能", targetCat: cat };
-    }
-  }
-  // 「获得[[新]]专长威能，它会替换你的N级辅助威能」
-  m = text.match(/获得\[\[([^\]]+)\]\](?:专长威能)?，?\s*它会替换你的([^。！？\n]+)/);
-  if (m) { const np = resolve(m[1]); if (np) return { newPower: np, hint: "替换你的" + m[2].trim(), targetCat: replTargetCat(m[2]) }; }
-  m = text.match(/\[\[([^\]]+)\]\](?:专长威能)?替换你的([^。！？\n]+)/);
-  if (m) { const np = resolve(m[1]); if (np) return { newPower: np, hint: "替换你的" + m[2].trim(), targetCat: replTargetCat(m[2]) }; }
-  m = text.match(/将你的\[\[([^\]]+)\]\][^。！？\n]{0,12}?替换成\[\[([^\]]+)\]\][^。！？\n]{0,8}?威能/);
-  if (m) { const np = resolve(m[2]); if (np) return { newPower: np, hint: "替换你的" + m[1].trim() + "威能", targetCat: "special" }; }
-  // 「你失去该威能，且获得[[新]]威能」（如游荡者专长「背刺」）
-  m = text.match(/你失去该威能，?\s*且获得\[\[([^\]]+)\]\](?:威能)?/);
-  if (m) { const np = resolve(m[1]); if (np) return { newPower: np, hint: "替换一个你已有的相关攻击威能", targetCat: replTargetCat(text) }; }
-  return undefined;
-}
-
 // 装备栏位分组（下标对应 EQUIPMENT_SLOTS），按部位各自单独成组
-const EQUIP_GROUPS: { label: string; kind?: "weapon" | "armor" | "shield"; slots: { index: number; name: string }[] }[] = [
+const EQUIP_GROUPS: { label: string; kind?: "weapon" | "armor"; slots: { index: number; name: string }[] }[] = [
   { label: "武器", kind: "weapon", slots: [{ index: 0, name: "主手" }, { index: 1, name: "副手" }] },
   { label: "护甲", kind: "armor", slots: [{ index: 5, name: "护甲" }] },
-  { label: "臂部", kind: "shield", slots: [{ index: 7, name: "臂部" }] },
+  { label: "佩戴", slots: [{ index: 2, name: "佩戴" }] },
   { label: "头部", slots: [{ index: 3, name: "头部" }] },
   { label: "颈部", slots: [{ index: 4, name: "颈部" }] },
   { label: "腰部", slots: [{ index: 6, name: "腰部" }] },
-  { label: "佩戴", slots: [{ index: 2, name: "佩戴" }] },
+  { label: "臂部", slots: [{ index: 7, name: "臂部" }] },
   { label: "手部", slots: [{ index: 8, name: "手部" }] },
-  { label: "足部", slots: [{ index: 11, name: "足部" }] },
   { label: "戒指", slots: [{ index: 9, name: "戒指 1" }, { index: 10, name: "戒指 2" }] },
+  { label: "足部", slots: [{ index: 11, name: "足部" }] },
+  { label: "奇物", slots: [{ index: 12, name: "奇物" }] },
 ];
 
 // 基础物品块：名称 + 大字伤害骰/AC + 简名特性；特性完整定义悬浮显示（同威能简洁模式）
-function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor" | "shield"; label?: string; onClick: () => void }) {
+function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor"; label?: string; onClick: () => void }) {
   const item = props.id ? findBaseItem(props.id) : undefined;
   const weapon = item?.kind === "weapon" ? item.weapon : undefined;
   const armor = item?.kind === "armor" ? item.armor : undefined;
@@ -481,12 +255,6 @@ function BaseItemBlock(props: { id?: string; kind: "weapon" | "armor" | "shield"
             </span>
           )}
         </>
-      ) : props.kind === "shield" ? (
-        <>
-          <span className="bi-name">基础盾牌</span>
-          <span className="bi-dice">—</span>
-          <span className="bi-traits">点击选择</span>
-        </>
       ) : (
         <>
           <span className={"bi-name" + (armor?.masterwork ? " masterwork" : "")}>{armor ? armor.name : "基础护甲"}</span>
@@ -513,7 +281,7 @@ const ARMOR_BASES: { name: string; cat: string }[] = [
   { name: "全身板甲", cat: "重甲" },
 ];
 
-function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: number; baseId?: string; proficientInfos?: WeapInfo[]; proficientImplGroups?: string[]; armorTokens?: Set<string>; shieldTokens?: Set<string>; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
+function BasePickerDialog(props: { kind: "weapon" | "armor"; index: number; baseId?: string; proficientInfos?: WeapInfo[]; proficientImplGroups?: string[]; armorTokens?: Set<string>; shieldTokens?: Set<string>; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
   const [masterwork, setMasterwork] = useState(false);
   const active = (id: string) => props.baseId === id;
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -552,7 +320,7 @@ function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: n
     <div className="picker-overlay" onClick={props.onClose}>
       <div className="picker-dialog class-dialog base-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">选择基础{props.kind === "weapon" ? "武器" : props.kind === "armor" ? "护甲" : "盾牌"}{currentBaseName ? "（当前：" + currentBaseName + "）" : ""}</span>
+          <span className="picker-title">选择基础{props.kind === "weapon" ? "武器" : "护甲"}{currentBaseName ? "（当前：" + currentBaseName + "）" : ""}</span>
           <div className="base-dialog-actions">
             <TextButton onClick={props.onClear}>清除基础物品</TextButton>
             <button type="button" className="crop-btn" onClick={props.onClose}>关闭</button>
@@ -575,20 +343,6 @@ function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: n
           currentName={currentBaseName}
           onSelect={(id) => props.onSelect(id)}
         />
-      ) : props.kind === "shield" ? (
-        <div className="equip-layout base-dialog-layout">
-          <nav className="equip-nav">
-            <button type="button" className="equip-nav-btn" title="盾牌" onClick={() => jump("base-g-盾牌")}>盾牌</button>
-          </nav>
-          <div className="equip-groups">
-            <div id="base-g-盾牌" className="base-cat">
-              <div className="base-cat-title">盾牌</div>
-              <div className="picker-cards">
-                {BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits, armorProficient(armorTok, shieldTok, s.name)))}
-              </div>
-            </div>
-          </div>
-        </div>
       ) : (
         <div className="equip-layout base-dialog-layout">
           <nav className="equip-nav">
@@ -622,7 +376,7 @@ function EquipGroupSlots(props: {
   picker: (i: number) => void;
   clear: (i: number) => void;
   usedOf?: (i: number) => boolean;
-  baseKind?: "weapon" | "armor" | "shield";
+  baseKind?: "weapon" | "armor";
   baseOf?: (i: number) => string | undefined;
   onBaseClick?: (i: number) => void;
   levelsOf?: (i: number) => number[];
@@ -718,8 +472,8 @@ const DEF_BONUS_LABELS: Record<DefenseBonusSource, string> = {
 };
 
 // 职业特性正文渲染：保留换行/表格，并把 [[威能]]、[[专长]] 等超链接转为悬浮卡片预览
-function WikiBody({ body, fields, lookup, indent }: { body: string; fields: Record<string, string>; lookup: (target: string) => Entry | undefined; indent?: boolean }) {
-  const tokens = useMemo(() => tokenizeWikiBody(body, fields, indent), [body, fields, indent]);
+function WikiBody({ body, fields, lookup }: { body: string; fields: Record<string, string>; lookup: (target: string) => Entry | undefined }) {
+  const tokens = useMemo(() => tokenizeWikiBody(body, fields), [body, fields]);
   return (
     <>
       {tokens.map((t, i) => {
@@ -728,8 +482,8 @@ function WikiBody({ body, fields, lookup, indent }: { body: string; fields: Reco
           if (!entry) return <span key={i} className="wiki-ref-plain">{t.alias}</span>;
           return <SmartHover key={i} className="wiki-ref" popClass="wiki-ref-pop" pop={<EntryCard entry={entry} />}>{t.alias}</SmartHover>;
         }
-        if (t.kind === "html") return <div key={i} className="wiki-html" dangerouslySetInnerHTML={{ __html: enBreak(t.html) }} />;
-        return <span key={i} dangerouslySetInnerHTML={{ __html: enBreak(t.html) }} />;
+        if (t.kind === "html") return <div key={i} className="wiki-html" dangerouslySetInnerHTML={{ __html: t.html }} />;
+        return <span key={i} dangerouslySetInnerHTML={{ __html: t.html }} />;
       })}
     </>
   );
@@ -760,61 +514,8 @@ function splitSidebarSubs(body: string | undefined): { main?: string; subs: { ti
       if (title && subBody) subs.push({ title, body: subBody });
     }
   }
-  if (subs.length === 0) {
-    // 无 sidebar：正文原样返回（仅去掉首尾空白，保留段落空行），
-    // 供 splitFlavor 按空行切分首段风味；压缩空行交由 prose/FeatureBody 统一处理。
-    return { main: main.trim(), subs };
-  }
   main = main.replace(/^\s*$/gm, "").trim();
   return { main: main.length > 0 ? main : undefined, subs };
-}
-
-// 选择型特性（如萨满「精魂伙伴」）中，把各选项描述内共用的 sidebar 规则小节
-// （如「定制精魂伙伴」）提取为独立折叠规则，无条件显示、不挂在任一具体选项内部。
-function OptSubFold({ options, fields, lookup }: {
-  options: { label: string; desc?: string }[];
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const subs = useMemo(() => {
-    const arr: { title: string; body: string }[] = [];
-    const seen = new Set<string>();
-    for (const o of options) {
-      const r = splitSidebarSubs(o.desc);
-      for (const s of r.subs) if (!seen.has(s.title)) { seen.add(s.title); arr.push(s); }
-    }
-    return arr;
-  }, [options]);
-  if (subs.length === 0) return null;
-  return (
-    <>
-      {subs.map((sub) => (
-        <details className="beast-sub" key={sub.title} open>
-          <summary>{featTitle(sub.title).trim()}</summary>
-          <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(sub.body)} fields={fields} lookup={lookup} indent /></div></div>
-        </details>
-      ))}
-    </>
-  );
-}
-
-interface GrantPowerLink { ref: string; entry: Entry }
-// 普通特性正文中，若以「!!! 威能名」子小节逐块列出被授予的威能（如专业射手「获得下列3个威能」），
-// 则把对应子小节从正文中抽出为可悬浮威能卡链接（SmartHover→EntryCard），供详图以 chip 展示、简洁模式直接剔除，
-// 避免与威能面板重复堆叠并泄漏威能卡正文英文。
-function extractGrantPowers(body: string | undefined, refs: string[], lookup: (t: string) => Entry | undefined): { main?: string; links: GrantPowerLink[] } {
-  if (refs.length === 0 || !body) return { main: body, links: [] };
-  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let main = body;
-  const links: GrantPowerLink[] = [];
-  for (const ref of refs) {
-    const entry = lookup(ref.trim());
-    if (!entry || entry.category !== "power") continue;
-    const re = new RegExp("\\n?!!![ \\t]+" + esc(ref.trim()) + "[ \\t]*\\n[\\s\\S]*?(?=\\n?!!![ \\t]+|\\n?-{3,}|$)", "");
-    const m = main.match(re);
-    if (m) { main = main.replace(m[0], ""); links.push({ ref: ref.trim(), entry }); }
-  }
-  return { main: main.trim(), links };
 }
 
 function ClassFeatureItem({ section, fields, choiceKey, chosen, innerChosen, onChoose, lookup }: {
@@ -828,45 +529,17 @@ function ClassFeatureItem({ section, fields, choiceKey, chosen, innerChosen, onC
 }) {
   const parsed = useMemo(() => parseClassFeatureOptions(section.body), [section.body]);
   const { main: secMain, subs: secSubs } = useMemo(() => splitSidebarSubs(section.body), [section.body]);
-  // 普通特性若以「获得下列N个威能」并在正文末尾用 !!! 子小节列出多个已授予威能（如专业射手「获得下列3个威能」），
-  // 抽出这些子威能作为可悬浮威能卡链接（SmartHover→EntryCard）展示，去掉正文中的内联占位文本，避免与威能面板重复堆叠。
-  const feaGrantPowers = useMemo(() => {
-    const refs = section.powerRefs?.length ? section.powerRefs : section.powerRef ? [section.powerRef] : [];
-    return extractGrantPowers(secMain, refs, lookup);
-  }, [secMain, section.powerRefs, section.powerRef, lookup]);
   const chosenVals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
   const count = parsed.count ?? 1;
   const multiple = count > 1;
   const isChosen = (label: string) => chosenVals.includes(label);
   const toggle = (label: string) => {
-    if (multiple) {
-      if (isChosen(label)) onChoose(choiceKey, chosenVals.filter((x) => x !== label));
-      else if (chosenVals.length < count) onChoose(choiceKey, [...chosenVals, label]);
-      // 已选满 count 个时忽略新增，确保选择数量不超过上限（如保护者「原力协调」选 3 个）
-    } else onChoose(choiceKey, isChosen(label) ? "" : label);
+    if (multiple) onChoose(choiceKey, isChosen(label) ? chosenVals.filter((x) => x !== label) : [...chosenVals, label]);
+    else onChoose(choiceKey, isChosen(label) ? "" : label);
   };
   const selOpts = parsed.options.filter((o) => isChosen(o.label));
   // 选项为纯 [[链接]]（C 形态：戏法/庇护威能）→ 无描述，仅展示所选威能
   const linkOnly = parsed.options.length > 0 && parsed.options.every((o) => !o.desc);
-  // 「选择一个额外专长：[[X]]或[[Y]]」二选一专长（如行刑者「多才防御」）→ 互斥 chip 选择
-  const fc = useMemo(() => featChoiceData(section.body ?? ""), [section.body]);
-  if (fc) {
-    const chosenFeat = typeof chosen === "string" ? chosen : "";
-    return (
-      <div className="pf-item">
-        <div className="pf-title">{featTitle(section.title)}</div>
-        {fc.flavor && <FeatureBody body={fc.flavor} fields={fields} lookup={lookup} />}
-        <div className="exe-guild">
-          {fc.feats.map((f) => (
-            <button key={f.target} type="button" className={"exe-guild-chip" + (chosenFeat === f.target ? " selected" : "")} onClick={() => onChoose(choiceKey, chosenFeat === f.target ? "" : f.target)}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <div className="cls-options-hint">{chosenFeat ? "已选择一个专长" : "点击选择一个专长"}</div>
-      </div>
-    );
-  }
   if (parsed.selectable) {
     return (
       <div className="pf-item">
@@ -875,10 +548,8 @@ function ClassFeatureItem({ section, fields, choiceKey, chosen, innerChosen, onC
         <div className="cls-options">
           {parsed.options.map((o, i) => {
             const entry = lookup(o.label);
-            const active = isChosen(o.label);
-            const disabled = multiple && !active && chosenVals.length >= count;
             return (
-              <SmartHover key={i} className={active ? "cls-option active" : "cls-option" + (disabled ? " cls-option-disabled" : "")} popClass="cls-option-pop" pop={entry ? <EntryCard entry={entry} /> : undefined} onClick={() => { if (!disabled) toggle(o.label); }}>
+              <SmartHover key={i} className={isChosen(o.label) ? "cls-option active" : "cls-option"} popClass="cls-option-pop" pop={entry ? <EntryCard entry={entry} /> : undefined} onClick={() => toggle(o.label)}>
                 {o.label}
               </SmartHover>
             );
@@ -907,36 +578,22 @@ function ClassFeatureItem({ section, fields, choiceKey, chosen, innerChosen, onC
         )}
         {selOpts.length > 0 && !linkOnly && selOpts.some((o) => o.desc) && (
           <div className="cls-choice-desc">
-            {selOpts.map((o, i) => {
-              const r = splitSidebarSubs(o.desc);
-              return <OptionOrSubChoice key={i} label={o.label} desc={r.main ?? ""} innerKey={choiceKey + "::inner"} innerChosen={innerChosen} onChoose={onChoose} fields={fields} lookup={lookup} />;
-            })}
+            {selOpts.map((o, i) => <OptionOrSubChoice key={i} label={o.label} desc={o.desc} innerKey={choiceKey + "::inner"} innerChosen={innerChosen} onChoose={onChoose} fields={fields} lookup={lookup} />)}
           </div>
         )}
-        <OptSubFold options={parsed.options} fields={fields} lookup={lookup} />
       </div>
     );
   }
   return (
     <div className="pf-item">
       <div className="pf-title">{featTitle(section.title)}</div>
-      {feaGrantPowers.main && <FeatureBody body={feaGrantPowers.main} fields={fields} lookup={lookup} />}
-      {feaGrantPowers.links.length > 0 && (
-        <div className="cls-choice-powers">
-          {feaGrantPowers.links.map((l, i) => (
-            <SmartHover key={i} className="cls-choice-power" popClass="cls-choice-power-pop" pop={<EntryCard entry={l.entry} />}>
-              {l.entry.name}{l.entry.nameEn ? " " + l.entry.nameEn : ""}
-            </SmartHover>
-          ))}
-        </div>
-      )}
+      {secMain && <FeatureBody body={secMain} fields={fields} lookup={lookup} />}
       {secSubs.map((sub) => (
         <details className="beast-sub" key={sub.title}>
           <summary>{featTitle(sub.title).trim()}</summary>
-          <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(sub.body)} fields={fields} lookup={lookup} indent /></div></div>
-            </details>
+          <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(sub.body)} fields={fields} lookup={lookup} /></div></div>
+        </details>
       ))}
-      {featPowerHint(section.title) && <div className="pf-hint-power"><WikiBody body={featPowerHint(section.title)!} fields={fields} lookup={lookup} indent /></div>}
     </div>
   );
 }
@@ -953,25 +610,12 @@ function OptionOrSubChoice({ label, desc, innerKey, innerChosen, onChoose, field
   lookup: (target: string) => Entry | undefined;
   compact?: boolean;
 }) {
-  const { flavor, rest } = useMemo(() => splitOptFlavorMulti(desc), [desc]);
-  // 选项本身可能引用一个生物/魔宠条目（如元素法师「灵魔仆从」的土魔/风魔/炎魔/水魔），
-  // 选中后把该生物的数据卡内联展示，并随选项切换更换。
-  const creature = useMemo(() => (label ? lookup(label) : undefined), [label, lookup]);
+  const { flavor, rest } = useMemo(() => splitFlavor(desc), [desc]);
   return (
     <>
-      {label && <div className="cls-opt-name">{label}：</div>}
-      {!compact && flavor && <div className="cls-opt-flavor"><WikiBody body={prose(flavor)} fields={fields} lookup={lookup} /></div>}
-      {rest && (flavor ? <OptionRest desc={rest} innerKey={innerKey} innerChosen={innerChosen} onChoose={onChoose} fields={fields} lookup={lookup} compact={compact} /> : <span className="pf-rest-standalone"><OptionRest desc={rest} innerKey={innerKey} innerChosen={innerChosen} onChoose={onChoose} fields={fields} lookup={lookup} compact={compact} /></span>)}
-      {creature && creature.category === "creature" && creature.sourceText && (
-        <details className="beast-sub" open={!compact}>
-          <summary>魔宠数据</summary>
-          <div className="beast-sub-body">
-            <div className="pf-body">
-              <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(creature.sourceText, fields) }} />
-            </div>
-          </div>
-        </details>
-      )}
+      {label && <span>{label}：</span>}
+      {flavor && <span className="pf-flavor"><WikiBody body={flavor} fields={fields} lookup={lookup} /></span>}
+      {rest && <OptionRest desc={rest} innerKey={innerKey} innerChosen={innerChosen} onChoose={onChoose} fields={fields} lookup={lookup} compact={compact} />}
     </>
   );
 }
@@ -989,7 +633,7 @@ function OptionRest({ desc, innerKey, innerChosen, onChoose, fields, lookup, com
   // 同一特性内规则段落之间不留空行（压缩 \n\n → 单换行），仅首段风味保留
   const flat = desc.replace(/\n{2,}/g, "\n");
   const m = flat.match(/(你可以选择用\[\[([^\]]+)\]\]来代替\[\[([^\]]+)\]\])/);
-  if (!m || m.index === undefined) return <WikiBody body={flat} fields={fields} lookup={lookup} indent />;
+  if (!m || m.index === undefined) return <WikiBody body={flat} fields={fields} lookup={lookup} />;
   const keep = m[3].trim(); // 保留的原威能（炼狱叱喝）
   const alt = m[2].trim();  // 可选的替代威能（阿弗纳斯赠礼）
   const innerVals = Array.isArray(innerChosen) ? innerChosen : innerChosen ? [innerChosen] : [];
@@ -1006,7 +650,7 @@ function OptionRest({ desc, innerKey, innerChosen, onChoose, fields, lookup, com
             {cur}
           </SmartHover>
         </div>
-        {flat.slice(at + m[0].length) && <WikiBody body={flat.slice(at + m[0].length)} fields={fields} lookup={lookup} indent />}
+        {flat.slice(at + m[0].length) && <WikiBody body={flat.slice(at + m[0].length)} fields={fields} lookup={lookup} />}
       </>
     );
   }
@@ -1024,7 +668,7 @@ function OptionRest({ desc, innerKey, innerChosen, onChoose, fields, lookup, com
           );
         })}
       </div>
-      {flat.slice(at + m[0].length) && <WikiBody body={flat.slice(at + m[0].length)} fields={fields} lookup={lookup} indent />}
+      {flat.slice(at + m[0].length) && <WikiBody body={flat.slice(at + m[0].length)} fields={fields} lookup={lookup} />}
     </>
   );
 }
@@ -1041,42 +685,6 @@ function cnTitle(title: string): string {
 const FEAT_TITLE_RENAME: Record<string, string> = { "魔能爆 Eldritch Blast": "使用魔能", "神圣制裁": "神圣制裁（Divine Sanction）" };
 function featTitle(title: string): string {
   return FEAT_TITLE_RENAME[title.trim()] ?? title;
-}
-
-// 正文中的「中文 English」名称对（如「大气精魂 Air Spirit」「召唤自然盟友 Summon Natural Ally」）：
-// 在中文与英文之间插入 <br/>，使英文排在中文下方，且中间无空行。
-// 仅当英文直接后接中文/中文标点/行尾时触发，避免把「力量 Strength 调整值」这类句中英文术语误切。
-function enBreak(html: string): string {
-  return html.replace(
-    // 中文短语 + 空格 + 英文词（1~4 词）。仅在英文直接后接中文/中文标点或行尾时换行，
-    // 避免把「力量 Strength 调整值」这类英文后带空格的句中术语误切。
-    /([\u4e00-\u9fff·、]{1,}) ([A-Za-z][A-Za-z'’\-]{1,}(?: [A-Za-z'’\-]{1,}){0,3})(?=[\u4e00-\u9fff]|[\u3000-\u303f，。；！？、：“”‘’]|$)/g,
-    "$1<br/>$2",
-  );
-}
-
-// 特性正文下方补充的「获得XX威能」提示（正文无 [[威能]] 链接时，明确告知玩家获得该威能，如保护者「自然生长」）
-const FEAT_POWER_HINT: Record<string, string> = { "自然生长 Nature's Growth": "获得自然生长威能" };
-function featPowerHint(title: string): string | undefined {
-  return FEAT_POWER_HINT[title.trim()];
-}
-
-// 解析当前生效的德鲁伊原力姿态：优先「原力姿态」直接选择（德鲁伊），其次「召唤自然盟友」手动覆盖，
-// 最后「德鲁伊集会」派生（保护者：恢复集会→原力守护者、庇护集会→原力掠食者）
-function resolvePrimalAspect(choices: Record<string, string | string[]>, entries: (Entry | undefined)[]): string {
-  for (const e of entries) {
-    if (!e) continue;
-    const direct = choices[e.id + "::原力姿态 Primal Aspect"];
-    if (typeof direct === "string" && direct) return direct;
-    const override = choices[e.id + "::召唤自然盟友 Summon Natural Ally::aspect"];
-    if (typeof override === "string" && override) return override;
-    const circle = choices[e.id + "::德鲁伊集会 Druid Circle"];
-    if (typeof circle === "string" && circle) {
-      if (circle.startsWith("恢复集会")) return "原力守护者 Primal Guardian";
-      if (circle.startsWith("庇护集会")) return "原力掠食者 Primal Predator";
-    }
-  }
-  return "";
 }
 
 // 精华职业（4E Essentials 系列）：职业特性按等级折叠，达到前提等级才自动展开
@@ -1108,403 +716,13 @@ function featureLevel(title: string): number {
   return m ? parseInt(m[1], 10) : 1;
 }
 
-
-
-// 职业特性是否在 `level` 级可用：无等级前缀（如「混职天赋选项」「原力守护者」）恒可用；
-// 带「X级：」前缀且 X ≤ level 才可用（体现逐级获得职业特性，如「5级：进阶用毒」）。
-const hasLevelPrefix = (title: string) => /^\d+级[：:]/.test(title.trim());
-function featureReachable(title: string, level: number): boolean {
-  return !hasLevelPrefix(title) || featureLevel(title) <= level;
-}
-
-// 特性正文中的「你选择一个额外专长：[[X]]或[[Y]]」二选一专长（如行刑者「多才防御」）。
-// 命中时渲染互斥 chip，选中即授予对应专长。
-interface FeatChoice { flavor?: string; feats: { target: string; label: string }[] }
-function featChoiceData(body: string): FeatChoice | undefined {
-  const m = body.match(/选择一个额外专长[：:]\s*([\s\S]*?)(?=\n|$)/);
-  if (!m) return undefined;
-  const feats = [...m[1].matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)].map((x) => {
-    const target = x[1].trim();
-    return { target, label: cleanDisplayName(target) };
-  });
-  if (!feats.length) return undefined;
-  const gidx = body.indexOf("''增益");
-  const flavor = gidx >= 0 ? body.slice(0, gidx).trim() : undefined;
-  return { flavor, feats };
-}
-
-// 刺客（行刑者）：先在三工会（血红正义/低语联盟/忍者之道）选一，再展示行刑者英雄层级表，然后逐条列出每级职业特性。
-// 工会效果取自正文中的三个「!! 血红正义/低语联盟/忍者之道」节（含「''增益：''你获得[[威能]]…」与武器擅长）。
-interface ExeGuildOption { key: string; body: string; intro?: string }
-function executionerGuilds(sourceText: string): { intro?: string; options: ExeGuildOption[]; table?: string } | undefined {
-  if (!sourceText || !/^!!\s*刺客公会/m.test(sourceText)) return undefined;
-  const norm = (s: string) => s.replace(/（[^）]*）/g, "").replace(/\([^)]*\)/g, "").trim();
-  const options: ExeGuildOption[] = [];
-  // 各工会的「介绍」（@@ !!! 血红正义/低语联盟/忍者之道 下 flavor）
-  const introByKey: Record<string, string> = {};
-  const ire = /^!!!\s*(血红正义[^\n]*|低语联盟[^\n]*|忍者之道[^\n]*)\n(?:@@\.indent\s+)?([\s\S]*?)(?=^!!!\s|^---)/gm;
-  for (const m2 of sourceText.matchAll(ire)) {
-    const k = norm(m2[1]);
-    const t = (m2[2] || "").replace(/^@@\s*$/gm, "").trim();
-    if (t) introByKey[k] = t;
-  }
-  const re = /^!!\s*(血红正义[^\n]*|低语联盟[^\n]*|忍者之道[^\n]*)\n([\s\S]*?)(?=^!!\s)/gm;
-  for (const m of sourceText.matchAll(re)) {
-    const key = norm(m[1]);
-    const body = (m[2] || "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").trim();
-    if (body) options.push({ key, body, intro: introByKey[key] });
-  }
-  const introM = sourceText.match(/^!!\s*刺客公会[^\n]*\n(?:@@\.indent\s+)?([\s\S]*?)(?=^!!!\s)/m);
-  const intro = introM ? introM[1].replace(/^@@\s*$/gm, "").trim() : undefined;
-  const tm = sourceText.match(/<table class="[^"]*">[\s\S]*?<\/table>/);
-  return { intro, options, table: tm ? tm[0].replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1") : undefined };
-}
-
-// —— 学派法师：魔法学派选择（参考缚影师契约：单行学派选择，自动填充各等级收益） ——
-// 学派法师（Wizard (Mage)）英雄层级共有 5 处「魔法学派」选择点：
-//   1级 学徒级：选第一学派 A → 获得 A 的「学徒级」收益
-//   4级 学徒级：选第二学派 B（≠A）→ 获得 B 的「学徒级」收益
-//   5级 专家级：自动获得第一学派 A 的「专家级」收益
-//   8级 专家级：自动获得第二学派 B（非 5级所选）的「专家级」收益
-//   10级 大师级：自动获得第一学派 A 的「大师级」收益
-// 具体收益不在职业条目内，而在各「魔法学派」条目（塑能/幻术/惑控/死灵/幽影/占火）中，
-// 以「1级：XX学徒」「5级：XX专家」「10级：XX大师」小节组织。
-interface MageSchool {
-  key: string; // 学派短名（如「塑能」，用作选择标识与按钮文案）
-  name: string; // 学派条目名（如「塑能学派」）
-  entry: Entry; // 学派条目（用于悬浮卡片）
-  apprentice?: string; // 学徒级学派法师收益（1级：XX学徒）
-  expert?: string; // 专家级学派法师收益（5级：XX专家）
-  master?: string; // 大师级学派法师收益（10级：XX大师）
-}
-function parseMageSchools(entry: Entry, schools: Entry[] | undefined): MageSchool[] {
-  if (!entry.id.includes("学派法师")) return [];
-  const out: MageSchool[] = [];
-  for (const s of schools ?? []) {
-    if (!s.tags?.includes("魔法学派")) continue;
-    const secs = (s.sourceText ?? "").split(/^(?=!! )/m);
-    let apprentice: string | undefined;
-    let expert: string | undefined;
-    let master: string | undefined;
-    for (const sec of secs) {
-      const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
-      if (!m) continue;
-      const title = m[1].trim();
-      // 剥离 @@ 标记与「''学徒级/专家级/大师级学派法师特性''」粗体标签行（收益性质已由特性标题表达）
-      const body = (m[2] || "")
-        .replace(/^@@\.\w+\s*/gm, "")
-        .replace(/^@@\s*$/gm, "")
-        .replace(/^''(?:学徒级|专家级|大师级)学派法师特性''\s*\n+/m, "")
-        .replace(/^\s*$/gm, "")
-        .trim();
-      if (!body) continue;
-      if (/^1级[：:]/.test(title) && /学徒/.test(title)) apprentice = body;
-      else if (/^5级[：:]/.test(title) && /专家/.test(title)) expert = body;
-      else if (/^10级[：:]/.test(title) && /大师/.test(title)) master = body;
-    }
-    if (!apprentice && !expert && !master) continue;
-    out.push({ key: s.name.replace(/学派$/, ""), name: s.name, entry: s, apprentice, expert, master });
-  }
-  return out;
-}
-
-// —— 黑暗卫士：支配 / 暴怒 败德二选一 ——
-// 主职业「败德精神」「败德随意威能」「进阶暗影护罩」正文中引用「与你的败德相关联」的增益/威能，
-// 具体内容不写在职业条目里，而在两个独立败德条目（支配败德 / 暴怒败德）中按等级小节组织。
-// 玩家选定一种败德后，把这些小节的机械正文填充回对应占位特性，并据此自动授予对应随意威能。
-interface BlackguardViceFill { keyword: string; body: string }
-interface BlackguardViceOption { key: string; descTitle?: string; flavor?: string; fills: BlackguardViceFill[] }
-interface BlackguardVicesParse { intro?: string; options: BlackguardViceOption[]; descTitles: string[] }
-// 需要按败德填充的占位特性名（与败德条目里的「!! …（支配/暴怒）」小节标题包含的关键词对应）
-const VICE_FILL_KEYWORDS = ["败德随意威能", "败德精神", "进阶暗影护罩", "败德辅助威能"];
-function blackguardVices(entry: Entry, lookup: (t: string) => Entry | undefined): BlackguardVicesParse | undefined {
-  // 先剥离全部层级表：英雄层级表位于「暴怒」小节正后方，若不剥离会被吞进暴怒的风味提取
-  const src = stripLevelTables(entry.sourceText ?? "");
-  if (!entry.id.includes("黑暗卫士") || !/^! 败德 Vices/m.test(src)) return undefined;
-  const opts: { key: string; id: string }[] = [
-    { key: "支配", id: "支配败德 Vice of Domination" },
-    { key: "暴怒", id: "暴怒败德 Vice of Fury" },
-  ];
-  const introM = src.match(/^! 败德 Vices[^\n]*\n([\s\S]*?)(?=^!!\s)/m);
-  const intro = introM ? introM[1].replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").trim() : undefined;
-  const options: BlackguardViceOption[] = [];
-  const VICE_EN: Record<string, string> = { 支配: "Domination", 暴怒: "Fury" };
-  for (const o of opts) {
-    const ve = lookup(o.id) ?? lookup(o.key);
-    if (!ve || !ve.sourceText) continue;
-    const en = VICE_EN[o.key];
-    const descTitle = `${o.key} ${en}`;
-    // 主职业条目里的「!! 支配 Domination / 暴怒 Fury」小节即为该败德的风味段。
-    // 按「!! 」分节定位该小节（避免非贪婪 + $ 在 m 标志下被每行行尾提前截断，
-    // 也避免把后续「!! 」小节一并吞入），再清理 @@ 标记取味。
-    const fsec = src.split(/^(?=!! )/m).find((s) => {
-      const h = s.match(/^!! ([^\n]+)/);
-      return !!h && h[1].trim().startsWith(o.key + " " + en);
-    });
-    const flavor = fsec
-      ? fsec.replace(/^!![^\n]*\n/, "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^---+[ \t]*$/gm, "").replace(/^\s*$/gm, "").trim()
-      : undefined;
-    const fills: BlackguardViceFill[] = [];
-    const secs = ve.sourceText.split(/^(?=!! )/m);
-    for (const sec of secs) {
-      const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
-      if (!m) continue;
-      const kw = VICE_FILL_KEYWORDS.find((k) => m[1].includes(k));
-      if (!kw) continue; // 跳过 11/12/20 等「残酷黑暗卫士典范之道」小节（不匹配关键词）
-      const body = (m[2] || "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^\s*$/gm, "").trim();
-      if (body) fills.push({ keyword: kw, body });
-    }
-    if (fills.length) options.push({ key: o.key, descTitle, flavor, fills });
-  }
-  if (!options.length) return undefined;
-  return { intro, options, descTitles: options.map((o) => o.descTitle!).filter(Boolean) };
-}
-
-// —— 缚影师：契约三选一（精类/星辰/阴暗） ——
-// 主职业「契约之赐」「契约学识」「盟友召唤」占位特性正文写"与你的契约相关联"，
-// 具体内容不写在职业条目里，而在独立的 (缚影师) 契约条目中按等级小节组织。
-// 玩家选定一个契约后，把这些小节的机械正文填充回对应占位特性，并据此自动授予对应威能。
-interface BinderPactFill { keyword: string; body: string }
-interface BinderPactOption { key: string; descTitle?: string; flavor?: string; fills: BinderPactFill[] }
-interface BinderPactsParse { kind: "binder" | "hexblade"; intro?: string; options: BinderPactOption[]; descTitles: string[] }
-// 占位特性关键词 → 契约条目里「!! XX契约之赐（缚影师）/契约学识/缚影师盟友/高阶盟友」「缚影师行动/恩惠/之赐」等标题包含的关键词。
-// 契约遭遇威能节（正文为「{{威能}}」说明，无机械描述）也一并填充，便于显示规则正文（但不自动授权 —— 保留为"选择槽"）。
-const PACT_FILL_KEYWORDS = ["契约之赐", "契约学识", "缚影师盟友", "高阶缚影师盟友", "缚影师行动", "缚影师恩惠", "缚影师之赐", "契约遭遇威能"];
-function binderPacts(entry: Entry, lookup: (t: string) => Entry | undefined): BinderPactsParse | undefined {
-  const src = stripLevelTables(entry.sourceText ?? "");
-  if (!entry.id.includes("缚影师") || !/^! 契约/m.test(src)) return undefined;
-  const opts: { key: string; id: string }[] = [
-    { key: "精类", id: "精类契约 Fey Pact (Binder)" },
-    { key: "星辰", id: "星辰契约 Star Pact (Binder)" },
-    { key: "阴暗", id: "阴暗契约 Gloom Pact (Binder)" },
-  ];
-  // 主职业条目里的「! 契约」段是介绍文字
-  const introM = src.match(/^! 契约[^\n]*\n([\s\S]*?)(?=^---)/m);
-  const intro = introM ? introM[1].replace(/^<<list-links[^>]*>>[ \t]*\r?\n?/gm, "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").trim() : undefined;
-  const options: BinderPactOption[] = [];
-  for (const o of opts) {
-    const pe = lookup(o.id) ?? lookup(o.key + "契约");
-    if (!pe || !pe.sourceText) continue;
-    const fills: BinderPactFill[] = [];
-    const secs = pe.sourceText.split(/^(?=!! )/m);
-    for (const sec of secs) {
-      const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
-      if (!m) continue;
-      const kw = PACT_FILL_KEYWORDS.find((k) => m[1].includes(k));
-      if (!kw) continue;
-      const body = (m[2] || "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^\s*$/gm, "").trim();
-      if (body) fills.push({ keyword: kw, body });
-    }
-    if (!fills.length) continue;
-    // 契约风味：契约条目顶部 @@.indent 段（缚影师特有的介绍性文字）
-    let flavor: string | undefined;
-    const fm = pe.sourceText.match(/^@@\.indent\s*\n([\s\S]*?)(?=^!! )/m);
-    if (fm) flavor = fm[1].replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^\s*$/gm, "").trim();
-    options.push({ key: o.key, descTitle: o.key + "契约", flavor, fills });
-  }
-  if (!options.length) return undefined;
-  return { kind: "binder", intro, options, descTitles: options.map((o) => o.descTitle!).filter(Boolean) };
-}
-
-// —— 魔剑士（邪术师·魔剑士）：契约五选一（精类/炼狱/星辰/阴暗/元素） ——
-// 与缚影师相同：主职业「契约奖励/契约之赐/契约武器/契约武器惩戒/召唤邪术师盟友/高阶召唤邪术师盟友」
-// 占位特性正文写"由你的契约决定"，机械内容在独立的「魔剑士契约」条目中按等级小节组织。
-// 玩家选定一个契约后，把这些小节正文填充回对应占位特性；{{威能}} 模板还原为 [[威能]] 链接，
-// 以随特征正文自动授予契约威能与契约武器附带威能（如精类契约武器附带的冰刺击/穿刺碎片）。
-// 契约条目里的「（Dragon #393）」替换件与「16级：进阶…契约之赐」等典范变体在此不单独拆分，
-// 仅取各占位特性的标准小节；契约内「!! 11/12/20级：魔剑士行动/面貌/诅咒/祈祷/变形」为典范特性，
-// 无对应占位特性，故不参与填充。
-interface HexbladePactTarget { name: string; headerKey: string }
-const HEXBLADE_TARGETS: HexbladePactTarget[] = [
-  { name: "高阶召唤邪术师盟友", headerKey: "高阶召唤邪术师盟友" },
-  { name: "召唤邪术师盟友", headerKey: "召唤邪术师盟友" },
-  { name: "契约武器惩戒", headerKey: "契约武器惩戒" },
-  { name: "契约武器", headerKey: "契约武器" },
-  { name: "契约奖励", headerKey: "契约奖励" },
-  { name: "契约之赐", headerKey: "契约之赐" },
-];
-function hexbladePacts(entry: Entry, lookup: (t: string) => Entry | undefined): BinderPactsParse | undefined {
-  const src = stripLevelTables(entry.sourceText ?? "");
-  if (!entry.id.includes("魔剑士") || !/^! 契约/m.test(src)) return undefined;
-  const opts: { key: string; id: string }[] = [
-    { key: "精类", id: "精类契约 Fey Pact" },
-    { key: "炼狱", id: "炼狱契约 Infernal Pact" },
-    { key: "星辰", id: "星辰契约 Star Pact" },
-    { key: "阴暗", id: "阴暗契约 Gloom Pact" },
-    { key: "元素", id: "元素契约 Elemental Pact" },
-  ];
-  // 主职业条目里的「! 契约」段是介绍文字
-  const introM = src.match(/^! 契约[^\n]*\n([\s\S]*?)(?=^---)/m);
-  const intro = introM ? introM[1].replace(/^<<list-links[^>]*>>[ \t]*\r?\n?/gm, "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").trim() : undefined;
-  const options: BinderPactOption[] = [];
-  for (const o of opts) {
-    const pe = lookup(o.id) ?? lookup(o.key + "契约");
-    if (!pe || !pe.sourceText) continue;
-    // 契约章节 → 占位特性：跳过（Dragon #393）替换件与「进阶…」典范变体，命中后取指定名称
-    const fills: BinderPactFill[] = [];
-    const secs = pe.sourceText.split(/^(?=!! )/m);
-    for (const sec of secs) {
-      const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
-      if (!m) continue;
-      const header = m[1];
-      if (header.includes("Dragon") || header.includes("进阶")) continue;
-      const hit = HEXBLADE_TARGETS.find((t) => header.includes(t.headerKey));
-      if (!hit || fills.some((f) => f.keyword === hit.name)) continue;
-      let body = (m[2] || "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^\s*$/gm, "").trim();
-      // {{威能}} 模板（契约武器附带的威能卡）还原为 [[威能]] 链接，随特征正文自动授予
-      body = body.replace(/\{\{([^}]+)\}\}/g, "[[$1]]");
-      // 契约武器：把内嵌的随意威能卡标记出来，按魔法物品（附魔武器）样式呈现在真实武器面板里
-      if (hit.name === "契约武器") {
-        body = body.replace(/<div id=powercard>/, '<div id="powercard" class="hb-contract-weapon">');
-      }
-      if (body) fills.push({ keyword: hit.name, body });
-    }
-    if (!fills.length) continue;
-    options.push({ key: o.key, descTitle: o.key + "契约", fills });
-  }
-  if (!options.length) return undefined;
-  return { kind: "hexblade", intro, options, descTitles: [] };
-}
-
-// —— 圣骑兵：美德二选一（牺牲 / 英勇） ——
-// 主职业「美德精神」「美德随意威能」「进阶正义之盾」「共享美德」占位特性正文写"与你的美德相关联"，
-// 具体内容不写在职业条目里，而在两个独立美德条目（牺牲美德 / 英勇美德）中按等级小节组织。
-// 玩家选定一种美德后，把这些小节的机械正文填充回对应占位特性，并据此自动授予对应威能（希望打击/报复打击等）。
-interface VirtueFill { keyword: string; body: string }
-interface VirtueOption { key: string; descTitle?: string; flavor?: string; fills: VirtueFill[] }
-interface VirtuesParse { intro?: string; options: VirtueOption[]; descTitles: string[] }
-// 占位特性关键词 → 美德条目里「!! 1级：牺牲精神/美德随意威能/7级：进阶正义之盾/22级：共享牺牲」等标题包含的关键词
-const VIRTUE_FILL_KEYWORDS = ["美德随意威能", "精神", "进阶正义之盾", "共享"];
-function cavalierVirtues(entry: Entry, lookup: (t: string) => Entry | undefined): VirtuesParse | undefined {
-  const src = stripLevelTables(entry.sourceText ?? "");
-  if (!entry.id.includes("圣骑兵") || !/^! 美德 Virtues/m.test(src)) return undefined;
-  const opts: { key: string; id: string; en: string }[] = [
-    { key: "牺牲", id: "牺牲美德 Virtue of Sacrifice", en: "Sacrifice" },
-    { key: "英勇", id: "英勇美德 Virtue of Valor", en: "Valor" },
-  ];
-  const introM = src.match(/^! 美德 Virtues[^\n]*\n([\s\S]*?)(?=^!!\s)/m);
-  const intro = introM ? introM[1].replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").trim() : undefined;
-  const options: VirtueOption[] = [];
-  for (const o of opts) {
-    const ve = lookup(o.id) ?? lookup(o.key + "美德");
-    if (!ve || !ve.sourceText) continue;
-    const descTitle = `${o.key} ${o.en}`;
-    // 主职业条目里的「!! 牺牲 Sacrifice / 英勇 Valor」小节即为该美德的风味段
-    const fsec = src.split(/^(?=!! )/m).find((s) => {
-      const h = s.match(/^!! ([^\n]+)/);
-      return !!h && h[1].trim().startsWith(o.key + " " + o.en);
-    });
-    const flavor = fsec
-      ? fsec.replace(/^!![^\n]*\n/, "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^---+[ \t]*$/gm, "").replace(/^\s*$/gm, "").trim()
-      : undefined;
-    const fills: VirtueFill[] = [];
-    const secs = ve.sourceText.split(/^(?=!! )/m);
-    for (const sec of secs) {
-      const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
-      if (!m) continue;
-      const kw = VIRTUE_FILL_KEYWORDS.find((k) => m[1].includes(k));
-      if (!kw) continue;
-      const body = (m[2] || "").replace(/^@@\.\w+\s*/gm, "").replace(/^@@\s*$/gm, "").replace(/^\s*$/gm, "").trim();
-      if (body) fills.push({ keyword: kw, body });
-    }
-    if (fills.length) options.push({ key: o.key, descTitle, flavor, fills });
-  }
-  if (!options.length) return undefined;
-  return { intro, options, descTitles: options.map((o) => o.descTitle!).filter(Boolean) };
-}
-
-// —— 战争祭司：领域选择 ——
-// 战争祭司的职业特性几乎全部由所选「领域」派生：主职业条目里只有占位特性（「N级：领域特性和威能」
-// 「引导神力威能」「领域特性」「领域遭遇威能」等），具体收益/威能在独立领域条目（大地/风暴/太阳…）
-// 中按「!! N级：…」分节组织。选定领域后，把这些小节填充回对应等级+类型的占位特性，并据此自动授予领域威能。
-interface WarpriestDomainSection { level: number; type: "all" | "channel" | "encounter" | "feature"; title: string; body: string }
-interface WarpriestDomainOption { key: string; name: string; entry: Entry; sections: WarpriestDomainSection[]; powers: { title: string; level: number }[] }
-interface WarpriestDomainsParse { options: WarpriestDomainOption[] }
-// 特性标题 → 领域小节类型判定（主职业占位特性与领域小节标题共用此判定，按相同「等级+类型」配对填充）
-function domainTypeOf(title: string): "all" | "channel" | "encounter" | "feature" | undefined {
-  const t = cnTitle(title);
-  if (t.includes("领域特性和威能")) return "all";
-  if (t.includes("引导神力")) return "channel";
-  if (t.includes("领域遭遇威能")) return "encounter";
-  if (t.includes("领域特性")) return "feature";
-  return undefined;
-}
-function warpriestDomains(entry: Entry, domains: Entry[] | undefined): WarpriestDomainsParse | undefined {
-  if (!entry.id.includes("战争祭司")) return undefined;
-  const options: WarpriestDomainOption[] = [];
-  for (const d of domains ?? []) {
-    if (d.category !== "domain" && !(d.tags ?? []).includes("领域")) continue;
-    const sections: WarpriestDomainSection[] = [];
-    const powerLv = new Map<string, number>();
-    const secs = (d.sourceText ?? "").split(/^(?=!! )/m);
-    for (const sec of secs) {
-      const m = sec.match(/^!! (.+?)\n([\s\S]*)$/);
-      if (!m) continue;
-      const title = m[1].trim();
-      const level = featureLevel(title);
-      const type = domainTypeOf(title);
-      if (level <= 0) continue;
-      let body = m[2] || "";
-      // 记录本小节每个 {{威能}} 引用及其小节等级，用于自动授予；并把 {{威能}} 还原为 [[威能]] 常驻悬浮链接便于展示
-      const pm = /\{\{([^}]+)\}\}/g;
-      let pmc: RegExpExecArray | null;
-      while ((pmc = pm.exec(body)) !== null) {
-        const t = pmc[1].trim();
-        if (level < (powerLv.get(t) ?? Infinity)) powerLv.set(t, level);
-      }
-      body = body
-        .split("\n")
-        // 去掉「!!! 领域随意威能」等小节标题的 ! 前缀，避免被 wikiToHtml 转成 <h4/h5/h6>（会造成字号异常与多余空行）
-        .map((l) => l.replace(/^!{1,}\s*/, "").trim())
-        // 去掉纯英文风味行与空行（保留中文机制正文）
-        .filter((l) => /[\u4e00-\u9fff]/.test(l))
-        // {{威能}} → [[威能|中文]]、[[威能]] → [[威能|中文]]：目标保留全名供自动授予，显示只用中文别名
-        .map((l) => l
-          .replace(/\{\{([^}]+)\}\}/g, (_m, t) => `[[${t}|${cnTitle(t)}]]`)
-          .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, t, a) => (a ? `[[${t}|${a}]]` : `[[${t}|${cnTitle(t)}]]`)))
-        .join("\n")
-        .replace(/\n{2,}/g, "\n")
-        .trim();
-      if (body) sections.push({ level, type: type ?? "all", title, body });
-    }
-    const powers = [...powerLv.entries()].map(([title, level]) => ({ title, level }));
-    options.push({ key: d.name, name: d.name, entry: d, sections, powers });
-  }
-  return options.length ? { options } : undefined;
-}
-
 // 压缩连续空行段落，使特性正文段落之间不留空行
 function prose(b: string): string {
   return b.replace(/\n{2,}/g, "\n");
 }
 
-// 把 [[中文 English]]/[[链接|别名]] 链接转为纯文本（取中文前缀或别名），用于无需悬浮预览的引言
-function plainWikiLinks(b: string): string {
-  return b.replace(/\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]/g, (_m, title: string, alias?: string) => alias ?? cnTitle(title.trim()));
-}
-
-// 提取该职业所有层级的层级表（英雄/典范/传奇，caption 含「层级」），供折叠到「具有下列职业特性」标题下方展示
-function extractLevelTables(src: string): string[] {
-  const out: string[] = [];
-  // 层级表的 <caption>…层级…</caption> 直接跟在 <table> 开头标签之后，才能从该表自身起始匹配，
-  // 避免从前一个无关 <table>（如「偷袭额外伤害」表）开始截取，把中间的英雄内容错当层级表。
-  const re = /<table[^>]*>\s*<caption>[^<]*层级[^<]*<\/caption>[\s\S]*?<\/table>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) out.push(m[0]);
-  return out;
-}
-
-// 从源码中剥离所有层级表及其相邻分隔线，避免其在原区块重复渲染
-function stripLevelTables(src: string): string {
-  return src.replace(/[ \t]*---[ \t]*\r?\n?<table[^>]*>\s*<caption>[^<]*层级[^<]*<\/caption>[\s\S]*?<\/table>[ \t]*(?:\r?\n---[ \t]*)?/g, "");
-}
-
 // 规则/指引触发词：某句含这些词即视为「规则文字」而非风味叙述
-const FLAVOR_STOP = /(你(?:获得|可以选择|选择|使用|必须|不能|会获得|造成|受到)|选择|使用|进行|着用|视为|攻击骰|攻击|命中|重击|检定|豁免|标记|借机|目标|骰|每回合|每个回合|每轮一次|每遭遇一次|一回合|自由动作|临时生命值|若你|当你|如果你|如果|前提|需求|擅长|威能|要求)/;
-
-// 识别「''标签：''」开头的粗体规则标题行（如萨满守护精魂/哨卫精魂的「精魂恩赐 Spirit Boon：」）。
-// 这类行是规则结构而非风味叙述，整段不判风味，直接作为规则正文（缩进渲染）。
-const FLAVOR_TAG_OPEN = /^\s*''[^'\n]*[：:]\s*''/;
+const FLAVOR_STOP = /(你(?:获得|可以选择|选择|使用|必须|不能|会获得|造成|受到)|选择|使用|进行|着用|视为|攻击骰|攻击|命中|重击|检定|豁免|标记|借机|目标|骰|每回合|每个回合|一回合|若你|当你|如果你|如果|前提|需求|擅长|威能|要求)/;
 
 // 已知「整段均为风味」的引言前缀：正文含「你获得」等规则触发词，但整段仍是叙述性风味，
 // 不应被逐句扫描截断（如神罚使「神罚天谴」开头的三句叙述）。命中时整段首段视为风味。
@@ -1513,12 +731,8 @@ const FLAVOR_FULL_PREFIXES = [
 ];
 
 // 把职业特性正文开头的叙述性(风味)句子与随后的规则/指引句子分开，供斜体楷书渲染风味文字。
-// 规则：仅取首个自然段（首个空行之前）作为风味候选，逐句扫描，遇到含规则触发词的句子即停止；
-// 停止前累积的句子视为风味。首个空行之后的内容一律视为规则正文（如保护者「召唤自然盟友」的
-// 「由于该特性…」升级规则不会被误判为风味，也不会因正文内深层的「''N级：''」标签而误判整段）。
+// 规则：从首段起逐句扫描，遇到含规则触发词的句子即停止；停止前累积的句子视为风味。
 function splitFlavor(body: string): { flavor: string; rest: string } {
-  // 首行是「''标签：''」粗体规则标题行（规则列表而非风味叙述），整段不判风味
-  if (FLAVOR_TAG_OPEN.test(body)) return { flavor: "", rest: body };
   for (const pre of FLAVOR_FULL_PREFIXES) {
     if (body.startsWith(pre)) {
       const nl = body.indexOf("\n");
@@ -1526,15 +740,7 @@ function splitFlavor(body: string): { flavor: string; rest: string } {
       return { flavor: body, rest: "" };
     }
   }
-  // 首个自然段（首个空行之前）作为风味候选
-  const paraM = /^([\s\S]*?)(?:\n\s*\n|$)/.exec(body);
-  const first = paraM ? paraM[1] : body;
-  // 若紧随首段之后是「''规则标签：''」粗体规则行（如武僧修士宗派的各宗派描述引言：
-  // <风味叙述…>\n\n''规则标签：…''\n…），则首段整段视为风味，其后为规则正文。
-  // 仅在「段首」判定，避免命中正文内深层小节里的「''N级：''」等标签（如召唤自然盟友的子章节）。
-  if (paraM && paraM[0].endsWith("\n") && /^\s*''[^'\n]*?[：:]\s*''/.test(body.slice(paraM[0].length))) {
-    return { flavor: first.trim(), rest: body.slice(paraM[0].length) };
-  }
+  const first = body.split(/\n\s*\n/)[0] || "";
   // 句尾标点「。！？」可选：首段末尾常有无标点的叙述句，也视为风味的一部分
   const re = /\s*([^。！？!?]+(?:[。！？!?])?)/g;
   let end = 0;
@@ -1544,43 +750,21 @@ function splitFlavor(body: string): { flavor: string; rest: string } {
     end = re.lastIndex;
   }
   if (!end) return { flavor: "", rest: body };
-  return { flavor: first.slice(0, end), rest: body.slice(end) };
-}
-
-// 在 splitFlavor 基础上扩展「连续多个风味段落」：当首段已判定为风味后，继续累积其后紧随的
-// 纯英文叙述段（不含中文字符），直至遇到含中文的规则段、粗体规则标签「''X：''」或列表「*/数字」。 
-// 用于正确吸收如哨兵「自然循环之侍从」各季节选项前连续的两段英文风味，避免第二段被当作规则正文。
-function splitOptFlavorMulti(body: string): { flavor: string; rest: string } {
-  const base = splitFlavor(body);
-  if (!base.flavor || !base.rest) return base; // 首段无风味或风味即全文：无扩展空间
-  const parts = base.rest.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
-  let flavor = base.flavor;
-  let keep = 0;
-  for (const p of parts) {
-    if (/[\u4e00-\u9fff]/.test(p) || /^''[^'\n]*[：:]''/.test(p) || /^\*|^\d+\./.test(p)) break;
-    flavor += "\n\n" + p;
-    keep++;
-  }
-  return { flavor, rest: parts.slice(keep).join("\n\n") };
+  return { flavor: body.slice(0, end), rest: body.slice(end) };
 }
 
 // 渲染特性正文：开头风味句用斜体楷书，其余规则正文照常
-// hideFlavor 时仅输出规则正文（简洁模式隐藏风味文字）
-function FeatureBody({ body, fields, lookup, className, hideFlavor }: {
+function FeatureBody({ body, fields, lookup, className }: {
   body: string;
   fields: Record<string, string>;
   lookup: (target: string) => Entry | undefined;
   className?: string;
-  hideFlavor?: boolean;
 }) {
-  // 传入原始正文（保留空行段落）以正确切分首段风味；压缩空行在渲染时分别对 flavor/rest 进行
-  const { flavor, rest } = useMemo(() => splitFlavor(body), [body]);
-  // 去掉 rest 开头的换行，改用块级容器强制换行（确保风味句后的规则文本另起一行缩进）
-  const restTrim = useMemo(() => prose(rest).replace(/^\n+/, "").trimStart(), [rest]);
+  const { flavor, rest } = useMemo(() => splitFlavor(prose(body)), [body]);
   return (
     <div className={className ?? "pf-body"}>
-      {!hideFlavor && flavor && <span className="pf-flavor"><WikiBody body={prose(flavor)} fields={fields} lookup={lookup} /></span>}
-      {restTrim && <div className="pf-rest"><WikiBody body={restTrim} fields={fields} lookup={lookup} indent /></div>}
+      {flavor && <span className="pf-flavor"><WikiBody body={flavor} fields={fields} lookup={lookup} /></span>}
+      {rest && <WikiBody body={rest} fields={fields} lookup={lookup} />}
     </div>
   );
 }
@@ -1590,280 +774,26 @@ function splitTraitLabels(t: string): string {
   return t.replace(/(\{\{!!role\}\})。/, "$1。\n").replace(/(\{\{!!power source\}\})。/, "$1。\n");
 }
 
-// 归一特性标题到纯中文核心：去掉「N级：」等级前缀与英文（如「1级：战斗守卫者 Battle Guardian」→「战斗守卫者」），
-// 用于替代组基础项的歧义消除匹配。
-function featBaseName(t: string): string {
-  return cnTitle(t).replace(/^\d{1,2}级[：:]?\s*/, "").trim();
-}
-
+// 识别「此职业特性会替代「X」职业特性」替代组：把 X（base）与其各替代项合并为一个单选
 function detectReplacementGroups(sections: FeatureSection[]): Map<string, AltGroup> {
   const refs = new Map<string, FeatureSection[]>();
   for (const s of sections) {
-    const b = s.body ?? "";
-    // 三种「可选替代」表述：
-    //  1) 标准：「此职业特性会替代「X」职业特性」（基础职业特性）
-    //  2) 链接式：「你可以选择[[A]]威能来替换[[B]]」（可选替代威能，如骑士「精野守卫者」替代「战斗守卫者」）
-    //  3) 引用式：「你可选择此特性来替换「B」特性」（可选替代特性，如骑士「旋木偏移」替代「盾牌娴熟」）
-    const m1 = b.match(/此职业特性会替代「([^」]+)」职业特性/);
-    const m2 = b.match(/你可以?选择\[\[[^\]]+\]\]威能来替换\[\[([^\]]+)\]\]/);
-    const m3 = b.match(/你可选择此特性来替换「([^」]+)」特性?/);
-    const ref = (m1 ? m1[1].trim() : "") || (m2 ? m2[1].trim() : "") || (m3 ? m3[1].trim() : "");
-    if (!ref) continue;
-    if (!refs.has(ref)) refs.set(ref, []);
-    refs.get(ref)!.push(s);
+    const m = (s.body ?? "").match(/此职业特性会替代「([^」]+)」职业特性/);
+    if (m) {
+      const ref = m[1].trim();
+      if (!refs.has(ref)) refs.set(ref, []);
+      refs.get(ref)!.push(s);
+    }
   }
   const groups = new Map<string, AltGroup>();
   for (const [ref, alts] of refs) {
-    // 基础项歧义消除：按「N级：」前缀无关的纯中文核心名匹配，且排除替代项自身
-    const core = featBaseName(ref);
-    const base = sections.find((x) => featBaseName(x.title) === core && !alts.includes(x));
+    const base = sections.find((x) => cnTitle(x.title) === ref);
     if (base) groups.set(base.title, { base, alts });
   }
   return groups;
 }
 
 // 展示 base 与其替代项合并的选项组；base 自身带内部选择（如战士武器天赋选单手/双手）时，选中 base 再渲染内层子选项
-// 召唤坐骑：解析「你获得[[召唤天堂坐骑 Call Celestial Steed]]威能」→ 威能 details 中的生物链接（天堂战马 Celestial Warhorse），
-// 把该生物的数据卡以内联折叠展示（详图默认展开、简洁默认收起），实现对该特性的坐骑数据进行预览。
-function SummonedSteedData({ section, detail, fields, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  // 从特性正文中提取召唤威能，再由威能正文（details/sourceText）提取其召出的生物
-  const creature = useMemo(() => {
-    const pwTarget = wikiLinkTargets(section.body ?? "").find((t) => lookup(t)?.category === "power" && /召唤天堂坐骑/.test(t));
-    const pw = pwTarget ? lookup(pwTarget) : undefined;
-    if (!pw) return undefined;
-    const crTarget = wikiLinkTargets(`${pw.fields?.details ?? ""}\n${pw.sourceText ?? ""}`).find((t) => lookup(t)?.category === "creature");
-    return crTarget ? lookup(crTarget) : undefined;
-  }, [section.body, lookup]);
-  if (!creature || !creature.sourceText) return null;
-  return (
-    <details className="beast-sub" open={detail}>
-      <summary>{cleanDisplayName(creature.name)}数据</summary>
-      <div className="beast-sub-body">
-        <div className="pf-body">
-          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(creature.sourceText, fields) }} />
-        </div>
-      </div>
-    </details>
-  );
-}
-
-// —— 哨兵「动物伙伴」专属渲染 ——
-// 该特性按结构重组为：风味引进 → 收益（增益）行 → 所选季节的动物伙伴（位于收益下方）→ 折叠的规则小节。
-// {{狼动物伙伴…}} 等生物转clusion 在 parseFeatureSections 时已作为 powerRefs 提取并保留（正文中被剔除），
-// 故按「季节↔伙伴」关键词在 refs 中匹配 creature 条目渲染其数据卡。
-const SEASON_TO_COMPANION: Record<string, string> = { "春": "狼", "夏": "熊", "荒原": "活体微风" };
-// 取「自然循环之侍从」所选季节对应的伙伴关键词（返回如「狼」「熊」「活体微风」），无法判定返回 undefined
-function companionKwOf(season?: string): string | undefined {
-  if (!season) return undefined;
-  return Object.entries(SEASON_TO_COMPANION).find(([s]) => season.includes(s))?.[1];
-}
-
-// 伙伴 creature 数据卡（低层）：渲染为 beast-sub 折叠，详图默认展开、简洁默认收起
-function AnimalCompanionData({ creature, detail, fields }: {
-  creature: Entry;
-  detail: boolean;
-  fields: Record<string, string>;
-}) {
-  if (!creature.sourceText) return null;
-  return (
-    <details className="beast-sub" open={detail}>
-      <summary>{cleanDisplayName(creature.name)}数据</summary>
-      <div className="beast-sub-body">
-        <div className="pf-body">
-          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(creature.sourceText, fields) }} />
-        </div>
-      </div>
-    </details>
-  );
-}
-
-interface AnimalCompanionSub {
-  title: string;         // !!! 子小节标题（含中英文）
-  body: string;          // 子小节正文
-  kind: "fold" | "companion"; // fold=需折叠的规则小节（动物伙伴动作/独立动作）；companion=与季节对应的伙伴小节
-}
-interface AnimalCompanionParse {
-  intro: string;         // 特性开头风味引进（增益行之前）
-  benefit: string;       // ''增益：''… 收益行
-  rules: string;         // 收益行之后、首个 !!! 之前的规则文本（折叠为「你的动物伙伴」）
-  subs: AnimalCompanionSub[];
-}
-// 解析「动物伙伴」特性正文为上述结构
-function parseAnimalCompanion(body: string): AnimalCompanionParse {
-  const benM = body.match(/''增益[：:]\s*''/);
-  const intro = benM ? body.slice(0, benM.index).trim() : body;
-  const post = benM ? body.slice(benM.index) : "";
-  const nlPos = post.indexOf("\n");
-  const benefit = (nlPos >= 0 ? post.slice(0, nlPos) : post).trim();
-  const after = nlPos >= 0 ? post.slice(nlPos) : "";
-  const subIdx = after.search(/^!!! /m);
-  const rules = (subIdx >= 0 ? after.slice(0, subIdx) : after).replace(/^\s*$/gm, "").trim();
-  const subsRaw = subIdx >= 0 ? after.slice(subIdx) : "";
-  const raw: { title: string; body: string }[] = [];
-  let cur: { title: string; body: string[] } | null = null;
-  for (const line of subsRaw.split("\n")) {
-    const h = line.match(/^!!! (.+)$/);
-    if (h) {
-      if (cur) raw.push({ title: cur.title, body: cur.body.join("\n") });
-      cur = { title: h[1].trim(), body: [] };
-    } else if (cur) {
-      cur.body.push(line);
-    }
-  }
-  if (cur) raw.push({ title: cur.title, body: cur.body.join("\n") });
-  const subs: AnimalCompanionSub[] = raw.map((s) => ({
-    title: s.title,
-    body: s.body,
-    // 规则小节：标题含「动作」（动物伙伴动作/动物伙伴独立动作）；其余为与季节对应的伙伴小节
-    kind: s.title.includes("动作") ? "fold" : "companion",
-  }));
-  return { intro, benefit, rules, subs };
-}
-
-// 「动物伙伴」特性主渲染：重组风味/收益/伙伴/折叠规则。
-function AnimalCompanionBlock({ section, detail, fields, season, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  fields: Record<string, string>;
-  season?: string; // 「自然循环之侍从」所选季节（联动伙伴）
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const refs = section.powerRefs ?? [];
-  const { intro, benefit, rules, subs } = useMemo(() => parseAnimalCompanion(section.body ?? ""), [section.body]);
-  // 所选季节对应伙伴小节的子标题正文（如「春之德鲁伊：狼 Druid of Spring: Wolf + 英文风味」）
-  const selSub = useMemo(() => subs.find((s) => s.kind === "companion" && s.title.includes(season?.split(" ")[0] ?? season ?? "")), [subs, season]);
-  // 所选季节对应伙伴数据卡
-  const companion = useMemo(() => {
-    const kw = companionKwOf(season);
-    if (!kw) return undefined;
-    const full = refs.find((r) => lookup(r)?.category === "creature" && r.includes(kw));
-    return full ? lookup(full) : undefined;
-  }, [refs, season, lookup, selSub]);
-  const foldSubs = subs.filter((s) => s.kind === "fold");
-
-  // 折叠规则小节的摘要名：去英文后的中文名（如「动物伙伴动作」「动物伙伴独立动作」）
-  const foldName = (t: string) => cnTitle(t).trim();
-
-  if (!detail) {
-    // 简洁模式：隐藏风味，仅显示特性名 + 收益 + 所选伙伴数据卡；规则小节折叠收起
-    return (
-      <div className="cls-feat set">
-        <div className="cls-feat-name">{cleanDisplayName(featTitle(section.title))}</div>
-        {benefit && <div className="cls-feat-note"><WikiBody body={prose(benefit)} fields={fields} lookup={lookup} indent /></div>}
-        {selSub && <div className="ac-companion-name">{cleanDisplayName(selSub.title)}</div>}
-        {companion && <AnimalCompanionData creature={companion} detail={false} fields={fields} />}
-        {rules && <details className="beast-sub"><summary>你的动物伙伴</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(rules)} fields={fields} lookup={lookup} indent /></div></div></details>}
-        {foldSubs.map((s) => (
-          <details className="beast-sub" key={s.title}><summary>{foldName(s.title)}</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(s.body)} fields={fields} lookup={lookup} indent /></div></div></details>
-        ))}
-      </div>
-    );
-  }
-  // 详图模式：风味 → 收益 → 所选伙伴（收益下方）→ 折叠规则
-  return (
-    <div className="pf-item">
-      <div className="pf-title">{featTitle(section.title)}</div>
-      {intro && <div className="pf-body"><span className="pf-flavor"><WikiBody body={prose(intro)} fields={fields} lookup={lookup} /></span></div>}
-      {benefit && <div className="pf-body"><div className="pf-rest"><WikiBody body={prose(benefit)} fields={fields} lookup={lookup} indent /></div></div>}
-      {selSub && companion && (
-        <div className="ac-companion">
-          <div className="ac-opt-name">{cleanDisplayName(selSub.title)}</div>
-          {selSub.body && <div className="pf-body"><span className="pf-flavor"><WikiBody body={prose(selSub.body)} fields={fields} lookup={lookup} /></span></div>}
-          <AnimalCompanionData creature={companion} detail fields={fields} />
-        </div>
-      )}
-      {!season && <div className="ac-companion-hint">请先在『自然循环之侍从』中选择季节</div>}
-      {rules && <details className="beast-sub"><summary>你的动物伙伴</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(rules)} fields={fields} lookup={lookup} indent /></div></div></details>}
-      {foldSubs.map((s) => (
-        <details className="beast-sub" key={s.title}><summary>{foldName(s.title)}</summary><div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(s.body)} fields={fields} lookup={lookup} indent /></div></div></details>
-      ))}
-    </div>
-  );
-}
-
-// —— 哨兵季节变体特性（13级自然循环典范 / 17级动物伙伴威能）——
-// 结构与「动物伙伴」相似但更简单：引言 + 春/夏/荒原三个「!!!」小节，各含「''增益：''」收益。
-// 根据「自然循环之侍从」所选季节，仅显示/生效对应小节。
-interface SeasonVariantPart { title: string; body: string }
-function splitSeasonVariant(body: string): { intro: string; subs: SeasonVariantPart[] } {
-  const subIdx = body.search(/^!!! /m);
-  const intro = (subIdx >= 0 ? body.slice(0, subIdx) : body).replace(/^\s*$/gm, "").trim();
-  const raw = subIdx >= 0 ? body.slice(subIdx) : "";
-  const subs: SeasonVariantPart[] = [];
-  let cur: SeasonVariantPart | null = null;
-  for (const line of raw.split("\n")) {
-    const h = line.match(/^!!! (.+)$/);
-    if (h) {
-      if (cur) subs.push(cur);
-      cur = { title: h[1].trim(), body: "" };
-    } else if (cur) {
-      cur.body += (cur.body ? "\n" : "") + line;
-    }
-  }
-  if (cur) subs.push(cur);
-  return { intro, subs };
-}
-// 取正文中与所选季节匹配的那一个「!!!」小节；未选季节或无法匹配时返回 undefined
-function seasonSubOf(body: string, season?: string): SeasonVariantPart | undefined {
-  if (!season) return undefined;
-  const seasonCJK = Object.keys(SEASON_TO_COMPANION).find((s) => season.includes(s));
-  if (!seasonCJK) return undefined;
-  return splitSeasonVariant(body).subs.find((x) => x.title.includes(seasonCJK));
-}
-
-// 「自然循环典范/动物伙伴威能」主渲染：引言风味 + 所选季节小节（风味 + 收益），并按季节过滤展示。
-function SeasonVariantBlock({ section, detail, fields, season, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  fields: Record<string, string>;
-  season?: string;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const { intro } = useMemo(() => splitSeasonVariant(section.body ?? ""), [section.body]);
-  const selSub = useMemo(() => seasonSubOf(section.body ?? "", season), [section.body, season]);
-  if (!detail) {
-    // 简洁模式：隐藏风味，仅显示特性名 + 所选季节的收益；规则收益用紧凑样式
-    return (
-      <div className="cls-feat set">
-        <div className="cls-feat-name">{cleanDisplayName(featTitle(section.title))}</div>
-        {selSub && <div className="cls-feat-note"><WikiBody body={prose(selSub.body)} fields={fields} lookup={lookup} indent /></div>}
-      </div>
-    );
-  }
-  // 详图模式：引言风味 → 所选季节小节（小节名 + 风味 + 收益）
-  return (
-    <div className="pf-item">
-      <div className="pf-title">{featTitle(section.title)}</div>
-      {intro && <div className="pf-body"><span className="pf-flavor"><WikiBody body={prose(intro)} fields={fields} lookup={lookup} /></span></div>}
-      {selSub && (
-        <div className="ac-companion">
-          <div className="ac-opt-name">{cleanDisplayName(selSub.title)}</div>
-          <SeasonVariantBody body={selSub.body} fields={fields} lookup={lookup} />
-        </div>
-      )}
-      {!season && <div className="ac-companion-hint">请先在『自然循环之侍从』中选择季节</div>}
-    </div>
-  );
-}
-
-// 季节小节正文：分隔风味（英文叙述）与「''增益：''」规则收益后分别渲染
-function SeasonVariantBody({ body, fields, lookup }: { body: string; fields: Record<string, string>; lookup: (target: string) => Entry | undefined }) {
-  const { flavor, rest } = useMemo(() => splitOptFlavorMulti(body), [body]);
-  return (
-    <div className="pf-body">
-      {flavor && <span className="pf-flavor"><WikiBody body={prose(flavor)} fields={fields} lookup={lookup} /></span>}
-      {rest && <div className="pf-rest"><WikiBody body={prose(rest)} fields={fields} lookup={lookup} indent /></div>}
-    </div>
-  );
-}
-
-// 圣骑兵「召唤坐骑」替代组：当选中「召唤坐骑」时，在其正文下方附上坐骑生物数据折叠。
-// 复用 ReplacementGroupItem，仅对其 alt 命中「召唤坐骑」的选项附加数据预览。
 function ReplacementGroupItem({ group, detail, fields, outerKey, outerChosen, innerKey, innerChosen, onChoose, lookup }: {
   group: AltGroup;
   detail: boolean;
@@ -1876,21 +806,15 @@ function ReplacementGroupItem({ group, detail, fields, outerKey, outerChosen, in
   lookup: (target: string) => Entry | undefined;
 }) {
   const baseName = cleanDisplayName(group.base.title);
-  // chip 的显示名：去掉「N级：」等级前缀（如「1级：战斗守卫者 Battle Guardian」→「战斗守卫者 Battle Guardian」）；
-  // 存储值仍用原始名，保证与授予逻辑匹配。
-  const repDisplay = (n: string) => cleanDisplayName(n).replace(/^\d{1,2}级：/, "").replace(/·.*$/, "");
-  const displayTitle = ({ "卓越战法": "战法", "战士武器天赋": "战斗风格", "准确射击": "游侠范式", "治疗者学识": "牧师学识" } as Record<string, string>)[cnTitle(group.base.title)] ?? repDisplay(baseName);
+  const displayTitle = ({ "卓越战法": "战法", "战士武器天赋": "战斗风格", "准确射击": "游侠范式", "治疗者学识": "牧师学识" } as Record<string, string>)[cnTitle(group.base.title)] ?? baseName;
   const opts = [
     { label: baseName, desc: group.base.body },
-    ...group.alts.map((a) => ({ label: cleanDisplayName(a.title), desc: a.body ? a.body.replace(/^此职业特性会替代「[^」]+」职业特性\s*。?\s*/, "").replace(/^你可以?选择\[\[[^\]]+\]\]威能来替换\[\[[^\]]+\]\]\s*/, "").replace(/^你可选择此特性来替换「[^」]+」特性?\s*/, "") : "" })),
+    ...group.alts.map((a) => ({ label: cleanDisplayName(a.title), desc: a.body ? a.body.replace(/^此职业特性会替代「[^」]+」职业特性\s*。?\s*/, "") : "" })),
   ];
   const innerParse = useMemo(() => parseClassFeatureOptions(group.base.body), [group.base.body]);
   const outerSel = typeof outerChosen === "string" ? outerChosen : "";
   const isBase = outerSel === baseName;
   const altSel = opts.find((o) => o.label === outerSel);
-  // 选中的替代项若为「召唤坐骑」类特性（正文授予「召唤天堂坐骑」威能），在其下方附加坐骑生物数据预览
-  const steedAlt = group.alts.find((a) => cleanDisplayName(a.title) === outerSel && cnTitle(a.title).includes("召唤坐骑"));
-  const steedBody = steedAlt ? (steedAlt.body ?? "") : "";
   const innerVals = Array.isArray(innerChosen) ? innerChosen : innerChosen ? [innerChosen] : [];
   const innerSelected = innerParse.options.find((o) => innerVals.includes(o.label));
   let baseIntro = group.base.body ?? "";
@@ -1906,7 +830,7 @@ function ReplacementGroupItem({ group, detail, fields, outerKey, outerChosen, in
             const e = lookup(o.label);
             return (
               <SmartHover key={i} className={outerSel === o.label ? "cls-option active" : "cls-option"} popClass="cls-option-pop" pop={e ? <EntryCard entry={e} /> : undefined} onClick={() => onChoose(outerKey, outerSel === o.label ? "" : o.label)}>
-                {repDisplay(o.label)}
+                {o.label}
               </SmartHover>
             );
           })}
@@ -1927,14 +851,6 @@ function ReplacementGroupItem({ group, detail, fields, outerKey, outerChosen, in
           </>
         )}
         {outerSel && (isBase ? (baseIntro && <FeatureBody body={baseIntro} fields={fields} lookup={lookup} />) : (altSel?.desc && <FeatureBody body={altSel.desc} fields={fields} lookup={lookup} />))}
-        {steedBody && (
-          <SummonedSteedData
-            section={{ title: steedAlt!.title, body: steedBody, powerRef: "" }}
-            detail
-            fields={fields}
-            lookup={lookup}
-          />
-        )}
       </div>
     );
   }
@@ -1945,61 +861,10 @@ function ReplacementGroupItem({ group, detail, fields, outerKey, outerChosen, in
       {!outerSel ? (
         <div className="cls-feat-sub">未选择</div>
       ) : (
-        <div className="cls-feat-opt">{isBase && innerSelected ? `${repDisplay(baseName)}（${innerSelected.label}）` : repDisplay(outerSel)}</div>
+        <div className="cls-feat-opt">{isBase && innerSelected ? `${baseName}（${innerSelected.label}）` : outerSel}</div>
       )}
-      {!isBase && altSel?.desc && <FeatureBody body={altSel.desc} fields={fields} lookup={lookup} className="cls-feat-note" hideFlavor />}
-      {isBase && baseIntro && <FeatureBody body={baseIntro} fields={fields} lookup={lookup} className="cls-feat-note" hideFlavor />}
-      {steedBody && (
-        <SummonedSteedData
-          section={{ title: steedAlt!.title, body: steedBody, powerRef: "" }}
-          detail={false}
-          fields={fields}
-          lookup={lookup}
-        />
-      )}
-    </div>
-  );
-}
-
-// 战士「额外战士架势」（7/17级）：从基础「战士架势」的选项池中追加单选一个尚未选择的架势。
-// options 复用基础战士架势的可选项；taken 为已被其他架势选择占用（不可重复选）的架势名集合。
-function ExtraStanceBlock({ section, detail, choiceKey, options, chosen, taken, onChoose, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  choiceKey: string;
-  options: { label: string; desc: string }[];
-  chosen?: string | string[];
-  taken: Set<string>;
-  onChoose: (key: string, label: string | string[]) => void;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const vals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
-  const val = vals.length ? vals[0] : "";
-  const toggle = (label: string) => onChoose(choiceKey, val === label ? "" : label);
-  if (!detail) {
-    return (
-      <div className={"cls-feat" + (val ? " set" : " unset")}>
-        <div className="cls-feat-name">{cleanDisplayName(featTitle(section.title))}</div>
-        {val ? <SmartHover className="cls-feat-opt" popClass="cls-option-pop" pop={lookup(val) ? <EntryCard entry={lookup(val)!} /> : undefined}>{cleanDisplayName(val)}</SmartHover> : <div className="cls-feat-sub">未选择</div>}
-      </div>
-    );
-  }
-  return (
-    <div className="pf-item">
-      <div className="pf-title">{featTitle(section.title)}<span className="cls-options-hint">点击选择一个选项（{val ? 1 : 0}/1）</span></div>
-      <div className="cls-options">
-        {options.map((o, i) => {
-          const e = lookup(o.label);
-          const active = val === o.label;
-          const disabled = !active && taken.has(o.label);
-          return (
-            <SmartHover key={i} className={active ? "cls-option active" : "cls-option" + (disabled ? " cls-option-disabled" : "")} popClass="cls-option-pop" pop={e ? <EntryCard entry={e} /> : undefined} onClick={() => { if (!disabled) toggle(o.label); }}>
-              {o.label}
-            </SmartHover>
-          );
-        })}
-      </div>
-      {val && <div className="cls-options-hint">已选择一个选项</div>}
+      {!isBase && altSel?.desc && <FeatureBody body={altSel.desc} fields={fields} lookup={lookup} className="cls-feat-note" />}
+      {isBase && baseIntro && <FeatureBody body={baseIntro} fields={fields} lookup={lookup} className="cls-feat-note" />}
     </div>
   );
 }
@@ -2100,19 +965,19 @@ function BeastMasterBlock({ section, detail, fields, on, chosen, toggleKey, beas
           {general && (
             <details className="beast-sub">
               <summary>成为兽王</summary>
-              <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(general)} fields={fields} lookup={lookup} indent /></div></div>
+              <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(general)} fields={fields} lookup={lookup} /></div></div>
             </details>
           )}
           {quarry && (
             <details className="beast-sub">
               <summary>兽王猎手标的</summary>
-              <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(quarry)} fields={fields} lookup={lookup} indent /></div></div>
+              <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(quarry)} fields={fields} lookup={lookup} /></div></div>
             </details>
           )}
           {beastType && (
             <div className="beast-type">
               <div className="pf-sub-title">{beastType.title}</div>
-              {beastType.body && <FeatureBody body={beastType.body} fields={fields} lookup={lookup} />}
+              {beastType.body && <FeatureBody body={prose(beastType.body)} fields={fields} lookup={lookup} />}
             </div>
           )}
           <div className="cls-sub-title">选择野兽伙伴</div>
@@ -2126,232 +991,11 @@ function BeastMasterBlock({ section, detail, fields, on, chosen, toggleKey, beas
           {collapsed.map((s) => (
             <details className="beast-sub" key={s.title}>
               <summary>{s.title.replace(/\s+[A-Za-z].*$/m, "").trim()}</summary>
-              <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(raise && s.title.startsWith("复活野兽伙伴") ? raise + "\n" + s.body : s.body)} fields={fields} lookup={lookup} indent /></div></div>
+              <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(raise && s.title.startsWith("复活野兽伙伴") ? raise + "\n" + s.body : s.body)} fields={fields} lookup={lookup} /></div></div>
             </details>
           ))}
         </>
       )}
-    </div>
-  );
-}
-
-// 解析正文中的「!!! 子标题」小节列表（公共工具）：如兽王规则、用毒毒药配方
-function parsePoi(body: string): { intro: string; items: { title: string; body: string }[] } | undefined {
-  const parts = (body ?? "").split(/^(?=!!! )/m);
-  const items: { title: string; body: string }[] = [];
-  for (const p of parts.slice(1)) {
-    const m2 = /^!!!\s+(.+?)\s*\n([\s\S]*)$/.exec(p.trim());
-    if (m2) items.push({ title: m2[1].trim(), body: m2[2].replace(/^\s*$/gm, "").trim() });
-  }
-  if (!items.length) return undefined;
-  return { intro: parts[0].trim(), items };
-}
-
-// 【用毒 Poison Use】/【进阶用毒】等：正文含「!!! 毒药名」子节 → 折叠 + 多选毒药配方。
-// choiceKey 存所选毒药标签（string[]）。选中毒药的配方正文以 beast-sub 折叠卡展示。
-function PoisonUseBlock({ section, detail, fields, chosen, choiceKey, level, onChoose, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  fields: Record<string, string>;
-  chosen?: string | string[];
-  choiceKey: string;
-  level: number;
-  onChoose: (key: string, label: string | string[]) => void;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const { intro, items } = useMemo(() => parsePoi(section.body ?? "")!, [section.body]);
-  // 各层级毒药配方的可选上限按职业特性递推（随等级增加）：
-  //   1级配方：基础 2 → 5级+1 → 9级+1（最多 4）
-  //   15级配方：15级 1 → 19级+1（最多 2）
-  //   25级配方：25级 1 → 29级+1（最多 2）
-  const t = cnTitle(section.title);
-  const max = t.includes("25级") ? 1 + (level >= 29 ? 1 : 0)
-    : t.includes("15级") ? 1 + (level >= 19 ? 1 : 0)
-    : 2 + (level >= 5 ? 1 : 0) + (level >= 9 ? 1 : 0);
-  const chosenVals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
-  const toggle = (t: string) => onChoose(choiceKey, chosenVals.includes(t) ? chosenVals.filter((x) => x !== t) : chosenVals.length >= max ? chosenVals : [...chosenVals, t]);
-  const cnt = `${chosenVals.length}/${max}`;
-  if (!detail) {
-    return (
-      <div className="pf-item">
-        <div className="pf-title">{featTitle(section.title)}</div>
-        <div className="cls-sub-title">选择毒药配方（{cnt}）</div>
-        <div className="cls-options cls-beasts">
-          {items.map((p) => (
-            <SmartHover key={p.title} portal className={chosenVals.includes(p.title) ? "cls-option active" : "cls-option" + (chosenVals.length >= max && !chosenVals.includes(p.title) ? " cls-option-disabled" : "")} popClass="cls-option-pop" pop={lookup(p.title) ? <EntryCard entry={lookup(p.title)!} /> : undefined} onClick={() => toggle(p.title)}>{cleanDisplayName(p.title)}</SmartHover>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="pf-item">
-      <div className="pf-title">{featTitle(section.title)}<span className="cls-options-hint">选择毒药配方（{cnt}）</span></div>
-      {intro && <FeatureBody body={intro} fields={fields} lookup={lookup} />}
-      <div className="cls-sub-title">毒药配方</div>
-      <div className="cls-options cls-beasts">
-        {items.map((p) => (
-          <SmartHover key={p.title} portal className={chosenVals.includes(p.title) ? "cls-option active" : "cls-option" + (chosenVals.length >= max && !chosenVals.includes(p.title) ? " cls-option-disabled" : "")} popClass="cls-option-pop" pop={lookup(p.title) ? <EntryCard entry={lookup(p.title)!} /> : undefined} onClick={() => toggle(p.title)}>{cleanDisplayName(p.title)}</SmartHover>
-        ))}
-      </div>
-      {items.filter((p) => chosenVals.includes(p.title)).map((p) => (
-        <details className="beast-sub" key={p.title}>
-          <summary>{cleanDisplayName(p.title)}</summary>
-          <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(p.body)} fields={fields} lookup={lookup} indent /></div></div>
-        </details>
-      ))}
-    </div>
-  );
-}
-
-// 权势者仪态（HoF 可选职业特性）：开关型启用后从若干权势者仪态中多选；可选数量随等级递增（1→2、13→3、17→4）。
-// toggleKey 存 "on"/""；listKey 存所选仪态标签（string[]）。
-function SignsBlock({ section, detail, fields, count, chosen, on, toggleKey, listKey, onChoose, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  fields: Record<string, string>;
-  count: number;
-  chosen: string[];
-  on: boolean;
-  toggleKey: string;
-  listKey: string;
-  onChoose: (key: string, label: string | string[]) => void;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const { intro, options } = useMemo(() => parseClassFeatureOptions(section.body ?? ""), [section.body]);
-  const opts = options;
-  const selected = opts.filter((o) => chosen.includes(o.label));
-  if (!detail) {
-    return (
-      <div className={"cls-feat" + (on && chosen.length ? " set" : " unset")}>
-        <div className="cls-feat-name">权势者仪态</div>
-        {!on ? (
-          <div className="cls-feat-sub">未选择</div>
-        ) : selected.length === 0 ? (
-          <div className="cls-feat-sub">未选 0/{count}</div>
-        ) : (
-          <>
-            <div className="cls-feat-count">已选 {chosen.length}/{count}</div>
-            {selected.map((o) => (
-              <SmartHover key={o.label} className="cls-feat-opt" popClass="cls-option-pop" pop={lookup(o.label) ? <EntryCard entry={lookup(o.label)!} /> : undefined}>
-                {cleanDisplayName(featTitle(o.label))}
-              </SmartHover>
-            ))}
-          </>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="pf-item beast-master">
-      <div className="pf-title">权势者仪态<span className="cls-options-hint">点击选择一个选项（{on ? 1 : 0}/1）</span></div>
-      <div className="cls-options">
-        <SmartHover className={on ? "cls-option active" : "cls-option"} popClass="cls-option-pop" onClick={() => onChoose(toggleKey, on ? "" : "on")}>
-          启用权势者仪态
-        </SmartHover>
-      </div>
-      {!on ? (
-        <div className="cls-feat-sub">启用后可从若干权势者仪态中选择（当前可选 {count} 个）。</div>
-      ) : (
-        <>
-          {intro && <div className="pf-intro"><FeatureBody body={intro} fields={fields} lookup={lookup} /></div>}
-          <div className="cls-sub-title signs-sub-title">选择权势者仪态（可选 {count} 个）</div>
-          <div className="cls-options cls-beasts">
-            {opts.map((o) => {
-              const e = lookup(o.label);
-              const active = chosen.includes(o.label);
-              const disabled = !active && chosen.length >= count;
-              return (
-                <SmartHover key={o.label} className={active ? "cls-option active" : "cls-option" + (disabled ? " cls-option-disabled" : "")} popClass="cls-option-pop" pop={e ? <EntryCard entry={e} /> : undefined}
-                  onClick={() => {
-                    if (active) onChoose(listKey, chosen.filter((x) => x !== o.label));
-                    else if (!disabled) onChoose(listKey, [...chosen, o.label]);
-                  }}>
-                  {o.label}
-                </SmartHover>
-              );
-            })}
-          </div>
-          <div className="cls-options-hint">{chosen.length}/{count} 已选{chosen.length >= count ? "（已满）" : ""}</div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// 解析保护者「召唤自然盟友」正文：头部（风味 + 升级机械规则）+ 两个原力姿态小节，
-// 每个姿态小节内含 1/15/29 级子节（风味叙述 + 「你可以使用…召唤一个[[野兽]]或[[野兽]]」规则行）。
-interface PrimalSummonLevel { level: number; flavor: string; rules: string }
-interface PrimalSummonAspect { title: string; levels: PrimalSummonLevel[] }
-function parsePrimalSummon(body: string): { head: string; aspects: PrimalSummonAspect[] } {
-  const idx = body.search(/^!!! /m);
-  const head = idx >= 0 ? body.slice(0, idx).trim() : body.trim();
-  const aspects: PrimalSummonAspect[] = [];
-  if (idx < 0) return { head, aspects };
-  const blocks = body.slice(idx).split(/^(?=!!! )/m);
-  for (const b of blocks) {
-    const m = b.match(/^!!! (.+?)\n([\s\S]*)$/);
-    if (!m) continue;
-    const title = m[1].trim();
-    const levels: PrimalSummonLevel[] = [];
-    const lre = /(?:^|\n)''(\d+)级[：:]\s*([\s\S]*?)(?=(?:^|\n)''\d+级[：:]|$)/g;
-    let lm: RegExpExecArray | null;
-    while ((lm = lre.exec(m[2])) !== null) {
-      const level = parseInt(lm[1], 10);
-      const rest = lm[2].trim();
-      const parts = rest.split(/\n\s*\n/);
-      // 剥离「''N级：''」粗体标记闭合的 '' 泄漏（如「''1级：''The creatures…」→ 去掉开头的 ''）
-      const flavor = (parts[0] ?? "").trim().replace(/^''/, "").trim();
-      const rules = parts.slice(1).join("\n\n").trim();
-      if (level) levels.push({ level, flavor, rules });
-    }
-    if (levels.length) aspects.push({ title, levels });
-  }
-  return { head, aspects };
-}
-
-// 保护者「召唤自然盟友」：根据当前生效的原力姿态（由「原力姿态」特性选择/德鲁伊集会派生）自动展示对应姿态，
-// 每级获取内容（1/15/29 级）折叠为子小节，野兽 [[链接]] 悬浮显示数据卡。
-function PrimalSummonBlock({ section, detail, fields, aspect, lookup }: {
-  section: FeatureSection;
-  detail: boolean;
-  fields: Record<string, string>;
-  aspect: string;      // 当前生效的原力姿态标题（原力守护者/原力掠食者），未选则为 ""
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const { head, aspects } = useMemo(() => parsePrimalSummon(section.body ?? ""), [section.body]);
-  const active = aspects.find((a) => a.title === aspect) ?? aspects[0];
-  if (!detail) {
-    return (
-      <div className="cls-feat set">
-        <div className="cls-feat-name">{featTitle(section.title)}</div>
-        {head && <FeatureBody body={head} fields={fields} lookup={lookup} className="cls-feat-note" hideFlavor />}
-        {active && <div className="cls-feat-opt">{active.title}</div>}
-        {active?.levels.map((lv) => (
-          <div key={lv.level} className="cls-feat-note">
-            <div className="cls-feat-opt-wrap"><span className="cls-feat-opt">{lv.level}级</span></div>
-            {lv.rules && <div className="cls-feat-optname"><WikiBody body={lv.rules} fields={fields} lookup={lookup} /></div>}
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div className="pf-item beast-master">
-      <div className="pf-title">{featTitle(section.title)}</div>
-      {head && <FeatureBody body={head} fields={fields} lookup={lookup} />}
-      <div className="cls-options-hint">当前原力姿态：{active?.title ?? "无"}</div>
-      {active?.levels.map((lv) => (
-        <details key={lv.level} className="beast-sub" open={lv.level <= 1}>
-          <summary>{lv.level}级</summary>
-          <div className="beast-sub-body">
-            <div className="pf-body">
-              {lv.flavor && <span className="pf-flavor"><WikiBody body={lv.flavor} fields={fields} lookup={lookup} /></span>}
-              {lv.rules && <div className="pf-rest"><WikiBody body={lv.rules} fields={fields} lookup={lookup} indent /></div>}
-            </div>
-          </div>
-        </details>
-      ))}
     </div>
   );
 }
@@ -2377,7 +1021,7 @@ function ToggleFeatureBlock({ section, detail, fields, on, toggleKey, onChoose, 
         {!on ? (
           <div className="cls-feat-sub">未选择</div>
         ) : (
-          rule && <FeatureBody body={rule} fields={fields} lookup={lookup} className="cls-feat-note" hideFlavor />
+          rule && <FeatureBody body={rule} fields={fields} lookup={lookup} className="cls-feat-note" />
         )}
       </div>
     );
@@ -2412,7 +1056,7 @@ function MultiReplacementBlock({ section, detail, baseKey, chosen, onChoose, fie
     return (
       <div className="cls-feat">
         <div className="cls-feat-name">{featTitle(section.title)}</div>
-        {parsed.intro && <FeatureBody body={prose(parsed.intro)} fields={fields} lookup={lookup} className="cls-feat-note" hideFlavor />}
+        {parsed.intro && <FeatureBody body={prose(parsed.intro)} fields={fields} lookup={lookup} className="cls-feat-note" />}
         {parsed.groups.map((g, gi) => {
           const cur = chosen[gi] ?? "";
           return (
@@ -2448,188 +1092,6 @@ function MultiReplacementBlock({ section, detail, baseKey, chosen, onChoose, fie
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// 黑暗卫士败德按钮的悬浮预览卡片：仅展示该败德直接相关的机械内容（各败德小节的增益 / 赠送威能），
-// 并按行过滤掉英文风味叙述（仅保留中文机械行）；对 {{威能}} 模板占位还原为「你获得」威能行。
-function VicePreview({ option, fields, lookup }: {
-  option: BlackguardViceOption;
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const LABELS: Record<string, string> = { "败德精神": "败德精神", "败德随意威能": "败德随意威能", "进阶暗影护罩": "进阶暗影护罩", "败德辅助威能": "败德辅助威能" };
-  return (
-    <div className="vice-preview">
-      <div className="vice-preview-head">{option.key}败德</div>
-      {option.fills.map((f, i) => {
-        const pw = f.body.match(/\{\{([^}]+)\}\}/);
-        const powerT = pw ? pw[1].trim() : undefined;
-        const mech = f.body
-          .replace(/\{\{[^}]+\}\}/g, "")
-          .split("\n")
-          .map((ln) => ln.replace(/^@@\.\w+\s*/gm, "").trim())
-          .filter((ln) => ln && /[\u4e00-\u9fff]/.test(ln))
-          .join("\n")
-          .replace(/\n{2,}/g, "\n")
-          .trim();
-        return (
-          <div key={i} className="vice-preview-row">
-            <div className="vice-preview-label">{LABELS[f.keyword] ?? f.keyword}</div>
-            <div className="vice-preview-body">
-              {mech && <WikiBody body={mech} fields={fields} lookup={lookup} />}
-              {powerT && <WikiBody body={"你获得[[" + powerT + "]]威能"} fields={fields} lookup={lookup} />}
-            </div>
-          </div>
-        );
-  })}
-    </div>
-  );
-}
-
-// 縢影师契约按钮的悬浮预览卡片：仅展示该契约直接相关的机械内容（各小节增益 / 赠送威能），
-// 并按行过滤掉英文风味叙述（仅保留中文机械行）；对 {{威能}} 模板占位还原为「你获得」威能行。
-function PactPreview({ option, fields, lookup }: {
-  option: BinderPactOption;
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const LABELS: Record<string, string> = {
-    "契约之赐": "契约之赐",
-    "契约遭遇威能": "契约遭遇威能",
-    "契约学识": "契约学识",
-    "缚影师盟友": "缚影师盟友",
-    "高阶缚影师盟友": "高阶缚影师盟友",
-    "缚影师行动": "缚影师行动",
-    "缚影师恩惠": "缚影师恩惠",
-    "缚影师之赐": "缚影师之赐",
-    // 魔剑士契约占位特性
-    "契约奖励": "契约奖励",
-    "契约武器": "契约武器",
-    "契约武器惩戒": "契约武器惩戒",
-    "召唤邪术师盟友": "召唤邪术师盟友",
-    "高阶召唤邪术师盟友": "高阶召唤邪术师盟友",
-  };
-  return (
-    <div className="vice-preview">
-      <div className="vice-preview-head">{option.key}契约</div>
-      {option.fills.map((f, i) => {
-        const pw = f.body.match(/\{\{([^}]+)\}\}/);
-        const powerT = pw ? pw[1].trim() : undefined;
-        const mech = f.body
-          .replace(/\{\{[^}]+\}\}/g, "")
-          .split("\n")
-          .map((ln) => ln.replace(/^@@\.\w+\s*/gm, "").trim())
-          .filter((ln) => ln && /[\u4e00-\u9fff]/.test(ln))
-          .join("\n")
-          .replace(/\n{2,}/g, "\n")
-          .trim();
-        return (
-          <div key={i} className="vice-preview-row">
-            <div className="vice-preview-label">{LABELS[f.keyword] ?? f.keyword}</div>
-            <div className="vice-preview-body">
-              {mech && <WikiBody body={mech} fields={fields} lookup={lookup} />}
-              {powerT && <WikiBody body={"你获得[[" + powerT + "]]威能"} fields={fields} lookup={lookup} />}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// 圣骑兵美德按钮的悬浮预览卡片：展示所选美德各小节机械收益与赠送威能（{{威能}} 还原为「你获得」威能行），
-// 并过滤掉英文风味叙述（仅保留中文机械行）。
-function VirtuePreview({ option, fields, lookup }: {
-  option: VirtueOption;
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const LABELS: Record<string, string> = {
-    "美德精神": "美德精神",
-    "美德随意威能": "美德随意威能",
-    "进阶正义之盾": "进阶正义之盾",
-    "共享": "共享美德",
-  };
-  return (
-    <div className="vice-preview">
-      <div className="vice-preview-head">{option.key}美德</div>
-      {option.fills.map((f, i) => {
-        const pw = f.body.match(/\{\{([^}]+)\}\}/);
-        const powerT = pw ? pw[1].trim() : undefined;
-        const mech = f.body
-          .replace(/\{\{[^}]+\}\}/g, "")
-          .split("\n")
-          .map((ln) => ln.replace(/^@@\.\w+\s*/gm, "").trim())
-          .filter((ln) => ln && /[\u4e00-\u9fff]/.test(ln))
-          .join("\n")
-          .replace(/\n{2,}/g, "\n")
-          .trim();
-        return (
-          <div key={i} className="vice-preview-row">
-            <div className="vice-preview-label">{LABELS[f.keyword] ?? f.keyword}</div>
-            <div className="vice-preview-body">
-              {mech && <WikiBody body={mech} fields={fields} lookup={lookup} />}
-              {powerT && <WikiBody body={"你获得[[" + powerT + "]]威能"} fields={fields} lookup={lookup} />}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// 战争祭司领域按钮的悬浮预览卡片：汇总展示该领域个别等级小节的机械收益与赠送威能（只读）。
-// 样式与学派法师预览一致（标签行 + 清一色中文规则正文，未含英文风味），并过滤英文行、裁剪威能链接的英文别名。
-function zhOnlyBody(body: string): string {
-  return body
-    .split("\n")
-    // 去掉「!!! 领域随意威能」等小节标题的 ! 前缀，避免被 wikiToHtml 转成 <h4/h5/h6>（会造成预览里字号异常与多余空行）
-    .map((l) => l.replace(/^!{1,}\s*/, "").trim())
-    // 威能链接缩写为中文别名，隐藏英文
-    .map((l) => l.replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, (_m, t) => `[[${cnTitle(t)}]]`))
-    // 去掉纯英文风味行与空行（剩下中文机制正文）
-    .filter((l) => /[\u4e00-\u9fff]/.test(l))
-    .join("\n")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}
-function DomainPreview({ option, fields, lookup }: {
-  option: WarpriestDomainOption;
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-}) {
-  const rows = useMemo(() => {
-    // 挑选代表性小节：1级特性和威能 / 引导神力 / 5级特性 / 10级特性（避免预览过长的遭遇威能列表）
-    const picked: WarpriestDomainSection[] = [];
-    const seen = new Set<string>();
-    for (const sec of option.sections) {
-      if (sec.level > 10 || sec.level === 3 || sec.level === 7) continue; // 只保留 1/5/10 的英雄级领域小节
-      if (seen.has(sec.type)) continue;
-      seen.add(sec.type);
-      picked.push(sec);
-    }
-    return picked;
-  }, [option.sections]);
-  const labelOf = (sec: WarpriestDomainSection) => {
-    if (sec.type === "all") return "领域特性和威能";
-    if (sec.type === "channel") return "引导神力";
-    if (sec.type === "encounter") return "领域遭遇威能";
-    return "领域特性";
-  };
-  return (
-    <div className="vice-preview">
-      <div className="vice-preview-head">{option.name}</div>
-      {rows.length === 0 && <div className="vice-preview-row"><div className="vice-preview-body"><span className="hint">无数据</span></div></div>}
-      {rows.map((sec, i) => (
-        <div key={i} className="vice-preview-row">
-          <div className="vice-preview-label">{labelOf(sec)}</div>
-          <div className="vice-preview-body">
-            <WikiBody body={zhOnlyBody(sec.body)} fields={fields} lookup={lookup} />
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -2712,376 +1174,26 @@ function sidebarRuleSections(sourceText: string): FeatureSection[] {
   return out;
 }
 
-// 学派法师：学派悬浮预览（学徒/专家/大师收益）
-function MageSchoolPreview({ option, fields, lookup }: { option: MageSchool; fields: Record<string, string>; lookup: (target: string) => Entry | undefined }) {
-  return (
-    <div className="vice-preview">
-      <div className="vice-preview-head">{option.name}</div>
-      {option.apprentice && <div className="vice-preview-row"><div className="vice-preview-label">学徒级学派法师</div><FeatureBody body={option.apprentice} fields={fields} lookup={lookup} hideFlavor className="vice-preview-body" /></div>}
-      {option.expert && <div className="vice-preview-row"><div className="vice-preview-label">专家级学派法师</div><FeatureBody body={option.expert} fields={fields} lookup={lookup} hideFlavor className="vice-preview-body" /></div>}
-      {option.master && <div className="vice-preview-row"><div className="vice-preview-label">大师级学派法师</div><FeatureBody body={option.master} fields={fields} lookup={lookup} hideFlavor className="vice-preview-body" /></div>}
-    </div>
-  );
-}
-
-// —— 学派法师：单等级魔法学派选择（按等级嵌入对应特性条目内） ——
-// 各等级选择点如下，各自渲染独立的 chips 行 + 当前选中学派的收益正文：
-//   s1（1级学徒）第一学派：全部学派
-//   s2（4级学徒）第二学派：排除第一学派
-//   ex（5级专家）专家级：A/B 单选；ex8（8级专家）自动获得第二学派专家收益（无按钮，直接展示）
-//   ma（10级大师）大师级：A/B 单选
-// 特性正文保留规则原文（见 wiki「选择一种魔法学派。你获得…收益」），按钮与收益在此行内追加。
-function MageSchoolStage({ stage, options, s1Key, s2Key, exKey, maKey, s1, s2, exSel, maSel, fields, lookup, onChoose }: {
-  stage: "s1" | "s2" | "ex" | "ex8" | "ma";
-  options: MageSchool[];
-  s1Key: string; s2Key: string; exKey: string; maKey: string;
-  s1: string; s2: string; exSel: string; maSel: string;
-  fields: Record<string, string>;
-  lookup: (target: string) => Entry | undefined;
-  onChoose: (key: string, label: string | string[]) => void;
-}) {
-  const optA = options.find((o) => o.key === s1);
-  const optB = options.find((o) => o.key === s2);
-  const chip = (option: MageSchool, ck: string, sel: string) => (
-    <SmartHover key={ck + option.key} portal className={"exe-guild-chip ms-chip" + (sel === option.key ? " selected" : "")} popClass="exe-chip-pop" pop={<MageSchoolPreview option={option} fields={fields} lookup={lookup} />} onClick={() => onChoose(ck, sel === option.key ? "" : option.key)}>
-      {option.key}
-    </SmartHover>
-  );
-  // 各等级：标题标签 + chips + 选中收益正文
-  let label: string;
-  let chips: ReactNode;
-  let benefit: string | undefined;
-  let note: string | undefined;
-  if (stage === "s1") {
-    label = "选择第一魔法学派";
-    chips = options.map((o) => chip(o, s1Key, s1));
-    benefit = optA?.apprentice;
-  } else if (stage === "s2") {
-    label = "选择第二魔法学派（与第一学派不同）";
-    chips = options.filter((o) => o.key !== s1).map((o) => chip(o, s2Key, s2));
-    benefit = optB?.apprentice;
-  } else if (stage === "ex") {
-    label = "选择专家级学派（在所选两学派间选一）";
-    chips = optA && optB ? <>{chip(optA, exKey, exSel)}{chip(optB, exKey, exSel)}</> : null;
-    benefit = mageExExpert(optA, optB, exSel);
-  } else if (stage === "ex8") {
-    label = "专家级收益（8级自动获得第二学派）";
-    chips = null;
-    benefit = optB?.expert;
-    note = optB ? `第二学派「${optB.key}」的专家级收益` : undefined;
-  } else {
-    label = "选择大师级学派（在所选两学派间选一）";
-    chips = optA && optB ? <>{chip(optA, maKey, maSel)}{chip(optB, maKey, maSel)}</> : null;
-    benefit = mageMaMaster(optA, optB, maSel);
-  }
-  return (
-    <div className="ms-stage-block">
-      <div className="ms-label">{label}</div>
-      {chips && <div className="exe-guild">{chips}</div>}
-      {benefit && <div className="ms-benefit"><FeatureBody body={benefit} fields={fields} lookup={lookup} hideFlavor /></div>}
-      {note && <div className="ms-note">{note}</div>}
-    </div>
-  );
-}
-// 判定学派法师占位特性所属的等级选择阶段：
-//   「学徒级学派法师」1级→s1（第一学派）、4级→s2（第二学派）；
-//   「专家级学派法师」5级→ex（专家级选择）、8级→ex8（自动第二学派）；
-//   「大师级学派法师」→ma（大师级选择）；其余返回 undefined
-function mageStageOf(title: string): "s1" | "s2" | "ex" | "ex8" | "ma" | undefined {
-  const t = cnTitle(title);
-  const lv = featureLevel(title);
-  if (t.includes("学徒级学派法师")) return lv === 1 ? "s1" : lv === 4 ? "s2" : undefined;
-  if (t.includes("专家级学派法师")) return lv === 5 ? "ex" : lv === 8 ? "ex8" : undefined;
-  if (t.includes("大师级学派法师")) return "ma";
-  return undefined;
-}
-// 专家/大师：从 A/B 中依据所选 key 取对应学派收益正文
-function mageExExpert(optA: MageSchool | undefined, optB: MageSchool | undefined, exSel: string): string | undefined {
-  if (optA?.key === exSel) return optA.expert;
-  if (optB?.key === exSel) return optB.expert;
-  return undefined;
-}
-function mageMaMaster(optA: MageSchool | undefined, optB: MageSchool | undefined, maSel: string): string | undefined {
-  if (optA?.key === maSel) return optA.master;
-  if (optB?.key === maSel) return optB.master;
-  return undefined;
-}
-
 // 单个职业的能力块（classTrait + 职业特性以条目展示 / 简略擅长行）
-function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, classes, magicSchools, panelIds, onAddPowers, onTrackClassPowers, onRemovePowers, onTrackClassFeats, onRemoveFeats, onTrackClassRituals, onRemoveClassRituals, featureOnly, domains }: {
+function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, panelIds, onAddPowers, onTrackClassPowers, onRemovePowers }: {
   entry: Entry;
   detail: boolean;
   level: number;
   choices: Record<string, string | string[]>;
   onChoose: (key: string, label: string | string[]) => void;
   lookup: (target: string) => Entry | undefined;
-  classes: Entry[]; // 全量职业条目（混职「原版职业特性」折叠解析目标基础职业用）
-  magicSchools?: Entry[]; // 全量魔法学派条目（学派法师「魔法学派」选择用）
   panelIds: Set<string>;
   onAddPowers: (powers: Entry[]) => void;
   onTrackClassPowers?: (powers: Entry[]) => void; // 记录职业授予威能 id（不加入面板），供更换职业时移除
   onRemovePowers?: (ids: string[]) => void; // 特性选择变化时移除「不再授予」的威能（如野性力量切换选项）
-  onTrackClassFeats?: (feats: Entry[]) => void; // 记录职业赠送专长 id（不占用常规专长槽位）
-  onRemoveFeats?: (ids: string[]) => void; // 特性选择变化时移除「不再赠送」的专长（如战斗流派切换选项）
-  onTrackClassRituals?: (rituals: { entry: Entry; source: string }[]) => void; // 记录职业赠送仪式 id 及来源特性名（不占用仪式槽位）
-  onRemoveClassRituals?: (ids: string[]) => void; // 特性选择变化时移除「不再赠送」的仪式
-  featureOnly?: boolean; // 混职职业能力模式：仅渲染职业名 + 职业特性（隐藏该职业自己的 trait 与 lore，因已由合并块展示）
-  domains?: Entry[]; // 全量领域条目（战争祭司「领域」选择用）
 }) {
-  // 带层级表的职业（如黑暗卫士）：提取各层级表（英雄/典范/传奇），按层级插入到对应层级的第一个特性前，
-  // 并从特性/lore 解析源中剥离，避免在原区块重复渲染
-  const levelTables = useMemo(() => extractLevelTables(entry.sourceText), [entry.sourceText]);
-  // 各层级表插入锚点：按 caption 判定应放在哪个层级的第一个特性前（英雄=1 级前 / 典范=11 / 传奇=21）
-  const levelTableAnchors = useMemo(
-    () =>
-      levelTables.map((t) => {
-        const cap = (t.match(/<caption>([^<]*)<\/caption>/) || [])[1] || "";
-        if (/典范/.test(cap)) return 11;
-        if (/传奇/.test(cap)) return 21;
-        return 1;
-      }),
-    [levelTables]
-  );
-  const classSrc = useMemo(() => (levelTables.length ? stripLevelTables(entry.sourceText) : entry.sourceText), [levelTables, entry.sourceText]);
-  // 带层级表的职业：典范/传奇层级是否生效，取决于所选典范之道/传奇天命与该职业是否相关。
-  // 未选择对应条目时视为相关（显示该职业本层级的默认特性）；只有明确选了「无关」条目才隐藏该层级。
-  // 没有层级表的职业不受影响（恒显示全部层级特性）。
-  const hasLevelTable = levelTables.length > 0;
-  // 取消典范/传奇相关性对职业特性的影响：无论选择相关或无关的典范道/传奇天命，
-  // 职业的典范(11-20)与传奇(21+)层级特性及层级表都始终显示、数据始终生效。
-  const paragonRelevant = true;
-  const epicRelevant = true;
-  const tierVisible = useCallback((title: string): boolean => {
-    if (!hasLevelTable) return true;
-    const lv = featureLevel(title);
-    if (lv >= 11 && lv <= 20) return paragonRelevant;
-    if (lv >= 21) return epicRelevant;
-    return true;
-  }, [hasLevelTable, paragonRelevant, epicRelevant]);
-  const trait = classTraitHtml(classSrc);
-  const features = classFeaturesHtml(classSrc);
-  const summary = classSummary(classSrc);
-  const classLore = useMemo(() => splitClassLore(classSrc), [classSrc]);
-  // 黑暗卫士：支配 / 暴怒 败德二选一（具体效果在败德条目中，选中后用其填充占位特性）
-  const vice = useMemo(() => blackguardVices(entry, lookup), [entry, lookup]);
-  const viceKey = vice ? entry.id + "::败德" : undefined;
-  const viceChosen = vice && viceKey ? (typeof choices[viceKey] === "string" ? choices[viceKey] : "") : "";
-  const viceOpt = useMemo(() => (vice && viceChosen ? vice.options.find((o) => o.key === viceChosen) : undefined), [vice, viceChosen]);
-  // 契约选择：缚影师三选一（精类/星辰/阴暗 Binder）、魔剑士五选一（精类/炼狱/星辰/阴暗/元素）。
-  // 效果在独立契约条目中，选中后填充占位特性并自动授予契约威能。
-  const pact = useMemo(() => binderPacts(entry, lookup) ?? hexbladePacts(entry, lookup), [entry, lookup]);
-  const pactKey = pact ? entry.id + "::契约" : undefined;
-  const pactChosen = pact && pactKey ? (typeof choices[pactKey] === "string" ? choices[pactKey] : "") : "";
-  const pactOpt = useMemo(() => (pact && pactChosen ? pact.options.find((o) => o.key === pactChosen) : undefined), [pact, pactChosen]);
-  // 战争祭司：领域选择（效果在领域条目中，选中后填充对应等级+类型的占位特性并自动授予领域威能）
-  const wpr = useMemo(() => warpriestDomains(entry, domains), [entry, domains]);
-  const wprKey = wpr ? entry.id + "::领域" : undefined;
-  const wprChosen = wpr && wprKey ? (typeof choices[wprKey] === "string" ? choices[wprKey] : "") : "";
-  const wprOpt = useMemo(() => (wpr && wprChosen ? wpr.options.find((o) => o.key === wprChosen) : undefined), [wpr, wprChosen]);
-  // 圣骑兵：美德二选一（牺牲/英勇；具体效果在美德条目中，选中后填充占位特性）
-  const virt = useMemo(() => cavalierVirtues(entry, lookup), [entry, lookup]);
-  const virtKey = virt ? entry.id + "::美德" : undefined;
-  const virtChosen = virt && virtKey ? (typeof choices[virtKey] === "string" ? choices[virtKey] : "") : "";
-  const virtOpt = useMemo(() => (virt && virtChosen ? virt.options.find((o) => o.key === virtChosen) : undefined), [virt, virtChosen]);
-  // 学派法师：魔法学派选择（参考缚影师契约的简洁 chips，忠实还原 5/10 级专家/大师在 A/B 间选择）。
-  // 收益在独立「魔法学派」条目中，选中后填充回对应等级占位特性；选择值存学派短名（如「塑能」）。
-  const mageSchoolOpts = useMemo(() => parseMageSchools(entry, magicSchools), [entry, magicSchools]);
-  const mage1Key = entry.id + "::魔法学派1";
-  const mage2Key = entry.id + "::魔法学派2";
-  const mageExKey = entry.id + "::魔法学派专家";
-  const mageMaKey = entry.id + "::魔法学派大师";
-  const mage1 = typeof choices[mage1Key] === "string" ? choices[mage1Key] : "";
-  const mage2Raw = typeof choices[mage2Key] === "string" ? choices[mage2Key] : "";
-  const mage2 = mage2Raw === mage1 ? "" : mage2Raw; // 4级须与1级不同：变更1级后旧第二学派视为未选
-  // 专家/大师级仅在 A/B（第一/第二学派）间有效：变更学派后旧选择视为未选
-  const mageExSelRaw = typeof choices[mageExKey] === "string" ? choices[mageExKey] : "";
-  const mageMaSelRaw = typeof choices[mageMaKey] === "string" ? choices[mageMaKey] : "";
-  const mageExSel = mageExSelRaw === mage1 || mageExSelRaw === mage2 ? mageExSelRaw : "";
-  const mageMaSel = mageMaSelRaw === mage1 || mageMaSelRaw === mage2 ? mageMaSelRaw : "";
-  // 解析职业特性后，若已选败德或契约，则把对应占位特性正文替换为选中条目对应小节的机械内容（保留{{powerRef}}模板自动授予威能）。
-  // 学派法师的学派收益不在此处替换正文（保留各等级特性的规则原文），而是由各等级特性条目内的 MageSchoolStage 独立选择、展示。
-  const parsed = useMemo(() => {
-    if (!features) return undefined;
-    const p = parseFeatureSections(features);
-    // 战争祭司：把「1级：治愈真言」挪到「1级：引导神力威能」下方（与该级其他领域相关特性一组展示），与是否已选领域无关
-    const reorderHeal = (arr: FeatureSection[]): FeatureSection[] => {
-      if (!wpr) return arr;
-      const cT = (s: FeatureSection) => cnTitle(s.title);
-      const heal = arr.findIndex((s) => cT(s).startsWith("1级：治愈真言"));
-      const chan = arr.findIndex((s) => cT(s).startsWith("1级：引导神力威能"));
-      if (heal >= 0 && chan >= 0 && heal < chan) {
-        const [item] = arr.splice(heal, 1);
-        arr.splice(chan + 1, 0, item);
-      }
-      return arr;
-    };
-    if (!viceOpt && !pactOpt && !wprOpt && !virtOpt) return { ...p, sections: reorderHeal([...p.sections]) };
-    const viceFind = (title: string) => (viceOpt ? VICE_FILL_KEYWORDS.find((k) => title.includes(k)) : undefined);
-    // 魔剑士契约：按「去掉等级前缀后的中文特性名」精确匹配占位特性（避免误伤「进阶契约武器」等含重叠词的真实特性）；
-    // 缚影师契约：沿用关键词子串匹配（标题如「契约之赐」「契约学识」「契约遭遇威能」）。
-    const pactFind = (title: string) => {
-      if (!pactOpt) return undefined;
-      if (pact?.kind === "hexblade") {
-        const name = cnTitle(title).replace(/^\d+级[：:]\s*/, "").trim();
-        return pactOpt.fills.some((f) => f.keyword === name) ? name : undefined;
-      }
-      return PACT_FILL_KEYWORDS.find((k) => title.includes(k));
-    };
-    const virtFind = (title: string) => (virtOpt ? VIRTUE_FILL_KEYWORDS.find((k) => title.includes(k)) : undefined);
-    // 战争祭司：把领域占位特性替换为所选领域对应「等级+类型」小节内容；{{威能}} 已在 warpriestDomains 里还原为 [[威能]]，随正文自动授予并悬浮预览
-    const domFill = (s: FeatureSection): FeatureSection | undefined => {
-      if (!wprOpt) return undefined;
-      const type = domainTypeOf(s.title);
-      if (!type) return undefined;
-      const sec = wprOpt.sections.find((d) => d.level === featureLevel(s.title) && d.type === type);
-      return sec ? { ...s, body: sec.body, powerRef: s.powerRef } : undefined;
-    };
-    const mapped = p.sections.map((s) => {
-      const t = cnTitle(s.title);
-      let fill: BinderPactFill | BlackguardViceFill | VirtueFill | undefined;
-      let kw = viceFind(t);
-      if (kw) fill = viceOpt?.fills.find((f) => f.keyword === kw);
-      if (!fill) {
-        kw = pactFind(t);
-        if (kw) fill = pactOpt?.fills.find((f) => f.keyword === kw);
-      }
-      if (!fill) {
-        kw = virtFind(t);
-        if (kw) fill = virtOpt?.fills.find((f) => f.keyword === kw);
-      }
-      if (fill) {
-        const refM = fill.body.match(/\{\{([^}]+)\}\}/);
-        const powerRef = refM ? refM[1].trim() : s.powerRef;
-        const body = refM ? fill.body.replace(/\{\{[^}]+\}\}/g, "").trim() : fill.body;
-        return { ...s, body, powerRef };
-      }
-      return domFill(s) ?? s;
-    });
-    return { ...p, sections: reorderHeal(mapped) };
-  }, [features, viceOpt, pactOpt, wprOpt, virtOpt, wpr, pact]);
-  // 主职业条目里被解析成特性段落的「支配 Domination / 暴怒 Fury」小节：作为败德选择的风味展示，
-  // 不再当作普通特性单独渲染在下方（避免两段风味同时出现）
-  const viceDescTitles = useMemo(() => (vice ? new Set(vice.descTitles) : new Set<string>()), [vice]);
-  const pactDescTitles = useMemo(() => (pact ? new Set(pact.descTitles) : new Set<string>()), [pact]);
-  const virtDescTitles = useMemo(() => (virt ? new Set(virt.descTitles) : new Set<string>()), [virt]);
+  const trait = classTraitHtml(entry.sourceText);
+  const features = classFeaturesHtml(entry.sourceText);
+  const summary = classSummary(entry.sourceText);
+  const parsed = useMemo(() => (features ? parseFeatureSections(features) : undefined), [features]);
   const groups = useMemo(() => (parsed ? detectReplacementGroups(parsed.sections) : new Map<string, AltGroup>()), [parsed]);
   const altSet = useMemo(() => new Set([...groups.values()].flatMap((g: AltGroup) => g.alts.map((a: FeatureSection) => a.title))), [groups]);
-  // 权势者仪态（HoF 可选职业特性）：开关型启用后从若干权势者仪态中多选；可选数量随等级递增（1→2、13→3、17→4）
-  const signsSection = useMemo(() => (parsed ? parsed.sections.find((s) => s.title.startsWith("权势者仪态")) : undefined), [parsed]);
-  const signsKey = signsSection ? entry.id + "::" + signsSection.title : undefined;
-  const signsListKey = signsSection ? entry.id + "::signs" : undefined;
-  const signsOn = !!signsKey && choices[signsKey] === "on";
-  const signsChosen = signsListKey ? choiceVals(choices[signsListKey]) : [];
-  const signsCount = level < 13 ? 2 : level < 17 ? 3 : 4;
-  // 保护者「召唤自然盟友」：抽出单独渲染（含按等级折叠的野兽数据）
-  const summonSection = useMemo(() => (parsed ? parsed.sections.find((s) => cnTitle(s.title) === "召唤自然盟友") : undefined), [parsed]);
-  const summonAspect = useMemo(() => resolvePrimalAspect(choices, [entry]), [choices, entry]);
-  // 哨兵「动物伙伴」季节联动：读取「自然循环之侍从」所选季节，联动展示对应动物伙伴数据卡
-  const seasonSection = useMemo(() => (parsed ? parsed.sections.find((s) => cnTitle(s.title).includes("自然循环之侍从")) : undefined), [parsed]);
-  const companionSeason = useMemo(() => {
-    if (!seasonSection) return undefined;
-    const v = choices[entry.id + "::" + seasonSection.title];
-    return Array.isArray(v) ? v[0] : typeof v === "string" ? v : undefined;
-  }, [seasonSection, choices, entry.id]);
-  // 刺客（行刑者）：三工会选择（血红正义/低语联盟/忍者之道）；选中的工会落地相应武器擅长与赠送威能
-  const exe = useMemo(() => executionerGuilds(entry.sourceText), [entry.sourceText]);
-  const exeKey = exe ? entry.id + "::刺客公会" : undefined;
-  const exeGuildTitles = useMemo(() => (exe ? new Set(exe.options.map((o) => cnTitle(o.key))) : new Set<string>()), [exe]);
-  // 提炼多处复用的「基础多选 + N 个『额外…』追加单选」模式（共用同一选项池，互斥去重）：
-  //  - 战士（骑士/杀手等）：「战士架势」+「额外战士架势」
-  //  - 游荡者（盗贼）：「游荡者技巧」+「额外游荡者技巧」
-  // 检测：标题以「额外」开头且正文引用「从1级X的选项中」的为追加项，据此反推基础项名。
-  type ExtraGroup = {
-    baseName: string;
-    base?: FeatureSection;
-    extras: FeatureSection[];
-    options: { label: string; desc: string }[];
-  };
-  const extraChoiceGroups = useMemo<ExtraGroup[]>(() => {
-    if (!parsed) return [];
-    const out: ExtraGroup[] = [];
-    const seen = new Set<string>();
-    for (const s of parsed.sections) {
-      if (!tierVisible(s.title)) continue;
-      const body = s.body ?? "";
-      // 追加项的正文必须是「从1级「X」的选项中…获得额外X」的引用行（X=基础选项池名）。
-      // 兼容两种命名：战士/盗贼的标题含「额外X」，斥候的标题为「N级：X」且不含「额外」。
-      const m = body.match(/从1级「?([^」的]+?)」?的选项/);
-      if (!m) continue;
-      const baseName = m[1].trim();
-      if (seen.has(baseName)) continue;
-      // 基础特性：同名标题、且正文是真正的选项列表（不含「从1级…的选项」引用行）。
-      // 找不到选项池则跳过（防止把交叉引用的描述性正文误判为追加项）。
-      const base = parsed.sections.find(
-        (b) => b !== s && cnTitle(b.title).includes(baseName) && !/从1级/.test(b.body ?? "")
-      );
-      if (!base) continue;
-      seen.add(baseName);
-      // 追加项判定：标题含「额外X」（战士/盗贼），或标题为「N级：X」的同名不同级变体（斥候，N>基础级）。
-      // 用「去掉等级前缀与额外前缀后的纯中文名 === baseName」精确匹配，避免被含 baseName 子串的无关特性误判。
-      const extraName = (t: string) => {
-        const c = cnTitle(t).replace(/^\d+级[：:]\s*/, "").replace(/^额外/, "").trim();
-        return c.includes(baseName);
-      };
-      const extras = parsed.sections.filter(
-        (x) =>
-          tierVisible(x.title) &&
-          x !== base &&
-          extraName(x.title) &&
-          // 排除普通同名但非追加引用行的占位/说明特性（如「进阶双武器攻击」的说明里带「荒野面貌」字样）
-          /从1级/.test(x.body ?? "")
-      );
-      if (extras.length === 0) { seen.delete(baseName); continue; }
-      out.push({
-        baseName,
-        base,
-        extras,
-        options: base ? parseClassFeatureOptions(base.body).options : [],
-      });
-    }
-    return out;
-  }, [parsed, tierVisible]);
-  const extraSet = useMemo(() => new Set(extraChoiceGroups.flatMap((g) => g.extras.map((s) => s.title))), [extraChoiceGroups]);
-  const groupOfExtra = (title: string): ExtraGroup | undefined => extraChoiceGroups.find((g) => g.extras.some((e) => e.title === title));
-  // 某组（基础 + 各追加项）已选的全部选项下标集合
-  const allChosenInGroup = (g: ExtraGroup): Set<string> => {
-    const set = new Set<string>();
-    const addVals = (k: string) => { const v = choices[k]; if (Array.isArray(v)) v.forEach((x) => set.add(x)); else if (typeof v === "string" && v) set.add(v); };
-    if (g.base) addVals(entry.id + "::" + g.base.title);
-    for (const e of g.extras) addVals(entry.id + "::" + e.title);
-    return set;
-  };
-  // 某次「额外…」追加项可选项 = 该组全部已选 减 本次已选（自身可选/可取消，其余已占用则置灰）
-  const takenFor = (s: FeatureSection): Set<string> => {
-    const g = groupOfExtra(s.title);
-    if (!g) return new Set();
-    const own = choices[entry.id + "::" + s.title];
-    const t = allChosenInGroup(g);
-    if (Array.isArray(own)) own.forEach((x) => t.delete(x));
-    else if (typeof own === "string") t.delete(own);
-    return t;
-  };
-  // 游侠·猎人「射艺流派 ↔ 强化破坏射击」联动：
-  // 13级「强化破坏射击」按 1级所选远程武器自动匹配（弓之猎人→齐射弓箭，弩之猎人→惩戒弩箭）。
-  // 仅作为未显式选择时的建议默认值；玩家若刻意选择另一款武器特性（如弓弩双修）仍可手动覆盖。
-  const ARROW_VOLLEY = "齐射弓箭 Volley of Arrows";
-  const BOLT_PUNISH = "惩戒弩箭 Punishing Quarrel";
-  const archeryLinkedDefault = useMemo(() => {
-    const style = parsed?.sections.find((s) => cnTitle(s.title) === "1级：射艺流派");
-    const v = style ? choices[entry.id + "::" + style.title] : "";
-    if (typeof v === "string" && v) {
-      if (/弩之猎人|Crossbow/i.test(v)) return BOLT_PUNISH;
-      if (/弓之猎人|Bow/i.test(v)) return ARROW_VOLLEY;
-    }
-    return undefined;
-  }, [parsed, entry.id, choices]);
-  const isEnhancedShot = (title: string) => cnTitle(title).replace(/^\d+级[：:]\s*/, "") === "强化破坏射击";
-  const effSectionChosen = (title: string) => {
-    const v = choices[entry.id + "::" + title];
-    if (isEnhancedShot(title) && (v == null || v === "")) return archeryLinkedDefault;
-    return v;
-  };
-  const normalSections = useMemo(() => (parsed ? parsed.sections.filter((s) => !groups.has(s.title) && !altSet.has(s.title) && s !== signsSection && s !== summonSection && !viceDescTitles.has(s.title.trim()) && !pactDescTitles.has(s.title.trim()) && !virtDescTitles.has(s.title.trim()) && !exeGuildTitles.has(cnTitle(s.title)) && !(exe && cnTitle(s.title) === "刺客公会") && tierVisible(s.title) && !extraSet.has(s.title)) : []), [parsed, groups, altSet, signsSection, summonSection, viceDescTitles, pactDescTitles, virtDescTitles, exeGuildTitles, exe, tierVisible, extraSet]);
+  const normalSections = useMemo(() => (parsed ? parsed.sections.filter((s) => !groups.has(s.title) && !altSet.has(s.title)) : []), [parsed, groups, altSet]);
   // 兽王：把「兽王」特性抽出来单独渲染（排到特性列表末尾），并据此启用「成为兽王」互斥逻辑
   const beastSection = useMemo(() => (parsed ? parsed.sections.find((s) => cnTitle(s.title) === "兽王") : undefined), [parsed]);
   // 特性区域之外的 sidebar 规则小节（如圣武士「神圣制裁」），按兽王折叠样式渲染
@@ -3095,85 +1207,27 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
     if (!parsed) return [];
     return parsed.sections.filter((s) => {
       if (s === beastSection) return false;
-      if (!tierVisible(s.title)) return false;
       const b = (s.body ?? "").trim();
       if (!/^当你选择(?:该|此)职业特性时/.test(b)) return false;
       // 排除本身已含「从下列选项中选择」「选择一个」等选项列表的特性
       return !parseClassFeatureOptions(b).selectable;
     });
-  }, [parsed, beastSection, tierVisible]);
+  }, [parsed, beastSection]);
   const toggleSet = useMemo(() => new Set(toggleSections.map((s) => s.title)), [toggleSections]);
   // 多替换组特性：正文含 ≥2 个独立替换对（如牧师「引导神力」），用 MultiReplacementBlock 渲染
   const multiSections = useMemo(() => {
     if (!parsed) return [];
-    return parsed.sections.filter((s) => s !== beastSection && !toggleSet.has(s.title) && !!parseReplacementPairs(s.body ?? "") && tierVisible(s.title));
-  }, [parsed, beastSection, toggleSet, tierVisible]);
+    return parsed.sections.filter((s) => s !== beastSection && !toggleSet.has(s.title) && !!parseReplacementPairs(s.body ?? ""));
+  }, [parsed, beastSection, toggleSet]);
   const multiSet = useMemo(() => new Set(multiSections.map((s) => s.title)), [multiSections]);
-  // 特性按原始来源顺序交错渲染：普通特性 + 替代组 base + 额外战士架势 统一按等级排入列表头部位置，
-  // 避免替代组选择器与额外架势被挤到所有（如 30 级）特性之后显示。
-  const srcIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    parsed?.sections.forEach((s, i) => m.set(s.title, i));
-    return m;
-  }, [parsed]);
-  const rowSections = useMemo(() => {
-    const items = [
-      ...normalSections,
-      ...extraChoiceGroups.flatMap((g) => g.extras),
-      ...[...groups.values()].map((g) => g.base).filter((s) => !(beastOn && beastMasterKey && cnTitle(s.title) === "准确射击")),
-    ];
-    return items
-      .filter((s) => s !== beastSection && !toggleSet.has(s.title) && !multiSet.has(s.title) && featureReachable(s.title, level) && !(beastOn && beastMasterKey && cnTitle(s.title) === "战斗流派"))
-      .sort((a, b) => (srcIndex.get(a.title) ?? 0) - (srcIndex.get(b.title) ?? 0));
-  }, [normalSections, extraChoiceGroups, groups, srcIndex, beastSection, toggleSet, multiSet, level, beastOn, beastMasterKey]);
-  // 选中工会的赠送威能/专长（正文「''增益：''你获得[[威能]]…」；忍者之道另含武器擅长）
-  const exeChosen = exe && exeKey ? (typeof choices[exeKey] === "string" ? choices[exeKey] : "") : "";
-  const exeBody = useMemo(() => (exe && exeChosen ? exe.options.find((o) => o.key === exeChosen)?.body : undefined), [exe, exeChosen]);
-  const exeGranted = useMemo(() => {
-    const powers: Entry[] = []; const feats: Entry[] = []; const rituals: Entry[] = [];
-    if (!exeBody) return { powers, feats, rituals };
-    const seenP = new Set<string>(); const seenF = new Set<string>(); const seenR = new Set<string>();
-    for (const t of wikiLinkTargets(exeBody)) {
-      const e = lookup(t); if (!e) continue;
-      if (e.category === "power" && !seenP.has(e.id)) { seenP.add(e.id); powers.push(e); }
-      else if (e.category === "feat" && !seenF.has(e.id)) { seenF.add(e.id); feats.push(e); }
-      else if (e.category === "ritual" && !seenR.has(e.id)) { seenR.add(e.id); rituals.push(e); }
-    }
-    return { powers, feats, rituals };
-  }, [exeBody, lookup]);
   // 精华职业：职业特性按等级折叠，达到前提等级才展开
   const essential = ESSENTIALS_CLASS_IDS.has(entry.id);
   const featOpen = (s: FeatureSection) => !essential || level >= featureLevel(s.title);
 
-  // 计算某职业特性在当前 choices 状态下授予的威能/赠送专长/赠送仪式（供自动加入 + 手动按钮）
-  const grantedOf = (s: FeatureSection): { powers: Entry[]; feats: Entry[]; rituals: Entry[] } => {
-    const powers: Entry[] = [];
-    const feats: Entry[] = [];
-    const rituals: Entry[] = [];
-    const add = (e?: Entry) => { if (e && e.category === "power" && !powers.some((x) => x.id === e.id)) powers.push(e); };
-    // 从正文「获得[[专长]]作为…专长」赠送句中收集赠送专长，同样按等级门槛过滤
-    const addFeatText = (text?: string) => {
-      if (!text) return;
-      const gates = levelGatedWikiLinks(text);
-      for (const t of grantedFeatLinks(text)) {
-        const g = gates.get(t);
-        if (g !== undefined && level < g) continue;
-        const e = lookup(t);
-        if (e && e.category === "feat" && !feats.some((x) => x.id === e.id)) feats.push(e);
-      }
-    };
-    // 从正文「仪式书…：[[仪式]]」等赠送句中收集赠送仪式，同样按等级门槛过滤
-    const addRitualText = (text?: string) => {
-      if (!text) return;
-      const gates = levelGatedWikiLinks(text);
-      for (const t of grantedRitualLinks(text, lookup)) {
-        const g = gates.get(t);
-        if (g !== undefined && level < g) continue;
-        const e = lookup(t);
-        if (e && e.category === "ritual" && !rituals.some((x) => x.id === e.id)) rituals.push(e);
-      }
-    };
-    const addGrantedText = (text?: string) => { addFeatText(text); addRitualText(text); };
+  // 计算某职业特性在当前 choices 状态下授予的威能（供自动加入 + 手动按钮）
+  const grantedOf = (s: FeatureSection): Entry[] => {
+    const out: Entry[] = [];
+    const add = (e?: Entry) => { if (e && e.category === "power" && !out.some((x) => x.id === e.id)) out.push(e); };
     const key = entry.id + "::" + s.title;
     // 替代组：外层选择 base 或其替代项
     if (groups.has(s.title)) {
@@ -3188,35 +1242,24 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
             if (!innerVals.includes(o.label)) continue;
             if (!o.desc) add(lookup(o.label));
             else for (const e of optionGrantedPowers(o.desc, choices[key + "::inner"], lookup)) add(e);
-            addGrantedText(o.desc);
           }
         }
         for (const e of optionGrantedPowers(g.base.body ?? "", choices[key + "::inner"], lookup)) add(e);
-        addGrantedText(g.base.body);
       } else {
         const alt = g.alts.find((a) => cleanDisplayName(a.title) === outerSel);
-        if (alt) {
-          for (const e of optionGrantedPowers(alt.body ?? "", undefined, lookup)) add(e);
-          addGrantedText(alt.body);
-        }
+        if (alt) for (const e of optionGrantedPowers(alt.body ?? "", undefined, lookup)) add(e);
       }
-      return { powers, feats, rituals };
+      return out;
     }
     if (altSet.has(s.title)) {
       const outerSel = typeof choices[key] === "string" ? choices[key] : "";
-      if (outerSel === cleanDisplayName(s.title)) {
-        for (const e of optionGrantedPowers(s.body ?? "", undefined, lookup)) add(e);
-        addGrantedText(s.body);
-      }
-      return { powers, feats, rituals };
+      if (outerSel === cleanDisplayName(s.title)) for (const e of optionGrantedPowers(s.body ?? "", undefined, lookup)) add(e);
+      return out;
     }
     // 开关型特性：开启后正文内的威能
     if (toggleSet.has(s.title)) {
-      if (choices[key] === "on") {
-        for (const e of optionGrantedPowers(s.body ?? "", undefined, lookup)) add(e);
-        addGrantedText(s.body);
-      }
-      return { powers, feats, rituals };
+      if (choices[key] === "on") for (const e of optionGrantedPowers(s.body ?? "", undefined, lookup)) add(e);
+      return out;
     }
     // 多替换组：每组当前生效项 = 已选 ?? 默认被替代项
     if (multiSet.has(s.title)) {
@@ -3226,199 +1269,50 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
         const cur = typeof raw === "string" ? raw : "";
         add(lookup(cur || g.base));
       }
-      return { powers, feats, rituals };
+      return out;
     }
-    if (s === beastSection) return { powers, feats, rituals }; // 野兽伙伴不是威能条目
-    // 「额外…」追加单选（如额外战士架势 / 额外游荡者技巧）：只授予本次单独选中的一个威能
-    if (extraSet.has(s.title)) {
-      const v = typeof choices[key] === "string" ? choices[key] : "";
-      if (v) { const e = lookup(v); if (e && e.category === "power" && !powers.some((x) => x.id === e.id)) powers.push(e); }
-      return { powers, feats, rituals };
-    }
-    // 「选择一个额外专长：[[X]]或[[Y]]」二选一专长（如行刑者「多才防御」）：按所选授予对应专长
-    const fc = featChoiceData(s.body ?? "");
-    if (fc) {
-      const v = typeof choices[key] === "string" ? choices[key] : "";
-      if (v) {
-        const e = lookup(v);
-        if (e && e.category === "feat" && !feats.some((x) => x.id === e.id)) feats.push(e);
-      }
-      return { powers, feats, rituals };
-    }
-    // 元素使「提升元素」：正文用 {{元素提升（气/土/火/水）…}} 四个模板引用对应专精的威能，
-    // 只授予与所选「元素专精」匹配的那一个，并随专精切换自动更换。
-    if (cnTitle(s.title) === "提升元素") {
-      const specKey = entry.id + "::元素专精 Elemental Specialty";
-      const spec = typeof choices[specKey] === "string" ? choices[specKey] : "";
-      const specEl = cnTitle(spec).replace(/元素使$/, "").trim(); // 气/土/火/水
-      const EN: Record<string, string> = { "气": "Air", "土": "Earth", "火": "Fire", "水": "Water" };
-      if (EN[specEl]) add(lookup("元素提升（" + specEl + "） Elemental Escalation (" + EN[specEl] + ")"));
-      else if (s.powerRef) add(lookup(s.powerRef)); // 未选专精时回退到默认（正文第一个模板）
-      return { powers, feats, rituals };
-    }
+    if (s === beastSection) return out; // 野兽伙伴不是威能条目
     // 普通 / 选择型特性
     const parsedOpt = parseClassFeatureOptions(s.body);
     if (parsedOpt.selectable) {
       const chosenVals = choiceVals(choices[key]);
-      // 选择型特性引言中可能明确「获得[[专长]]作为…额外专长」（如元素法师的奥术魔宠），
-      // 该基础赠送与选项选择无关，需始终授予（grantedFeatLinks 只匹配明确赠送句式）。
-      addGrantedText(parsedOpt.intro);
-      if (parsedOpt.forceDefault) {
-        // 4c「代替」型（如机关术士「治疗注射」、邪术师「魔能爆」）：
-        // 始终授予引言中提到的非选项基础威能（如「治疗注射：混合药物」），
-        // 替换项取「已选 ?? 默认保留项」（未选时默认生效原威能）。
-        const optLabels = new Set(parsedOpt.options.map((o) => o.label));
-        for (const t of wikiLinkTargets(parsedOpt.intro ?? "")) {
-          if (!optLabels.has(t)) add(lookup(t));
-        }
-        const effective = chosenVals.length > 0 ? chosenVals[0] : parsedOpt.forceDefault;
-        const opt = parsedOpt.options.find((o) => o.label === effective);
-        if (opt) {
-          if (!opt.desc) add(lookup(opt.label));
-          else for (const e of optionGrantedPowers(opt.desc, choices[key + "::inner"], lookup)) add(e);
-          addFeatText(opt.desc);
-        }
-      } else {
-        for (const o of parsedOpt.options) {
-          if (!chosenVals.includes(o.label)) continue;
-          // 选项本身即威能（如保护者「原力协调」的大气精魂等）：直接授予该威能；
-          // 否则从选项描述中提取 [[威能]]（如炼狱契约的子二选一）
-          const optEntry = lookup(o.label);
-          if (optEntry && optEntry.category === "power") {
-            add(optEntry);
-          } else if (!o.desc) {
-            add(lookup(o.label));
-          } else {
-            for (const e of optionGrantedPowers(o.desc, choices[key + "::inner"], lookup)) add(e);
-          }
-          addGrantedText(o.desc);
-        }
+      for (const o of parsedOpt.options) {
+        if (!chosenVals.includes(o.label)) continue;
+        if (!o.desc) add(lookup(o.label));
+        else for (const e of optionGrantedPowers(o.desc, choices[key + "::inner"], lookup)) add(e);
       }
     } else {
-      // 哨兵季节变体特性（13级自然循环典范 / 17级动物伙伴威能）：只对所选季节的小节生效，
-      // 只授予该季节小节内的 [[威能]]（如17级仅授予暴狼扑击/巨熊耐力/微风携运中的对应一个），
-      // 随季节切换自动增删。
-      const seasonSub = seasonSubOf(s.body ?? "", companionSeason);
-      if (seasonSub) {
-        const { intro } = splitSeasonVariant(s.body ?? "");
-        const filtered = (intro + "\n" + seasonSub.body).replace(/^\s*$/gm, "").trim();
-        const gates = levelGatedWikiLinks(filtered);
-        for (const t of wikiLinkTargets(filtered)) {
-          const g = gates.get(t);
-          if (g !== undefined && level < g) continue;
-          add(lookup(t));
-        }
-        addGrantedText(seasonSub.body);
-        return { powers, feats, rituals };
-      }
-      // 普通特性：正文内所有 [[威能]] 链接均授予；但「N级时，你获得[[X]]」的威能需达到对应等级才加入（如野蛮人「狂暴打击」5级）；
-      // 「如果你有[[X]]」等条件句中的链接只是前提说明，不授予（如法师（学派法师）19级「每日威能」的[[召唤暗影仆从]]）。
+      // 普通特性：正文内所有 [[威能]] 链接均授予；但「N级时，你获得[[X]]」的威能需达到对应等级才加入（如野蛮人「狂暴打击」5级）
       const gates = levelGatedWikiLinks(s.body);
-      const cond = conditionalGrantLinks(s.body);
       for (const t of wikiLinkTargets(s.body)) {
-        if (cond.has(t)) continue;
         const g = gates.get(t);
         if (g !== undefined && level < g) continue;
         add(lookup(t));
       }
-      // 特性正文以 {{威能}} 模板引用自身威能（如保护者「自然生长」）时直接授予对应威能；
-      // 仅当正文明确「获得下列…威能」（如专业射手「获得下列3个威能」）时，才同时授予全部模板引用，
-      // 避免把剑法术「获得3个…威能」、召唤自然盟友等「选项池/示例召唤生物」误判为全部授予。
-      const explicitGrantAll = /获得(下列|以下|这些)[^。！？\n]{0,20}?(威能|能力|奥义)/.test(s.body ?? "");
-      const refs = explicitGrantAll ? (s.powerRefs && s.powerRefs.length ? s.powerRefs : s.powerRef ? [s.powerRef] : []) : s.powerRef ? [s.powerRef] : [];
-      for (const ref of refs) add(lookup(ref));
-      addGrantedText(s.body);
-    }
-    return { powers, feats, rituals };
-  };
-
-  // 战争祭司：所选领域全部威能（按最小等级门槛过滤）。领域威能大多已随占位特性填充自动授予，
-  // 此处额外兜底涵盖未被任何占位特性接收的典范/史诗领域威能（如 12/16/20/22 级领域辅助/每日威能）。
-  const domainGranted = useMemo(() => {
-    const out: Entry[] = [];
-    if (!wprOpt) return out;
-    const seen = new Set<string>();
-    for (const pw of wprOpt.powers) {
-      if (level < pw.level) continue;
-      const e = lookup(pw.title);
-      if (e && e.category === "power" && !seen.has(e.id)) { seen.add(e.id); out.push(e); }
     }
     return out;
-  }, [wprOpt, lookup, level]);
+  };
 
   // 全部特性（含替代组 base/alt、开关、多替换）当前授予的威能集合
   const allGranted = useMemo(() => {
     const out: Entry[] = [];
     const seen = new Set<string>();
     const secs: FeatureSection[] = [
-      ...normalSections.filter((s) => featureReachable(s.title, level)),
-      ...[...groups.values()].flatMap((g) => [g.base, ...g.alts]).filter((s) => featureReachable(s.title, level) && tierVisible(s.title)),
-      ...toggleSections.filter((s) => featureReachable(s.title, level)),
-      ...multiSections.filter((s) => featureReachable(s.title, level)),
-      ...(beastSection && featureReachable(beastSection.title, level) ? [beastSection] : []),
+      ...normalSections,
+      ...[...groups.values()].flatMap((g) => [g.base, ...g.alts]),
+      ...toggleSections,
+      ...multiSections,
+      ...(beastSection ? [beastSection] : []),
     ];
     for (const s of secs) {
-      for (const e of grantedOf(s).powers) {
+      for (const e of grantedOf(s)) {
         if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
       }
     }
-    for (const e of exeGranted.powers) {
-      if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
-    }
-    for (const e of domainGranted) {
-      if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
-    }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalSections, groups, altSet, toggleSections, multiSections, beastSection, choices, lookup, level, exeGranted, tierVisible, domainGranted]);
-  // 全部特性当前赠送的专长集合（仅明确「获得[[专长]]作为…专长」的）
-  const allGrantedFeats = useMemo(() => {
-    const out: Entry[] = [];
-    const seen = new Set<string>();
-    const secs: FeatureSection[] = [
-      ...normalSections.filter((s) => featureReachable(s.title, level)),
-      ...[...groups.values()].flatMap((g) => [g.base, ...g.alts]).filter((s) => featureReachable(s.title, level) && tierVisible(s.title)),
-      ...toggleSections.filter((s) => featureReachable(s.title, level)),
-      ...multiSections.filter((s) => featureReachable(s.title, level)),
-      ...(beastSection && featureReachable(beastSection.title, level) ? [beastSection] : []),
-    ];
-    for (const s of secs) {
-      for (const e of grantedOf(s).feats) {
-        if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
-      }
-    }
-    for (const e of exeGranted.feats) {
-      if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalSections, groups, altSet, toggleSections, multiSections, beastSection, choices, lookup, level, exeGranted, tierVisible]);
-  // 全部特性当前赠送的仪式集合（正文「仪式书…：[[仪式]]」赠送的仪式类链接），同时记录来源职业特性名（供角标显示）
-  const allGrantedRituals = useMemo(() => {
-    const out: { entry: Entry; source: string }[] = [];
-    const seen = new Set<string>();
-    const secs: FeatureSection[] = [
-      ...normalSections.filter((s) => featureReachable(s.title, level)),
-      ...[...groups.values()].flatMap((g) => [g.base, ...g.alts]).filter((s) => featureReachable(s.title, level) && tierVisible(s.title)),
-      ...toggleSections.filter((s) => featureReachable(s.title, level)),
-      ...multiSections.filter((s) => featureReachable(s.title, level)),
-      ...(beastSection && featureReachable(beastSection.title, level) ? [beastSection] : []),
-    ];
-    for (const s of secs) {
-      const source = cleanDisplayName(featTitle(s.title));
-      for (const e of grantedOf(s).rituals) {
-        if (!seen.has(e.id)) { seen.add(e.id); out.push({ entry: e, source }); }
-      }
-    }
-    for (const e of exeGranted.rituals) {
-      if (!seen.has(e.id)) { seen.add(e.id); out.push({ entry: e, source: "刺客公会" }); }
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalSections, groups, altSet, toggleSections, multiSections, beastSection, choices, lookup, level, exeGranted, tierVisible]);
+  }, [normalSections, groups, altSet, toggleSections, multiSections, beastSection, choices, lookup, level]);
   const grantedKey = useMemo(() => allGranted.map((p) => p.id).sort().join("|"), [allGranted]);
-  const grantedFeatKey = useMemo(() => allGrantedFeats.map((f) => f.id).sort().join("|"), [allGrantedFeats]);
-  const grantedRitualKey = useMemo(() => allGrantedRituals.map((r) => r.entry.id).sort().join("|"), [allGrantedRituals]);
   // 自动加入/移除：挂载时记录并补入缺失威能；choice/level 变化带来「新授予」威能时自动加入，
   // 并把「不再授予」的威能（如野性力量切换选项后的旧威能）从面板移除，保证面板只保留当前选择。
   const prevGrantedKey = useRef<string | null>(null);
@@ -3443,215 +1337,39 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
     if (newly.length) onAddPowers(newly);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grantedKey]);
-  // 赠送专长自动记录/移除：挂载时记录职业赠送专长；choice 变化带来「新赠送」专长时记录、
-  // 把「不再赠送」的专长从记录移除（如战斗流派切换选项后旧流派赠送的专长）。
-  const prevFeatKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (prevFeatKey.current === null) {
-      prevFeatKey.current = grantedFeatKey;
-      if (allGrantedFeats.length > 0 && onTrackClassFeats) onTrackClassFeats(allGrantedFeats);
-      return;
-    }
-    if (prevFeatKey.current === grantedFeatKey) return;
-    const prevSet = new Set(prevFeatKey.current.split("|").filter(Boolean));
-    prevFeatKey.current = grantedFeatKey;
-    const curSet = new Set(allGrantedFeats.map((f) => f.id));
-    const removed = [...prevSet].filter((id) => !curSet.has(id));
-    if (removed.length && onRemoveFeats) onRemoveFeats(removed);
-    const newly = allGrantedFeats.filter((f) => !prevSet.has(f.id));
-    if (newly.length && onTrackClassFeats) onTrackClassFeats(newly);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grantedFeatKey]);
-  // 赠送仪式自动记录/移除：挂载时记录职业赠送仪式；choice 变化带来「新赠送」仪式时记录、
-  // 把「不再赠送」的仪式从记录移除。
-  const prevRitualKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (prevRitualKey.current === null) {
-      prevRitualKey.current = grantedRitualKey;
-      if (allGrantedRituals.length > 0 && onTrackClassRituals) onTrackClassRituals(allGrantedRituals);
-      return;
-    }
-    if (prevRitualKey.current === grantedRitualKey) return;
-    const prevSet = new Set(prevRitualKey.current.split("|").filter(Boolean));
-    prevRitualKey.current = grantedRitualKey;
-    const curSet = new Set(allGrantedRituals.map((r) => r.entry.id));
-    const removed = [...prevSet].filter((id) => !curSet.has(id));
-    if (removed.length && onRemoveClassRituals) onRemoveClassRituals(removed);
-    const newly = allGrantedRituals.filter((r) => !prevSet.has(r.entry.id));
-    if (newly.length && onTrackClassRituals) onTrackClassRituals(newly);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grantedRitualKey]);
 
   if (detail) {
     return (
       <div className="class-detail">
-        <div className="pf-entry-title">{cleanDisplayName(entry.name)}</div>
-        {trait && !featureOnly && <div className="class-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(splitTraitLabels(trait), entry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />}
-        {!featureOnly && classLore.length > 0 && (
-          <div className="race-lore cls-lore">
-            {classLore.map((sec, i) => (
-              <details key={`cls-lore-${i}`} className="lore-fold">
-                <summary>
-                  <span className="lore-fold-title">{sec.title ?? "职业简介"}</span>
-                  <span className="material-symbols-outlined lore-fold-ic">expand_more</span>
-                </summary>
-                <div className="class-features"><WikiBody body={sec.body} fields={entry.fields} lookup={lookup} /></div>
-              </details>
-            ))}
-          </div>
-        )}
-        <div className={featureOnly ? "class-ft-heading-sub" : "pf-entry-title class-ft-heading"}>{`${cleanDisplayName(entry.name)}具有下列职业特性`}</div>
-        {vice && (
-          <div className="exe-block">
-            {vice.intro && <div className="exe-intro"><WikiBody body={prose(plainWikiLinks(vice.intro))} fields={entry.fields} lookup={lookup} /></div>}
-            <div className="exe-guild">
-              {vice.options.map((o) => (
-                <SmartHover key={o.key} portal className={"exe-guild-chip" + (viceChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<VicePreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => viceKey && onChoose(viceKey, o.key)}>
-                  {o.key}败德
-                </SmartHover>
-              ))}
-            </div>
-            {viceOpt && viceOpt.flavor && <div className="exe-guild-flavor"><WikiBody body={prose(viceOpt.flavor)} fields={entry.fields} lookup={lookup} /></div>}
-          </div>
-        )}
-        {pact && (
-          <div className="exe-block">
-            {pact.intro && <div className="exe-intro"><WikiBody body={prose(plainWikiLinks(pact.intro))} fields={entry.fields} lookup={lookup} /></div>}
-            <div className="exe-guild">
-              {pact.options.map((o) => (
-                <SmartHover key={o.key} portal className={"exe-guild-chip" + (pactChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<PactPreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => pactKey && onChoose(pactKey, o.key)}>
-                  {o.key}契约
-                </SmartHover>
-              ))}
-            </div>
-            {pactOpt && pactOpt.flavor && <div className="exe-guild-flavor"><WikiBody body={prose(pactOpt.flavor)} fields={entry.fields} lookup={lookup} /></div>}
-          </div>
-        )}
-        {virt && (
-          <div className="exe-block">
-            {virt.intro && <div className="exe-intro"><WikiBody body={prose(plainWikiLinks(virt.intro))} fields={entry.fields} lookup={lookup} /></div>}
-            <div className="exe-guild">
-              {virt.options.map((o) => (
-                <SmartHover key={o.key} portal className={"exe-guild-chip" + (virtChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<VirtuePreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => virtKey && onChoose(virtKey, o.key)}>
-                  {o.key}美德
-                </SmartHover>
-              ))}
-            </div>
-            {virtOpt && virtOpt.flavor && <div className="exe-guild-flavor"><WikiBody body={prose(virtOpt.flavor)} fields={entry.fields} lookup={lookup} /></div>}
-          </div>
-        )}
-        {wpr && (
-          <div className="exe-block">
-            <div className="exe-intro"><WikiBody body="选择牧师所追随的领域。选定后，领域将赋予你领域特性与相关威能。" fields={entry.fields} lookup={lookup} /></div>
-            <div className="exe-guild">
-              {wpr.options.map((o) => (
-                <SmartHover key={o.key} portal className={"exe-guild-chip" + (wprChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<DomainPreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => wprKey && onChoose(wprKey, o.key)}>
-                  {o.name}
-                </SmartHover>
-              ))}
-            </div>
-            {wprOpt && <div className="exe-guild-flavor">已选择「{wprOpt.name}」</div>}
-          </div>
-        )}
-        {exe && (
-          <div className="exe-block">
-            {exe.intro && <div className="exe-intro"><WikiBody body={prose(exe.intro)} fields={entry.fields} lookup={lookup} /></div>}
-            <div className="exe-guild">
-              {exe.options.map((o) => (
-                <button key={o.key} type="button" className={"exe-guild-chip" + (exeChosen === o.key ? " selected" : "")} onClick={() => exeKey && onChoose(exeKey, o.key)}>
-                  {cleanDisplayName(o.key)}
-                </button>
-              ))}
-            </div>
-            {exe.table && <div className="exe-table" dangerouslySetInnerHTML={{ __html: exe.table }} />}
-          </div>
-        )}
+        <div className="cls-sum-class">{cleanDisplayName(entry.name)}</div>
+        {trait && <div className="class-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(splitTraitLabels(trait), entry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />}
+        {parsed?.intro && <div className="pf-intro"><WikiBody body={parsed.intro} fields={entry.fields} lookup={lookup} /></div>}
         {parsed && parsed.sections.length > 0 ? (
           <div className="pf-list">
-            {(() => {
-              // 已插入的层级表下标（每张表只插入一次，放在对应层级第一个特性之前）
-              const emitted = new Set<number>();
-              const rows = rowSections;
-              return rows.map((s, i) => {
-                const L = featureLevel(s.title);
-                const pl = cnTitle(s.title).includes("用毒") ? parsePoi(s.body ?? "") : undefined;
-                const grp = groups.get(s.title);
-                const extraGroup = groupOfExtra(s.title);
-                const isExtra = extraGroup !== undefined;
-                const isCompanion = cnTitle(s.title).includes("动物伙伴") && !cnTitle(s.title).includes("威能") && !grp && !isExtra && !pl;
-                // 哨兵季节变体普通特性（13级自然循环典范 / 17级动物伙伴威能）：仅展示所选季节对应小节
-                const seasonSub = seasonSubOf(s.body ?? "", companionSeason);
-                const lvInserts = levelTables.map((t, ti) => {
-                  const anchor = levelTableAnchors[ti];
-                  if (!emitted.has(ti) && L >= anchor && tierVisible(s.title)) {
-                    emitted.add(ti);
-                    return <div key={`lv-table-${ti}`} className="hero-level-table"><WikiBody body={t} fields={entry.fields} lookup={lookup} /></div>;
-                  }
-                  return null;
-                }).filter((n): n is React.ReactElement => n !== null);
-                return (
-              <Fragment key={i}>
-                {lvInserts}
-                <FeatureFold section={s} level={featureLevel(s.title)} expanded={featOpen(s)} fields={entry.fields} lookup={lookup}>
-                  <>
-                    {pl ? (
-                      <PoisonUseBlock section={s} detail fields={entry.fields} choiceKey={entry.id + "::" + s.title} chosen={choices[entry.id + "::" + s.title]} level={level} onChoose={onChoose} lookup={lookup} />
-                    ) : isExtra ? (
-                      <ExtraStanceBlock section={s} detail choiceKey={entry.id + "::" + s.title} options={extraGroup.options} chosen={choices[entry.id + "::" + s.title]} taken={takenFor(s)} onChoose={onChoose} lookup={lookup} />
-                    ) : grp ? (
-                      <ReplacementGroupItem group={grp} detail fields={entry.fields}
-                        outerKey={entry.id + "::" + grp.base.title}
-                        outerChosen={choices[entry.id + "::" + grp.base.title]}
-                        innerKey={entry.id + "::" + grp.base.title + "::inner"}
-                        innerChosen={choices[entry.id + "::" + grp.base.title + "::inner"]}
-                        onChoose={onChoose} lookup={lookup} />
-                    ) : isCompanion ? (
-                      <AnimalCompanionBlock section={s} detail fields={entry.fields} season={companionSeason} lookup={lookup} />
-                    ) : seasonSub ? (
-                      <SeasonVariantBlock section={s} detail fields={entry.fields} season={companionSeason} lookup={lookup} />
-                    ) : (
-                      <ClassFeatureItem section={s} fields={entry.fields} choiceKey={entry.id + "::" + s.title} chosen={effSectionChosen(s.title)} innerChosen={choices[entry.id + "::" + s.title + "::inner"]} onChoose={onChoose} lookup={lookup} />
-                    )}
-                    {featureOnly && !grp && !isExtra && (() => { const oi = originalFeatureInfo(s.body ?? "", s.title, classes); return oi ? (
-                      <details className="hy-orig-fold">
-                        <summary>原版职业特性</summary>
-                        <div className="hy-orig-fold-body">
-                          <ClassFeatureItem section={oi.section} fields={oi.entry.fields} choiceKey={entry.id + "::orig::" + oi.section.title} chosen={choices[entry.id + "::orig::" + oi.section.title]} innerChosen={choices[entry.id + "::orig::" + oi.section.title + "::inner"]} onChoose={onChoose} lookup={lookup} />
-                        </div>
-                      </details>
-                    ) : null; })()}
-                    {(() => { const st = mageStageOf(s.title); return st && !grp && !isExtra ? (
-                      <MageSchoolStage stage={st} options={mageSchoolOpts} s1Key={mage1Key} s2Key={mage2Key} exKey={mageExKey} maKey={mageMaKey} s1={mage1} s2={mage2} exSel={mageExSel} maSel={mageMaSel} fields={entry.fields} lookup={lookup} onChoose={onChoose} />
-                    ) : null; })()}
-                  </>
-                </FeatureFold>
-                {exe && exeChosen && cnTitle(s.title).includes("公会攻击") && (
-                  <div className="exe-guild-content">
-                    {(() => {
-                      const opt = exe.options.find((o) => o.key === exeChosen);
-                      return (
-                        <>
-                          {opt?.intro && <div className="exe-guild-intro"><WikiBody body={prose(opt.intro)} fields={entry.fields} lookup={lookup} /></div>}
-                          {exeBody && <div className="exe-guild-body"><WikiBody body={prose(exeBody)} fields={entry.fields} lookup={lookup} /></div>}
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-              </Fragment>
-              );
-              });
-            })()}
-            {summonSection && (
-              <FeatureFold section={summonSection} level={featureLevel(summonSection.title)} expanded={featOpen(summonSection)} fields={entry.fields} lookup={lookup}>
-                <PrimalSummonBlock section={summonSection} detail fields={entry.fields} aspect={summonAspect} lookup={lookup} />
+            {normalSections.filter((s) => s !== beastSection && !toggleSet.has(s.title) && !multiSet.has(s.title) && !(beastOn && beastMasterKey && cnTitle(s.title) === "战斗流派")).map((s, i) => (
+              <FeatureFold key={i} section={s} level={featureLevel(s.title)} expanded={featOpen(s)} fields={entry.fields} lookup={lookup}>
+                <>
+                  <ClassFeatureItem section={s} fields={entry.fields} choiceKey={entry.id + "::" + s.title} chosen={choices[entry.id + "::" + s.title]} innerChosen={choices[entry.id + "::" + s.title + "::inner"]} onChoose={onChoose} lookup={lookup} />
+                </>
               </FeatureFold>
-            )}
-            {multiSet.size > 0 && multiSections.filter((s) => featureReachable(s.title, level)).map((s) => (
+            ))}
+            {multiSet.size > 0 && multiSections.map((s) => (
               <FeatureFold key={s.title} section={s} level={featureLevel(s.title)} expanded={featOpen(s)} fields={entry.fields} lookup={lookup}>
                 <>
                   <MultiReplacementBlock section={s} detail fields={entry.fields} baseKey={entry.id + "::" + s.title}
                     chosen={parseReplacementPairs(s.body ?? "")!.groups.map((_, gi) => choices[entry.id + "::" + s.title + "::g" + gi] as string | undefined)}
+                    onChoose={onChoose} lookup={lookup} />
+                </>
+              </FeatureFold>
+            ))}
+            {[...groups.values()].filter((g) => !(beastOn && beastMasterKey && cnTitle(g.base.title) === "准确射击")).map((g) => (
+              <FeatureFold key={g.base.title} section={g.base} level={featureLevel(g.base.title)} expanded={featOpen(g.base)} fields={entry.fields} lookup={lookup}>
+                <>
+                  <ReplacementGroupItem group={g} detail fields={entry.fields}
+                    outerKey={entry.id + "::" + g.base.title}
+                    outerChosen={choices[entry.id + "::" + g.base.title]}
+                    innerKey={entry.id + "::" + g.base.title + "::inner"}
+                    innerChosen={choices[entry.id + "::" + g.base.title + "::inner"]}
                     onChoose={onChoose} lookup={lookup} />
                 </>
               </FeatureFold>
@@ -3661,12 +1379,7 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
                 <BeastMasterBlock section={beastSection} detail fields={entry.fields} on={beastOn} chosen={chosenBeast} toggleKey={beastMasterKey} beastKey={beastPartnerKey!} onChoose={onChoose} lookup={lookup} />
               </FeatureFold>
             )}
-            {signsSection && signsKey && (
-              <FeatureFold section={signsSection} level={featureLevel(signsSection.title)} expanded={featOpen(signsSection)} fields={entry.fields} lookup={lookup}>
-                <SignsBlock section={signsSection} detail fields={entry.fields} count={signsCount} chosen={signsChosen} on={signsOn} toggleKey={signsKey} listKey={signsListKey!} onChoose={onChoose} lookup={lookup} />
-              </FeatureFold>
-            )}
-            {toggleSections.filter((s) => featureReachable(s.title, level)).map((s) => (
+            {toggleSections.map((s) => (
               <FeatureFold key={s.title} section={s} level={featureLevel(s.title)} expanded={featOpen(s)} fields={entry.fields} lookup={lookup}>
                 <>
                   <ToggleFeatureBlock section={s} detail fields={entry.fields} on={choices[entry.id + "::" + s.title] === "on"} toggleKey={entry.id + "::" + s.title} onChoose={onChoose} lookup={lookup} />
@@ -3676,7 +1389,7 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
             {sidebarRules.map((s) => (
               <details className="beast-sub" key={s.title}>
                 <summary>{featTitle(s.title).trim()}</summary>
-                {s.body && <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(s.body)} fields={entry.fields} lookup={lookup} indent /></div></div>}
+                {s.body && <div className="beast-sub-body"><div className="pf-body"><WikiBody body={prose(s.body)} fields={entry.fields} lookup={lookup} /></div></div>}
               </details>
             ))}
           </div>
@@ -3690,126 +1403,27 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
   }
   return (
     <div className="class-summary">
-      <div className="pf-entry-title">{cleanDisplayName(entry.name)}</div>
-      {!featureOnly && entry.fields["role"] && <div className="cls-sum-row"><span className="cls-sum-label">职位</span><span className="cls-sum-value">{entry.fields["role"]}</span></div>}
-      {!featureOnly && entry.fields["power source"] && <div className="cls-sum-row"><span className="cls-sum-label">威能来源</span><span className="cls-sum-value">{entry.fields["power source"]}</span></div>}
-      {!featureOnly && summary.map((s) => (
+      <div className="cls-sum-class">{cleanDisplayName(entry.name)}</div>
+      {entry.fields["role"] && <div className="cls-sum-row"><span className="cls-sum-label">职位</span><span className="cls-sum-value">{entry.fields["role"]}</span></div>}
+      {entry.fields["power source"] && <div className="cls-sum-row"><span className="cls-sum-label">威能来源</span><span className="cls-sum-value">{entry.fields["power source"]}</span></div>}
+      {summary.map((s) => (
         <div key={s.label} className="cls-sum-row"><span className="cls-sum-label">{s.label}</span><span className="cls-sum-value">{s.value}</span></div>
       ))}
       {parsed && parsed.sections.length > 0 ? (
         // 简洁模式：直接展示已选择/已生效的特性与选项（隐藏风味文字），不再用悬停弹出
         <div className="pf-list compact cls-compact">
-          {vice && (
-            <div className="exe-block compact">
-              <div className="exe-guild">
-                {vice.options.map((o) => (
-                  <SmartHover key={o.key} portal className={"exe-guild-chip" + (viceChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<VicePreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => viceKey && onChoose(viceKey, o.key)}>
-                    {o.key}败德
-                  </SmartHover>
-                ))}
-              </div>
-              {viceOpt && viceOpt.flavor && <div className="exe-guild-flavor"><WikiBody body={prose(viceOpt.flavor)} fields={entry.fields} lookup={lookup} /></div>}
-            </div>
-          )}
-          {pact && (
-            <div className="exe-block compact">
-              <div className="exe-guild">
-                {pact.options.map((o) => (
-                  <SmartHover key={o.key} portal className={"exe-guild-chip" + (pactChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<PactPreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => pactKey && onChoose(pactKey, o.key)}>
-                    {o.key}契约
-                  </SmartHover>
-                ))}
-              </div>
-              {pactOpt && pactOpt.flavor && <div className="exe-guild-flavor"><WikiBody body={prose(pactOpt.flavor)} fields={entry.fields} lookup={lookup} /></div>}
-            </div>
-          )}
-          {virt && (
-            <div className="exe-block compact">
-              <div className="exe-guild">
-                {virt.options.map((o) => (
-                  <SmartHover key={o.key} portal className={"exe-guild-chip" + (virtChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<VirtuePreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => virtKey && onChoose(virtKey, o.key)}>
-                    {o.key}美德
-                  </SmartHover>
-                ))}
-              </div>
-              {virtOpt && virtOpt.flavor && <div className="exe-guild-flavor"><WikiBody body={prose(virtOpt.flavor)} fields={entry.fields} lookup={lookup} /></div>}
-            </div>
-          )}
-          {wpr && (
-            <div className="exe-block compact">
-              <div className="exe-guild">
-                {wpr.options.map((o) => (
-                  <SmartHover key={o.key} portal className={"exe-guild-chip" + (wprChosen === o.key ? " selected" : "")} popClass="exe-chip-pop" pop={<DomainPreview option={o} fields={entry.fields} lookup={lookup} />} onClick={() => wprKey && onChoose(wprKey, o.key)}>
-                    {o.name}
-                  </SmartHover>
-                ))}
-              </div>
-              {wprOpt && <div className="exe-guild-flavor">已选择「{wprOpt.name}」</div>}
-            </div>
-          )}
-          {exe && (
-            <div className="exe-block compact">
-              <div className="exe-guild">
-                {exe.options.map((o) => (
-                  <button key={o.key} type="button" className={"exe-guild-chip" + (exeChosen === o.key ? " selected" : "")} onClick={() => exeKey && onChoose(exeKey, o.key)}>
-                    {cleanDisplayName(o.key)}
-                  </button>
-                ))}
-              </div>
-              {exe.table && <div className="exe-table" dangerouslySetInnerHTML={{ __html: exe.table }} />}
-            </div>
-          )}
-          {(() => {
-            // 简洁模式隐藏层级表，不在此处插入
-            return rowSections.filter((s) => featOpen(s)).map((s, i) => {
-            const pl = cnTitle(s.title).includes("用毒") ? parsePoi(s.body ?? "") : undefined;
-            const grp = groups.get(s.title);
-            const extraGroup = groupOfExtra(s.title);
-            const isExtra = extraGroup !== undefined;
+          {normalSections.filter((s) => s !== beastSection && !toggleSet.has(s.title) && !multiSet.has(s.title) && !(beastOn && beastMasterKey && cnTitle(s.title) === "战斗流派") && featOpen(s)).map((s, i) => {
             const opt = parseClassFeatureOptions(s.body);
             const choiceKey = entry.id + "::" + s.title;
-            const chosen = effSectionChosen(s.title);
+            const chosen = choices[choiceKey];
             const chosenVals = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
-            if (isExtra) {
-              return <Fragment key={i}><ExtraStanceBlock section={s} detail={false} choiceKey={choiceKey} options={extraGroup.options} chosen={chosen} taken={takenFor(s)} onChoose={onChoose} lookup={lookup} /></Fragment>;
-            }
-            if (grp) {
-              return <Fragment key={i}>
-                <ReplacementGroupItem group={grp} detail={false} fields={entry.fields}
-                  outerKey={entry.id + "::" + grp.base.title}
-                  outerChosen={choices[entry.id + "::" + grp.base.title]}
-                  innerKey={entry.id + "::" + grp.base.title + "::inner"}
-                  innerChosen={choices[entry.id + "::" + grp.base.title + "::inner"]}
-                  onChoose={onChoose} lookup={lookup} />
-              </Fragment>;
-            }
-            if (pl) {
-              // 用毒/进阶用毒：折叠 + 多选毒药配方
-              return <Fragment key={i}><PoisonUseBlock section={s} detail={false} fields={entry.fields} choiceKey={choiceKey} chosen={chosen} level={level} onChoose={onChoose} lookup={lookup} /></Fragment>;
-            }
             if (!opt.selectable) {
-              if (cnTitle(s.title).includes("动物伙伴") && !cnTitle(s.title).includes("威能")) {
-                // 哨兵「动物伙伴」：简洁模式走专属渲染（风味隐藏、收益+所选伙伴、规则折叠）
-                return <Fragment key={i}><AnimalCompanionBlock section={s} detail={false} fields={entry.fields} season={companionSeason} lookup={lookup} /></Fragment>;
-              }
-              const seasonSubC = seasonSubOf(s.body ?? "", companionSeason);
-              if (seasonSubC) {
-                // 哨兵季节变体特性（13级自然循环典范 / 17级动物伙伴威能）：简洁模式仅显示所选季节的收益
-                return <Fragment key={i}><SeasonVariantBlock section={s} detail={false} fields={entry.fields} season={companionSeason} lookup={lookup} /></Fragment>;
-              }
-              // 普通特性：直接展示机械效果正文（风味段已随章节切分被排除）。
-              // 若该特性以「获得下列N个威能」列出子威能小节（如专业射手），简洁模式直接剔除这些子威能块，
-              // 因为威能已展示在威能面板，避免与正文重复堆叠。
-              const gp = extractGrantPowers(s.body, s.powerRefs?.length ? s.powerRefs : s.powerRef ? [s.powerRef] : [], lookup);
+              // 普通特性：直接展示机械效果正文（风味段已随章节切分被排除）
               return (
                 <Fragment key={i}>
-                  
                   <div className="cls-feat">
                     <div className="cls-feat-name">{cleanDisplayName(featTitle(s.title))}</div>
-                    {gp.main && <FeatureBody body={gp.main} fields={entry.fields} lookup={lookup} className="cls-feat-note" hideFlavor />}
-                    {(() => { const st = mageStageOf(s.title); return st ? (
-                      <MageSchoolStage stage={st} options={mageSchoolOpts} s1Key={mage1Key} s2Key={mage2Key} exKey={mageExKey} maKey={mageMaKey} s1={mage1} s2={mage2} exSel={mageExSel} maSel={mageMaSel} fields={entry.fields} lookup={lookup} onChoose={onChoose} />
-                    ) : null; })()}
+                    {s.body && <FeatureBody body={s.body} fields={entry.fields} lookup={lookup} className="cls-feat-note" />}
                   </div>
                 </Fragment>
               );
@@ -3819,7 +1433,6 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
             const selected = opt.options.filter((o) => chosenVals.includes(o.label));
             return (
               <Fragment key={i}>
-                
                 <div className={"cls-feat" + (selected.length ? " set" : " unset")}>
                   <div className="cls-feat-name">{cleanDisplayName(featTitle(s.title))}</div>
                   {selected.length === 0 ? (
@@ -3830,7 +1443,7 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
                   {selected.map((o, j) =>
                     o.desc ? (
                       <div key={j} className="cls-feat-compact-optname">
-                        <OptionOrSubChoice label={o.label} desc={splitSidebarSubs(o.desc).main ?? ""} innerKey={choiceKey + "::inner"} innerChosen={choices[choiceKey + "::inner"]} onChoose={onChoose} fields={entry.fields} lookup={lookup} compact />
+                        <OptionOrSubChoice label={o.label} desc={o.desc} innerKey={choiceKey + "::inner"} innerChosen={choices[choiceKey + "::inner"]} onChoose={onChoose} fields={entry.fields} lookup={lookup} compact />
                       </div>
                     ) : (
                       <SmartHover key={j} className="cls-feat-opt" popClass="cls-option-pop" pop={lookup(o.label) ? <EntryCard entry={lookup(o.label)!} /> : undefined}>
@@ -3838,27 +1451,30 @@ function ClassFeatureBlock({ entry, detail, level, choices, onChoose, lookup, cl
                       </SmartHover>
                     )
                   )}
-                  <OptSubFold options={opt.options} fields={entry.fields} lookup={lookup} />
                 </div>
               </Fragment>
             );
-            });
-          })()}
-          {summonSection && featOpen(summonSection) && (
-            <PrimalSummonBlock section={summonSection} detail={false} fields={entry.fields} aspect={summonAspect} lookup={lookup} />
-          )}
+          })}
+          {[...groups.values()].filter((g) => !(beastOn && beastMasterKey && cnTitle(g.base.title) === "准确射击") && featOpen(g.base)).map((g) => (
+            <Fragment key={g.base.title}>
+              <ReplacementGroupItem group={g} detail={false} fields={entry.fields}
+                outerKey={entry.id + "::" + g.base.title}
+                outerChosen={choices[entry.id + "::" + g.base.title]}
+                innerKey={entry.id + "::" + g.base.title + "::inner"}
+                innerChosen={choices[entry.id + "::" + g.base.title + "::inner"]}
+                onChoose={onChoose} lookup={lookup} />
+              
+            </Fragment>
+          ))}
           {beastSection && beastMasterKey && featOpen(beastSection) && (
             <BeastMasterBlock section={beastSection} detail={false} fields={entry.fields} on={beastOn} chosen={chosenBeast} toggleKey={beastMasterKey} beastKey={beastPartnerKey!} onChoose={onChoose} lookup={lookup} />
           )}
-          {signsSection && signsKey && featOpen(signsSection) && (
-            <SignsBlock section={signsSection} detail={false} fields={entry.fields} count={signsCount} chosen={signsChosen} on={signsOn} toggleKey={signsKey} listKey={signsListKey!} onChoose={onChoose} lookup={lookup} />
-          )}
-          {toggleSections.filter((s) => featureReachable(s.title, level) && featOpen(s)).map((s) => (
+          {toggleSections.filter((s) => featOpen(s)).map((s) => (
             <Fragment key={s.title}>
               <ToggleFeatureBlock section={s} detail={false} fields={entry.fields} on={choices[entry.id + "::" + s.title] === "on"} toggleKey={entry.id + "::" + s.title} onChoose={onChoose} lookup={lookup} />
             </Fragment>
           ))}
-          {multiSet.size > 0 && multiSections.filter((s) => featureReachable(s.title, level) && featOpen(s)).map((s) => (
+          {multiSet.size > 0 && multiSections.filter((s) => featOpen(s)).map((s) => (
             <Fragment key={s.title}>
               <MultiReplacementBlock section={s} detail={false} fields={entry.fields} baseKey={entry.id + "::" + s.title}
                 chosen={parseReplacementPairs(s.body ?? "")!.groups.map((_, gi) => choices[entry.id + "::" + s.title + "::g" + gi] as string | undefined)}
@@ -3946,24 +1562,12 @@ function ModInputs(props: {
   );
 }
 
-// 判断副手槽(1)或臂部槽(7)是否装备了盾牌基础物品（臂部也可选盾牌，见 EQUIP_GROUPS）
-function findShieldBase(c: Character): ReturnType<typeof findBaseItem> | undefined {
-  for (const idx of [1, 7]) {
-    const b = c.baseItems?.[idx] ? findBaseItem(c.baseItems[idx]) : undefined;
-    if (b?.kind === "shield") return b;
-  }
-  return undefined;
-}
-function hasShieldBase(c: Character): boolean {
-  return !!findShieldBase(c);
-}
-
 // 装备自动防御加值：穿着防具/盾牌时，其 AC 加值（及防具对强韧/反射/意志的特殊加值）
 // 自动填入对应防御来源单元格，无需手动录入。
 function autoDefenseBonuses(c: Character): Record<DefenseKey, Partial<Record<DefenseBonusSource, number>>> {
   const out: Record<DefenseKey, Partial<Record<DefenseBonusSource, number>>> = { ac: {}, fort: {}, ref: {}, will: {} };
   const armor = c.baseItems?.[5] ? findBaseItem(c.baseItems[5]) : undefined;
-  const shield = findShieldBase(c);
+  const shield = c.baseItems?.[1] ? findBaseItem(c.baseItems[1]) : undefined;
   if (armor?.kind === "armor" && armor.armor) {
     out.ac.armor = armor.armor.ac ?? 0;
     const m = /([+-]\d+)\s*(强韧|反射|意志)/.exec(armor.armor.special || "");
@@ -4021,18 +1625,16 @@ function fmtMod(n: number): string {
   return n >= 0 ? "+" + n : String(n);
 }
 
-// 亚种增益正文中，英文风味段在前的，重排为「中文增益在前、英文在后」，并去掉两者间的空行。
-// keepEnglish=false（简洁模式）时仅保留中文增益段，隐藏英文风味及其上的空白行。
-function reorderBenefitBody(body: string, keepEnglish = true): string {
+// 亚种增益正文中，英文风味段在前的，重排为「中文增益在前、英文在后」，并去掉两者间的空行
+function reorderBenefitBody(body: string): string {
   const paras = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  if (paras.length === 0) return "";
+  if (paras.length <= 1) return body;
   const isChinese = (p: string) => {
     const cjk = (p.match(/[\u4e00-\u9fff]/g) || []).length;
     const lat = (p.match(/[A-Za-z]/g) || []).length;
     return cjk > 0 && cjk >= lat;
   };
   const cn = paras.filter(isChinese);
-  if (!keepEnglish) return cn.join("\n");
   const en = paras.filter((p) => !isChinese(p));
   if (cn.length === 0 || en.length === 0) return body;
   return [...cn, ...en].join("\n");
@@ -4042,27 +1644,6 @@ function reorderBenefitBody(body: string, keepEnglish = true): string {
 function chineseName(s: string): string {
   const i = s.search(/[A-Za-z]/);
   return i < 0 ? s.trim() : s.slice(0, i).trim();
-}
-
-// 从亚种增益的「增益：」行提取擅长信息，合成一行可被擅长解析器识别的内容
-// （武器「XX武器擅长：」/ 盾牌「盾牌擅长：」/ 法器「法器：」，值只保留武器/法器名）。
-// 返回 null 表示该增益不涉及擅长，此时仅移除被替代的基础特性行。
-function subraceProfLine(b: { title: string; body: string }): string | null {
-  const gain = b.body.match(/增益[：:]\s*([^\n]+)/)?.[1];
-  if (!gain) return null;
-  // 法器擅长：你获得法珠、法杖和魔杖的法器擅长
-  if (gain.includes("法器")) {
-    const m = gain.match(/你获得(.+?)的法器擅长/);
-    if (!m) return null;
-    return `''法器：''${m[1].trim()}`;
-  }
-  // 武器/盾牌擅长：你获得X的擅长
-  const m = gain.match(/你获得(.+?)的擅长/);
-  if (!m) return null;
-  const names = m[1].trim();
-  if (b.title.includes("盾牌")) return `''盾牌擅长：''${names}`;
-  const title = b.title.includes("武器擅长") ? b.title : `${b.title}武器擅长`;
-  return `''${title}：''${names}`;
 }
 
 // 种族威能授予所需上下文：基础内部替代(raceSwaps) + 亚种增益(subraceBenefits)
@@ -4099,314 +1680,6 @@ function raceGrantedPowerEntries(
     else addPowers(t.body);
   }
   return out;
-}
-
-// 抵御详情弹窗：逐项展示 AC/强韧/反射/意志的完整计算过程
-function DefenseDetailDialog(props: {
-  stats: DerivedStats;
-  acMods: Record<DefenseBonusSource, number>;
-  fortMods: Record<DefenseBonusSource, number>;
-  refMods: Record<DefenseBonusSource, number>;
-  willMods: Record<DefenseBonusSource, number>;
-  classDefSources: Record<DefenseKey, { value: number; source: string }[]>;
-  cls?: ClassStats;
-  raceDefs?: RaceDefenseBonus;
-  acKey?: AbilityKey;
-  className?: string;
-  raceName?: string;
-  onClose: () => void;
-}) {
-  const { stats, acMods, fortMods, refMods, willMods, classDefSources, cls, raceDefs, acKey, className, raceName, onClose } = props;
-  const abilityLabel = (k: AbilityKey) => ABILITY_LABELS[k].zh;
-  // 每一项防御的明细行：[标签, 数值文本]；数值为 0 的加值行不展示
-  type Row = { label: string; value: string; auto?: boolean };
-  const baseRows = (def: DefenseKey, mods: Record<DefenseBonusSource, number>, abilityText: string, abilityVal: number, classBonus: number, raceBonus: number): Row[] => {
-    const rows: Row[] = [];
-    rows.push({ label: "基础", value: "10", auto: true });
-    if (stats.halfLevel !== 0) rows.push({ label: "½等级", value: "+" + stats.halfLevel, auto: true });
-    if (abilityVal !== 0) rows.push({ label: def === "ac" ? "属性调整" : "属性调整（取高）", value: abilityText, auto: true });
-    if (def !== "ac") {
-      if (classBonus !== 0) rows.push({ label: className ?? "职业", value: fmtMod(classBonus), auto: true });
-      if (raceBonus !== 0) rows.push({ label: raceName ?? "种族", value: fmtMod(raceBonus), auto: true });
-    }
-    for (const k of DEFENSE_BONUS_SOURCES) {
-      const v = mods[k] ?? 0;
-      if (v !== 0) rows.push({ label: DEF_BONUS_LABELS[k], value: fmtMod(v) });
-    }
-    // 职业特性自动加值：逐项标注来源
-    for (const s of classDefSources[def] ?? []) {
-      if (s.value !== 0) rows.push({ label: s.source, value: fmtMod(s.value), auto: true });
-    }
-    return rows;
-  };
-  // AC 属性调整文本：实际生效的 acKey（如力量/体质/感知）或默认 敏捷/智力 取高
-  const acAbilityText = (() => {
-    if (acKey) return abilityLabel(acKey) + " " + fmtMod(stats.mods[acKey]) + "（取代 敏捷/智力）";
-    return "敏捷/智力 取高 " + fmtMod(Math.max(stats.mods.dex, stats.mods.int));
-  })();
-  const acAbilityVal = acKey ? Math.max(stats.mods[acKey], stats.mods.dex, stats.mods.int) : Math.max(stats.mods.dex, stats.mods.int);
-  const acRows = baseRows("ac", acMods, acAbilityText, acAbilityVal, 0, 0);
-  const fortAbility = (() => {
-    const v = Math.max(stats.mods.str, stats.mods.con);
-    const win = stats.mods.str >= stats.mods.con ? "力量" : "体质";
-    return win + " " + fmtMod(v);
-  })();
-  const fortAbilityVal = Math.max(stats.mods.str, stats.mods.con);
-  const refAbility = (() => {
-    const v = Math.max(stats.mods.dex, stats.mods.int);
-    const win = stats.mods.dex >= stats.mods.int ? "敏捷" : "智力";
-    return win + " " + fmtMod(v);
-  })();
-  const refAbilityVal = Math.max(stats.mods.dex, stats.mods.int);
-  const willAbility = (() => {
-    const v = Math.max(stats.mods.wis, stats.mods.cha);
-    const win = stats.mods.wis >= stats.mods.cha ? "感知" : "魅力";
-    return win + " " + fmtMod(v);
-  })();
-  const willAbilityVal = Math.max(stats.mods.wis, stats.mods.cha);
-  const fortRows = baseRows("fort", fortMods, fortAbility, fortAbilityVal, cls?.fort ?? 0, raceDefs?.fort ?? 0);
-  const refRows = baseRows("ref", refMods, refAbility, refAbilityVal, cls?.ref ?? 0, raceDefs?.ref ?? 0);
-  const willRows = baseRows("will", willMods, willAbility, willAbilityVal, cls?.will ?? 0, raceDefs?.will ?? 0);
-  const blocks: { label: string; value: number; rows: Row[] }[] = [
-    { label: "AC", value: stats.ac, rows: acRows },
-    { label: "强韧", value: stats.fort, rows: fortRows },
-    { label: "反射", value: stats.ref, rows: refRows },
-    { label: "意志", value: stats.will, rows: willRows },
-  ];
-  return createPortal(
-    <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="picker-head">
-          <span className="picker-title">防御计算详情</span>
-          <div className="picker-head-btns">
-            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
-          </div>
-        </div>
-        <div className="def-detail-grid">
-          {blocks.map((b) => (
-            <div key={b.label} className="def-detail-block">
-              <div className="def-detail-title">{b.label} <span className="def-detail-total">{b.value}</span></div>
-              <div className="def-detail-rows">
-                {b.rows.map((r, i) => (
-                  <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                    <span className="ddr-label">{r.label}</span>
-                    <span className="ddr-value">{r.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// 属性详情弹窗：逐项展示每项属性的构成（基础值 + 种族加成）与调整值，风格仿照「抵御」详情弹窗
-function AbilityDetailDialog(props: {
-  abilities: Record<AbilityKey, number>;
-  bonus: Partial<Record<AbilityKey, number>>;
-  effective: Record<AbilityKey, number>;
-  mods: Record<AbilityKey, number>;
-  raceName?: string;
-  onClose: () => void;
-}) {
-  const { abilities, bonus, effective, mods, raceName, onClose } = props;
-  type Row = { label: string; value: string; auto?: boolean };
-  const blocks: { key: AbilityKey; score: number; mod: string; rows: Row[] }[] = ABILITIES.map((k) => {
-    const rows: Row[] = [{ label: "基础", value: String(abilities[k]), auto: true }];
-    const b = bonus[k];
-    if (b) rows.push({ label: `种族加成（${raceName ?? "种族"}）`, value: "+" + b });
-    rows.push({ label: "调整值", value: fmtMod(mods[k]), auto: true });
-    return { key: k, score: effective[k], mod: fmtMod(mods[k]), rows };
-  });
-  return createPortal(
-    <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="picker-head">
-          <span className="picker-title">属性计算详情</span>
-          <div className="picker-head-btns">
-            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
-          </div>
-        </div>
-        <div className="def-detail-grid">
-          {blocks.map((b) => (
-            <div key={b.key} className="def-detail-block">
-              <div className="def-detail-title">
-                {ABILITY_LABELS[b.key].zh}
-                <span className="def-detail-total">{b.score}</span>
-                <span className="attr-detail-mod">{b.mod}</span>
-              </div>
-              <div className="def-detail-rows">
-                {b.rows.map((r, i) => (
-                  <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                    <span className="ddr-label">{r.label}</span>
-                    <span className="ddr-value">{r.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// 生命详情弹窗：逐项展示生命值、重伤值、回复值、回复力的构成，风格仿照「抵御」详情弹窗
-function LifeDetailDialog(props: {
-  className?: string;
-  maxHpTotal: number;
-  bloodiedTotal: number;
-  surgeValueTotal: number;
-  surgesTotal: number;
-  baseHp: number;
-  conScore: number;
-  hpPerLevel: number;
-  level: number;
-  conMod: number;
-  baseSurges: number;
-  hpBonus: number;
-  surgeBonus: number;
-  surgeValueBonus: number;
-  onClose: () => void;
-}) {
-  const { className, maxHpTotal, bloodiedTotal, surgeValueTotal, surgesTotal, baseHp, conScore, hpPerLevel, level, conMod, baseSurges, hpBonus, surgeBonus, surgeValueBonus, onClose } = props;
-  type Row = { label: string; value: string; auto?: boolean };
-  const perLevel = hpPerLevel * Math.max(0, level - 1);
-  const hpRows: Row[] = [{ label: "职业起始生命" + (className ? "（" + className + "）" : ""), value: "+" + baseHp, auto: true }];
-  hpRows.push({ label: "体质值", value: "+" + conScore, auto: true });
-  if (perLevel !== 0) hpRows.push({ label: `每级生命×（等级−1） ${hpPerLevel}×${level - 1}`, value: "+" + perLevel, auto: true });
-  if (hpBonus !== 0) hpRows.push({ label: "额外生命值", value: "+" + hpBonus });
-  const bloodiedRows: Row[] = [{ label: "生命值一半", value: String(bloodiedTotal), auto: true }];
-  const surgeValueRows: Row[] = [{ label: "生命值四分之一", value: String(Math.floor(maxHpTotal / 4)), auto: true }];
-  if (surgeValueBonus !== 0) surgeValueRows.push({ label: "额外回复值", value: "+" + surgeValueBonus });
-  const surgeRows: Row[] = [{ label: "职业基础回复力" + (className ? "（" + className + "）" : ""), value: String(baseSurges), auto: true }];
-  if (conMod !== 0) surgeRows.push({ label: "体质调整", value: fmtMod(conMod), auto: true });
-  if (surgeBonus !== 0) surgeRows.push({ label: "额外回复力", value: "+" + surgeBonus });
-  const blocks: { label: string; value: number; rows: Row[] }[] = [
-    { label: "生命值", value: maxHpTotal, rows: hpRows },
-    { label: "重伤值", value: bloodiedTotal, rows: bloodiedRows },
-    { label: "回复值", value: surgeValueTotal, rows: surgeValueRows },
-    { label: "回复力", value: surgesTotal, rows: surgeRows },
-  ];
-  return createPortal(
-    <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="picker-head">
-          <span className="picker-title">生命计算详情</span>
-          <div className="picker-head-btns">
-            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
-          </div>
-        </div>
-        <div className="def-detail-grid">
-          {blocks.map((b) => (
-            <div key={b.label} className="def-detail-block">
-              <div className="def-detail-title">{b.label} <span className="def-detail-total">{b.value}</span></div>
-              <div className="def-detail-rows">
-                {b.rows.map((r, i) => (
-                  <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                    <span className="ddr-label">{r.label}</span>
-                    <span className="ddr-value">{r.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// 移动力详情弹窗：逐项展示基础速度与各类加成的构成
-function SpeedDetailDialog(props: {
-  display: string;
-  baseSpeed: string;
-  speedMods: SpeedMods;
-  primalSpeed: number;
-  onClose: () => void;
-}) {
-  const { display, baseSpeed, speedMods, primalSpeed, onClose } = props;
-  type Row = { label: string; value: string; auto?: boolean };
-  const sm = speedMods;
-  const rows: Row[] = [{ label: "种族基础速度", value: baseSpeed + " 格", auto: true }];
-  if (sm.power !== 0) rows.push({ label: "威能", value: "+" + sm.power });
-  if (sm.feat !== 0) rows.push({ label: "专长", value: "+" + sm.feat });
-  if (sm.armor !== 0) rows.push({ label: "防具", value: "-" + sm.armor });
-  if (sm.item !== 0) rows.push({ label: "物品", value: "+" + sm.item });
-  if (sm.other !== 0) rows.push({ label: "其他", value: "+" + sm.other });
-  if (primalSpeed !== 0) rows.push({ label: "原力掠食者", value: "+" + primalSpeed });
-  return createPortal(
-    <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="picker-head">
-          <span className="picker-title">移动力计算详情</span>
-          <div className="picker-head-btns">
-            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
-          </div>
-        </div>
-        <div className="def-detail-grid">
-          <div className="def-detail-block">
-            <div className="def-detail-title">速度 <span className="def-detail-total">{display}</span></div>
-            <div className="def-detail-rows">
-              {rows.map((r, i) => (
-                <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                  <span className="ddr-label">{r.label}</span>
-                  <span className="ddr-value">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// 先攻详情弹窗：逐项展示先攻加值的构成
-function InitiativeDetailDialog(props: {
-  dexMod: number;
-  halfLevel: number;
-  other: number;
-  total: number;
-  onClose: () => void;
-}) {
-  const { dexMod, halfLevel, other, total, onClose } = props;
-  type Row = { label: string; value: string; auto?: boolean };
-  const rows: Row[] = [{ label: "敏捷调整", value: fmtMod(dexMod), auto: true }];
-  if (halfLevel !== 0) rows.push({ label: "½等级", value: "+" + halfLevel, auto: true });
-  if (other !== 0) rows.push({ label: "其他", value: "+" + other });
-  return createPortal(
-    <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="picker-head">
-          <span className="picker-title">先攻计算详情</span>
-          <div className="picker-head-btns">
-            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
-          </div>
-        </div>
-        <div className="def-detail-grid">
-          <div className="def-detail-block">
-            <div className="def-detail-title">先攻 <span className="def-detail-total">{total}</span></div>
-            <div className="def-detail-rows">
-              {rows.map((r, i) => (
-                <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                  <span className="ddr-label">{r.label}</span>
-                  <span className="ddr-value">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
 }
 
 const VISION_OPTIONS = ["普通视觉", "昏暗视觉", "黑暗视觉"];
@@ -4490,30 +1763,6 @@ function PickField(props: { label: string; displayName?: string; disabled?: bool
   );
 }
 
-// 混职职业能力：合并两个混职职业的 trait（职位/威能来源/关键属性/防具/武器/法器/防御加值/HP/职业技能等）。
-// 详细模式用普通职业 trait 同样的斜体段落样式渲染；简洁模式切换为与普通职业一致的紧凑行样式（.cls-sum-row）。
-function HybridAbilityBlock({ entry, entry2, detail }: { entry: Entry; entry2: Entry; detail: boolean }) {
-  const t = mergedClassTraitText([entry, entry2]);
-  if (!t) return null;
-  if (detail) {
-    return (
-      <div className="class-trait hybrid-merged" dangerouslySetInnerHTML={{ __html: wikiToHtml(splitTraitLabels(t), entry.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />
-    );
-  }
-  const allow = new Set(["职位", "威能来源", "防具擅长", "武器擅长"]);
-  const rows = t.split("\n").map((line) => {
-    const m = line.match(/^''(.+?)：''(.+)$/);
-    return m ? { label: m[1], value: m[2] } : null;
-  }).filter((r): r is { label: string; value: string } => !!r && allow.has(r.label));
-  return (
-    <div className="hybrid-merged compact">
-      {rows.map((r, i) => (
-        <div key={i} className="cls-sum-row"><span className="cls-sum-label">{r.label}</span><span className="cls-sum-value">{r.value}</span></div>
-      ))}
-    </div>
-  );
-}
-
 export default function CharacterSheet({
   layout = "single",
   mode,
@@ -4534,43 +1783,25 @@ export default function CharacterSheet({
   const [feats, setFeats] = useState<Entry[]>([]);
   const [items, setItems] = useState<Entry[]>([]);
   const [powers, setPowers] = useState<Entry[]>([]);
-  const [rituals, setRituals] = useState<Entry[]>([]);
-  const [creatures, setCreatures] = useState<Entry[]>([]);
-  const [vices, setVices] = useState<Entry[]>([]);
-  const [pacts, setPacts] = useState<Entry[]>([]);
-  const [magicSchools, setMagicSchools] = useState<Entry[]>([]);
-  const [domains, setDomains] = useState<Entry[]>([]);
-  const [virtues, setVirtues] = useState<Entry[]>([]);
   const [relations, setRelations] = useState<{ powerByGrantedBy: Record<string, string[]> }>({ powerByGrantedBy: {} });
   const [picker, setPicker] = useState<null | "class" | "race" | "paragon" | "epic">(null);
   const [slotPicker, setSlotPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "feat"; index: number }>(null);
-  const [featChoicePicker, setFeatChoicePicker] = useState<null | { index: number; featName: string; label: string; options: FeatOption[]; weaponPool?: BaseWeapon[]; categories?: string[]; implementPool?: BaseImplement[]; implTier?: "basic" | "superior"; hybridGroups?: HybridTalentGroup[] }>(null);
-  // 替换型专长（如「威能替换你的N级辅助威能」）：选择后弹面板询问将新威能填入哪个格子。
-  // targetCat：被替换威能所在的槽位类别，弹窗只显示该类别相关栏位（无关栏位不出现）。
-  const [replacementPicker, setReplacementPicker] = useState<null | { index: number; newPowerId: string; hint: string; targetCat?: keyof PowerSlots }>(null);
-  const [equipPicker, setEquipPicker] = useState<null | { kind: "fixed" | "other" | "consumable" | "wondrous"; index: number }>(null);
-  const [blockDetail, setBlockDetail] = useState<{ powers: boolean; feats: boolean; equipment: boolean; rituals: boolean }>({ powers: true, feats: true, equipment: true, rituals: true });
+  const [featChoicePicker, setFeatChoicePicker] = useState<null | { index: number; featName: string; label: string; options: FeatOption[]; weaponPool?: BaseWeapon[]; categories?: string[]; implementPool?: BaseImplement[]; implTier?: "basic" | "superior" }>(null);
+  const [equipPicker, setEquipPicker] = useState<null | { kind: "fixed" | "other" | "consumable"; index: number }>(null);
+  const [blockDetail, setBlockDetail] = useState<{ powers: boolean; feats: boolean; equipment: boolean }>({ powers: true, feats: true, equipment: true });
 
   const [abilityMode, setAbilityMode] = useState<"free" | "buy">("free");
   const [boostUsed, setBoostUsed] = useState(0);
   const [buyPresetOpen, setBuyPresetOpen] = useState(false);
   const [classFeatDetail, setClassFeatDetail] = useState(true);
-  const [hybridDetailOpen, setHybridDetailOpen] = useState(false);
   const [alignmentOpen, setAlignmentOpen] = useState(false);
   const [profOpen, setProfOpen] = useState(false);
   const [earnInput, setEarnInput] = useState("");
   const [spendInput, setSpendInput] = useState("");
   const [autoCostOpen, setAutoCostOpen] = useState(false);
-  const [ritualPickerSlot, setRitualPickerSlot] = useState<number | null>(null);
-  const [ritualKind, setRitualKind] = useState<"ritual" | "practice">("ritual"); // 仪式面板切换：仪式魔法 / 武术奥义
-  const [defDetailOpen, setDefDetailOpen] = useState(false);
-  const [abilityDetailOpen, setAbilityDetailOpen] = useState(false);
-  const [lifeDetailOpen, setLifeDetailOpen] = useState(false);
-  const [speedDetailOpen, setSpeedDetailOpen] = useState(false);
-  const [initDetailOpen, setInitDetailOpen] = useState(false);
   const [slotMode, setSlotMode] = useState<null | "mark" | "swap">(null);
-  const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: "fixed" | "other" | "consumable" | "wondrous"; index: number }>(null);
-  const [basePicker, setBasePicker] = useState<null | { kind: "weapon" | "armor" | "shield"; index: number }>(null);
+  const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: "fixed" | "other" | "consumable"; index: number }>(null);
+  const [basePicker, setBasePicker] = useState<null | { kind: "weapon" | "armor"; index: number }>(null);
   const [skillDetail, setSkillDetail] = useState(true);
   const [raceDetail, setRaceDetail] = useState(false);
   const [subraceOpen, setSubraceOpen] = useState(false);
@@ -4589,13 +1820,6 @@ export default function CharacterSheet({
     void loadCategory("feat").then(setFeats).catch(console.error);
     void loadCategory("equipment").then(setItems).catch(console.error);
     void loadCategory("power").then(setPowers).catch(console.error);
-    void loadCategory("ritual").then(setRituals).catch(console.error);
-    void loadCategory("creature").then(setCreatures).catch(console.error);
-    void loadCategory("vice").then(setVices).catch(console.error);
-    void loadCategory("pact").then(setPacts).catch(console.error);
-    void loadCategory("magic-school").then(setMagicSchools).catch(console.error);
-    void loadCategory("domain").then(setDomains).catch(console.error);
-    void loadCategory("virtue").then(setVirtues).catch(console.error);
     void loadRelations().then(setRelations).catch(console.error);
   }, []);
 
@@ -4605,14 +1829,14 @@ export default function CharacterSheet({
   function openFeatPicker(index: number) {
     setSlotPicker({ kind: "feat", index });
   }
-  function openEquipPicker(kind: "fixed" | "other" | "consumable" | "wondrous", index: number) {
+  function openEquipPicker(kind: "fixed" | "other" | "consumable", index: number) {
     setEquipPicker({ kind, index });
   }
   // —— 使用标记（斜线遮罩）与储备交换 ——
   const powerUsedKey = (cat: keyof PowerSlots, index: number) => cat + "-" + index;
-  const equipUsedKey = (kind: "fixed" | "other" | "consumable" | "wondrous", index: number) => (kind === "fixed" ? "e" : kind === "other" ? "o" : kind === "consumable" ? "c" : "w") + "-" + index;
+  const equipUsedKey = (kind: "fixed" | "other" | "consumable", index: number) => (kind === "fixed" ? "e" : kind === "other" ? "o" : "c") + "-" + index;
   const isPowerUsed = (cat: keyof PowerSlots, index: number) => !!char.powerUsed?.[powerUsedKey(cat, index)];
-  const isEquipUsed = (kind: "fixed" | "other" | "consumable" | "wondrous", index: number) => !!char.equipmentUsed?.[equipUsedKey(kind, index)];
+  const isEquipUsed = (kind: "fixed" | "other" | "consumable", index: number) => !!char.equipmentUsed?.[equipUsedKey(kind, index)];
   function togglePowerUsed(cat: keyof PowerSlots, index: number) {
     const key = powerUsedKey(cat, index);
     setChar((p) => {
@@ -4621,7 +1845,7 @@ export default function CharacterSheet({
       return { ...p, powerUsed: used };
     });
   }
-  function toggleEquipUsed(kind: "fixed" | "other" | "consumable" | "wondrous", index: number) {
+  function toggleEquipUsed(kind: "fixed" | "other" | "consumable", index: number) {
     const key = equipUsedKey(kind, index);
     setChar((p) => {
       const used = { ...(p.equipmentUsed ?? {}) };
@@ -4640,22 +1864,19 @@ export default function CharacterSheet({
       let equipmentSlots = p.equipmentSlots;
       let otherSlots = p.otherSlots;
       let consumableSlots = p.consumableSlots;
-      let wondrousSlots = p.wondrousSlots;
       if (pick.kind === "power") {
         slotOld = p.powerSlots[pick.cat][pick.index];
         powerSlots = setPowerSlot(powerSlots, pick.cat, pick.index, old);
       } else {
-        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : pick.ekind === "consumable" ? p.consumableSlots : p.wondrousSlots;
+        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : p.consumableSlots;
         slotOld = arr[pick.index];
         const nextArr = setEquipmentSlot(arr, pick.index, old);
         if (pick.ekind === "fixed") equipmentSlots = nextArr;
         else if (pick.ekind === "other") otherSlots = nextArr;
-        else if (pick.ekind === "consumable") consumableSlots = nextArr;
-        else wondrousSlots = nextArr;
+        else consumableSlots = nextArr;
       }
       const nextReserve = reserve.map((s, i) => (i === reserveIndex ? (slotOld ?? "") : s));
-      const ppRec = pick.kind === "power" && pick.cat === "atWill" ? hybridPowerPoints({ classId: p.classId, classId2: p.classId2, powerSlots }, resolveClassId, resolvePowerId) : undefined;
-      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots, wondrousSlots, ...(ppRec !== undefined ? { powerPoints: ppRec } : {}) };
+      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots };
     });
     setSwapPicker(null);
   }
@@ -4667,24 +1888,22 @@ export default function CharacterSheet({
       let equipmentSlots = p.equipmentSlots;
       let otherSlots = p.otherSlots;
       let consumableSlots = p.consumableSlots;
-      let wondrousSlots = p.wondrousSlots;
       if (pick.kind === "power") {
         slotOld = p.powerSlots[pick.cat][pick.index];
         powerSlots = clearPowerSlot(powerSlots, pick.cat, pick.index);
       } else {
-        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : pick.ekind === "consumable" ? p.consumableSlots : p.wondrousSlots;
+        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : p.consumableSlots;
         slotOld = arr[pick.index];
         const nextArr = clearEquipmentSlot(arr, pick.index);
         if (pick.ekind === "fixed") equipmentSlots = nextArr;
         else if (pick.ekind === "other") otherSlots = nextArr;
-        else if (pick.ekind === "consumable") consumableSlots = nextArr;
-        else wondrousSlots = nextArr;
+        else consumableSlots = nextArr;
       }
       if (!slotOld) return p;
       const reserve = pick.kind === "power" ? p.spellbook : p.backpack;
       const emptyIdx = reserve.findIndex((s) => !s);
       const nextReserve = emptyIdx >= 0 ? reserve.map((s, i) => (i === emptyIdx ? slotOld : s)) : [...reserve, slotOld];
-      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots, wondrousSlots };
+      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots };
     });
     setSwapPicker(null);
   }
@@ -4700,8 +1919,8 @@ export default function CharacterSheet({
     if (char.powerUsed?.[powerUsedKey(cat, index)]) return;
     openPowerPicker(cat, index);
   }
-  function onEquipSlotClick(kind: "fixed" | "other" | "consumable" | "wondrous", index: number) {
-    const arr = kind === "fixed" ? char.equipmentSlots : kind === "other" ? char.otherSlots : kind === "consumable" ? char.consumableSlots : char.wondrousSlots;
+  function onEquipSlotClick(kind: "fixed" | "other" | "consumable", index: number) {
+    const arr = kind === "fixed" ? char.equipmentSlots : kind === "other" ? char.otherSlots : char.consumableSlots;
     const id = arr[index];
     if (slotMode === "mark") { if (id) toggleEquipUsed(kind, index); return; }
     if (slotMode === "swap") {
@@ -4729,29 +1948,6 @@ export default function CharacterSheet({
     return undefined;
   }, [char.hybrid, char.classId2, classEntry, classes]);
   const classEntry2 = useMemo(() => (char.hybrid ? classes.find((c) => c.id === char.classId2) : undefined), [classes, char.hybrid, char.classId2]);
-  // 天赋元素法师「16级：元素典范」：其增益按「灵魔仆从」所选魔宠（土/风/炎/水/其他）而定，
-  // 只保留与所选魔宠匹配的那一项，并随魔宠选择实时切换（无魔宠则保留提示）。
-  const shaChosen = useMemo(() => {
-    const keys = ([classEntry, classEntry2].filter(Boolean) as Entry[]).map((c) => c.id + "::灵魔仆从 Gen Servant");
-    for (const k of keys) {
-      const v = (char.classFeatureChoices ?? {})[k];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  }, [classEntry, classEntry2, char.classFeatureChoices]);
-  const pathSections = useMemo(() => {
-    if (!paragonPathEntry) return pathParse.sections;
-    const chosenKeyword = cnTitle(shaChosen); // 土魔/风魔/炎魔/水魔/其他（魔宠）
-    return pathParse.sections.map((s) => {
-      if (!cnTitle(s.title).includes("元素典范")) return s;
-      const opt = parseClassFeatureOptions(s.body ?? "");
-      let pick = opt.options.find((o) => o.label === chosenKeyword);
-      if (!pick) pick = opt.options.find((o) => o.label === "其他魔宠");
-      if (!shaChosen) return { ...s, body: (s.body ?? "") + '<p class="hint">未选择魔宠：请先在「灵魔仆从」中选择你采用的魔宠。</p>' };
-      if (!pick) return s;
-      return { ...s, body: (opt.intro ?? "") + "\n<p>" + pick.label + "：" + pick.desc + "</p>" };
-    });
-  }, [paragonPathEntry, pathParse, shaChosen]);
   // 典范/天命选择限制：当前角色种族/职业名集合 + 全量名称（含纯中文名，匹配前置里的中文名）
   const restrictNames = useMemo(() => {
     const addName = (s: Set<string>, n: string) => {
@@ -4818,94 +2014,15 @@ export default function CharacterSheet({
     if (sorcererSource.startsWith("巨龙魔法") || sorcererSource.startsWith("宇宙魔法")) return "str" as const;
     return undefined;
   })();
-  // 德鲁伊「原力姿态」：读取选择值（主职或混职任一职业），并判断是否未穿重甲。
-  // 原力守护者 Primal Guardian：可用体质调整值代替敏捷/智力计算 AC；
-  // 原力掠食者 Primal Predator：未穿重甲时速度自动 +1（仅展示计算，不写入单元格）。
-  // 保护者（德鲁伊（保护者））无独立「原力姿态」特性，其姿态由「德鲁伊集会」派生
-  // （恢复集会→原力守护者、庇护集会→原力掠食者），并可在「召唤自然盟友」中手动覆盖。
-  const primalAspectChoice = resolvePrimalAspect(char.classFeatureChoices, [classEntry, classEntry2]);
-  const noHeavyArmor = (() => {
-    const armorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    return !(armorBase?.kind === "armor" && armorBase.armor?.category === "重甲");
-  })();
-  // 哨兵（德鲁伊（哨兵））的「原力守护者 Primal Guardian」是固定特性，无选择键，需按职业正文静态判定
-  const sentinelGuardian = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (e && /^!!\s*[^\n]*原力守护者 Primal Guardian/m.test(e.sourceText)) return true;
-    }
-    return false;
-  })();
-  // 原力守护者（德鲁伊选择型 或 哨兵固定型）：未穿重甲时 AC 用体质调整值代替敏捷/智力
-  const druidAcKey = (primalAspectChoice.startsWith("原力守护者") || sentinelGuardian) && noHeavyArmor ? ("con" as const) : undefined;
-  const primalPredatorSpeed = primalAspectChoice.startsWith("原力掠食者") && noHeavyArmor ? 1 : 0;
-  // 巡者「巡者束约 Seeker's Bond」之「灵魂束约 Spiritbond」：未穿重甲时 AC 用力量调整值替代敏捷/智力
-  const seekerBondChoice = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::巡者束约 Seeker's Bond"];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  })();
-  const seekerSpiritbondAcKey = seekerBondChoice.startsWith("灵魂束约") && noHeavyArmor ? ("str" as const) : undefined;
-  // 符文牧师「符文艺术 Runic Artistry」：愤怒之锤→军用锤/军用硬头锤擅长；平静之刃→军用重刃擅长 + 未穿重甲 AC 用感知
-  const runicArtistryChoice = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::符文艺术 Runic Artistry"];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  })();
-  const runeWrathful = runicArtistryChoice.startsWith("愤怒之锤");
-  const runeSerene = runicArtistryChoice.startsWith("平静之刃");
-  const runepriestAcKey = runeSerene && noHeavyArmor ? ("wis" as const) : undefined;
-  const featMap = useMemo(() => new Map(feats.map((f) => [f.id, f])), [feats]);
-  // —— 混职天赋 Hybrid Talent：已选选项 + 效果 ——
-  // 汇总两个混职职业的选项组引用（每组含来源职业名与选项，供定位所选选项用）
-  const hybridGroups = useMemo(() => hybridTalentGroups([classEntry, classEntry2], classes), [classEntry, classEntry2, classes]);
-  // 已选混职天赋选项及其正文（遍历专长槽位，仅统计是「混职天赋」且已选择的槽位）
-  const selectedHybridOptions = useMemo(() => {
-    const out: string[] = [];
-    char.featSlots.forEach((id, idx) => {
-      if (!id) return;
-      const f = featMap.get(id);
-      if (!f || !isHybridTalentFeat(f)) return;
-      const choice = char.featChoices?.[idx];
-      if (choice) out.push(String(choice));
-    });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [char.featSlots, char.featChoices, featMap, classEntry, classEntry2]);
-  // 已选选项授予的擅长 token（防具/盾牌/武器），合并进防具/盾牌/武器擅长判定
-  const hybridProf = useMemo(() => {
-    const armor: string[] = [];
-    const shield: string[] = [];
-    const weapon: string[] = [];
-    for (const title of selectedHybridOptions) {
-      const r = resolveHybridOption(hybridGroups, title);
-      if (!r) continue;
-      const t = hybridTalentProfTokens(r.body);
-      for (const a of t.armor) if (!armor.includes(a)) armor.push(a);
-      for (const s of t.shield) if (!shield.includes(s)) shield.push(s);
-      for (const w of t.weapon) if (!weapon.includes(w)) weapon.push(w);
-    }
-    return { armor, shield, weapon };
-  }, [selectedHybridOptions, hybridGroups]);
-  // 混职天赋选项的 AC 属性覆盖：正文「当你未穿着重甲时，你可用体质调整值代替敏捷或智力调整值来决定AC」
-  // （如混职哨兵的「原力守护者 Primal Guardian」）→ 未穿重甲时 AC 用体质调整值。
-  const hybridAcKey = selectedHybridOptions.some((title) => {
-    const r = resolveHybridOption(hybridGroups, title);
-    return !!r && /当你未穿着重甲时.*体质调整值代替敏捷或智力.*AC/.test(r.body);
-  }) && noHeavyArmor ? ("con" as const) : undefined;
   // 神罚使「信仰甲胄 Armor of Faith」：穿着布甲或不穿甲且未使用盾牌时，AC 自动 +3。
-  // 判定：职业（含混职）正文含该特性标题；护甲槽(5)为空或为布甲类；副手槽(1)/臂部槽(7)非盾牌。
+  // 判定：职业（含混职）正文含该特性标题；护甲槽(5)为空或为布甲类；副手槽(1)非盾牌。
   const armorOfFaithActive = useMemo(() => {
     const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*信仰甲[胄冑]/m.test(e.sourceText));
     if (!has) return false;
     const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
     const clothOrNone = !armor || (armor.kind === "armor" && (armor.armor?.name ?? "").includes("布甲"));
-    return clothOrNone && !hasShieldBase(char);
+    const offHand = char.baseItems?.[1] ? findBaseItem(char.baseItems[1]) : undefined;
+    return clothOrNone && (!offHand || offHand.kind !== "shield");
   }, [classEntry, classEntry2, char.baseItems]);
   const armorOfFaithBonus = armorOfFaithActive ? 3 : 0;
   // 野蛮人「蛮族机敏 Barbarian Agility」：未穿重甲时 AC 与反射自动 +1（11级+2，21级+3）
@@ -4916,105 +2033,17 @@ export default function CharacterSheet({
     if (armor?.kind === "armor" && armor.armor?.category === "重甲") return 0;
     return char.level >= 21 ? 3 : char.level >= 11 ? 2 : 1;
   }, [classEntry, classEntry2, char.baseItems, char.level]);
-  // 武僧「无甲防御 Unarmored Defense」：穿着布甲或不穿甲且未使用盾牌时 AC 自动 +2
-  const unarmoredDefenseActive = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*无甲防御 Unarmored Defense/m.test(e.sourceText));
-    if (!has) return false;
-    const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    const clothOrNone = !armor || (armor.kind === "armor" && (armor.armor?.name ?? "").includes("布甲"));
-    return clothOrNone && !hasShieldBase(char);
-  }, [classEntry, classEntry2, char.baseItems]);
-  const unarmoredDefenseBonus = unarmoredDefenseActive ? 2 : 0;
-  // 剑术剑士「剑法防卫 Swordmage Warding」：持用重刃/轻刃时 AC +1；单手持剑刃且另一手空 → +3
-  const swordmageWarding = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*剑法防卫 Swordmage Warding/m.test(e.sourceText));
-    if (!has) return 0;
-    const main = char.baseItems?.[0] ? findBaseItem(char.baseItems[0]) : undefined;
-    if (!main || main.kind !== "weapon" || !main.weapon) return 0;
-    const groups = main.weapon.group.split(/[，,]/);
-    if (!groups.some((g) => g === "重刃" || g === "轻刃")) return 0;
-    const offHand = char.baseItems?.[1] ? findBaseItem(char.baseItems[1]) : undefined;
-    if (!offHand && main.weapon.category.includes("·单手")) return 3;
-    return 1;
-  }, [classEntry, classEntry2, char.baseItems]);
-  // 武僧「修士宗派 Monastic Tradition」：凝息→强韧+1/2/3；石拳→意志+1/2/3（11级+2、21级+3）
-  const monkTradition = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::修士宗派 Monastic Tradition"];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  })();
-  const monkTraditionBonus = char.level >= 21 ? 3 : char.level >= 11 ? 2 : 1;
-  const monkFortExtra = monkTradition.startsWith("凝息") ? monkTraditionBonus : 0;
-  const monkWillExtra = monkTradition.startsWith("石拳") ? monkTraditionBonus : 0;
-  // 狂战士「故土 Heartland」：按所选地形自动应用防御加值。
-  // 干燥沙漠=穿布甲/无甲且未用盾牌时 AC+3、反射+2；冰川冻土=强韧/意志+1；温带平原无防御加值
-  const heartlandDefs = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*故土 Heartland/m.test(e.sourceText));
-    if (!has) return { ac: 0, fort: 0, ref: 0, will: 0, source: "" };
-    let terrain = "";
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::故土 Heartland"];
-      if (typeof v === "string" && v) { terrain = v; break; }
-    }
-    if (terrain.startsWith("干燥沙漠")) {
-      const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-      const clothOrNone = !armor || (armor.kind === "armor" && (armor.armor?.name ?? "").includes("布甲"));
-      const cond = clothOrNone && !hasShieldBase(char);
-      return { ac: cond ? 3 : 0, fort: 0, ref: cond ? 2 : 0, will: 0, source: `故土（${terrain}）` };
-    }
-    if (terrain.startsWith("冰川冻土")) return { ac: 0, fort: 1, ref: 0, will: 1, source: `故土（${terrain}）` };
-    return { ac: 0, fort: 0, ref: 0, will: 0, source: "" };
-  }, [classEntry, classEntry2, char.classFeatureChoices, char.baseItems]);
-  // 职业特性自动防御加值来源列表（用于「查看详情」逐项标注来源，不混入「其他」手动单元格）
-  const classDefSources = useMemo(() => {
-    const heart = heartlandDefs;
-    return {
-      ac: [
-        { value: armorOfFaithBonus, source: "信仰甲胄" },
-        { value: barbarianAgility, source: "蛮族机敏" },
-        { value: unarmoredDefenseBonus, source: "无甲防御" },
-        { value: swordmageWarding, source: "剑法防卫" },
-        { value: heart.ac, source: heart.source },
-      ].filter((s) => s.value !== 0),
-      fort: [
-        { value: monkFortExtra, source: "修士宗派（凝息）" },
-        { value: heart.fort, source: heart.source },
-      ].filter((s) => s.value !== 0),
-      ref: [
-        { value: barbarianAgility, source: "蛮族机敏" },
-        { value: heart.ref, source: heart.source },
-      ].filter((s) => s.value !== 0),
-      will: [
-        { value: monkWillExtra, source: "修士宗派（石拳）" },
-        { value: heart.will, source: heart.source },
-      ].filter((s) => s.value !== 0),
-    };
-  }, [armorOfFaithBonus, barbarianAgility, unarmoredDefenseBonus, swordmageWarding, monkFortExtra, monkWillExtra, heartlandDefs]);
-  const classDefTotal = (def: DefenseKey) => (classDefSources[def] ?? []).reduce((s, x) => s + x.value, 0);
-  // 装备自动防御加值（防具/盾牌）合并进各防御来源单元格；「其他」只保留手动录入值，职业特性加值仅参与统计与详情展示
+  // 装备自动防御加值（防具/盾牌）合并进各防御来源单元格；信仰甲胄 +3、蛮族机敏加值计入「其他」
   const autoDef = autoDefenseBonuses(char);
-  const acMods = { ...mergeDefenseMods("ac", char.defenseMods.ac, autoDef.ac), other: char.defenseMods.ac.other ?? 0 };
-  const fortMods = { ...mergeDefenseMods("fort", char.defenseMods.fort, autoDef.fort), other: char.defenseMods.fort.other ?? 0 };
-  const refMods = { ...mergeDefenseMods("ref", char.defenseMods.ref, autoDef.ref), other: char.defenseMods.ref.other ?? 0 };
-  const willMods = { ...mergeDefenseMods("will", char.defenseMods.will, autoDef.will), other: char.defenseMods.will.other ?? 0 };
-  // 用于最终属性计算的防御加值（在手动值基础上叠加职业特性自动加值）
-  const statDefenseMods = {
-    ac: { ...acMods, other: acMods.other + classDefTotal("ac") },
-    fort: { ...fortMods, other: fortMods.other + classDefTotal("fort") },
-    ref: { ...refMods, other: refMods.other + classDefTotal("ref") },
-    will: { ...willMods, other: willMods.other + classDefTotal("will") },
-  };
+  const acMods = { ...mergeDefenseMods("ac", char.defenseMods.ac, autoDef.ac), other: (char.defenseMods.ac.other ?? 0) + armorOfFaithBonus + barbarianAgility };
+  const fortMods = mergeDefenseMods("fort", char.defenseMods.fort, autoDef.fort);
+  const refMods = { ...mergeDefenseMods("ref", char.defenseMods.ref, autoDef.ref), other: (char.defenseMods.ref.other ?? 0) + barbarianAgility };
+  const willMods = mergeDefenseMods("will", char.defenseMods.will, autoDef.will);
   const stats = deriveStats({
     ...char,
     abilities: effectiveAbilities,
-    defenseMods: statDefenseMods,
-  }, cls, raceDefs, guardianAcKey ?? hybridAcKey ?? druidAcKey ?? sorcererAcKey ?? seekerSpiritbondAcKey ?? runepriestAcKey);
-  // 实际生效的 AC 属性键（供防御详情展示「AC 属性调整」用的是哪个属性）
-  const activeAcKey = guardianAcKey ?? hybridAcKey ?? druidAcKey ?? sorcererAcKey ?? seekerSpiritbondAcKey ?? runepriestAcKey;
+    defenseMods: { ac: acMods, fort: fortMods, ref: refMods, will: willMods },
+  }, cls, raceDefs, guardianAcKey ?? sorcererAcKey);
   // —— 生命板块：额外加值合计 + 当前值编辑 ——
   const hpBonus = char.hpBonus ?? 0;
   const surgeBonus = char.surgeBonus ?? 0;
@@ -5027,29 +2056,12 @@ export default function CharacterSheet({
     const n = raw.trim() === "" ? undefined : Math.max(0, Math.floor(Number(raw) || 0));
     setChar((p) => ({ ...p, hpNow: { ...(p.hpNow ?? {}), [k]: n } }));
   };
-  const speedTotal = char.speedMods.power + char.speedMods.feat - char.speedMods.armor + char.speedMods.item + char.speedMods.other + primalPredatorSpeed;
+  const speedTotal = char.speedMods.power + char.speedMods.feat - char.speedMods.armor + char.speedMods.item + char.speedMods.other;
   const speedNum = parseInt(raceEntry?.speed ?? "", 10);
   const speedDisplay = Number.isNaN(speedNum) ? (raceEntry?.speed ?? "—") : speedNum + speedTotal + " 格";
 
   const powerMap = useMemo(() => new Map(powers.map((p) => [p.id, p])), [powers]);
-  const ritualMap = useMemo(() => new Map(rituals.map((r) => [r.id, r])), [rituals]);
-  const creatureMap = useMemo(() => new Map(creatures.map((c) => [c.id, c])), [creatures]);
-  const viceMap = useMemo(() => new Map(vices.map((v) => [v.id, v])), [vices]);
-  const pactMap = useMemo(() => new Map(pacts.map((v) => [v.id, v])), [pacts]);
-  const magicSchoolMap = useMemo(() => new Map(magicSchools.map((s) => [s.id, s])), [magicSchools]);
-  const domainMap = useMemo(() => new Map(domains.map((d) => [d.id, d])), [domains]);
-  const virtueMap = useMemo(() => new Map(virtues.map((v) => [v.id, v])), [virtues]);
-  // 职业赠送专长条目/名称（不占用常规专长槽位，但参与擅长/攻击伤害等专长相关计算）
-  const grantedFeatEntries = useMemo(
-    () => (char.classGrantedFeatIds ?? []).map((id) => featMap.get(id)).filter((x): x is Entry => !!x),
-    [char.classGrantedFeatIds, featMap]
-  );
-  const grantedFeatNameList = useMemo(() => grantedFeatEntries.map((f) => f.name), [grantedFeatEntries]);
-  // 职业赠送仪式条目（置顶展示，不占用仪式槽位）
-  const grantedRitualEntries = useMemo(
-    () => (char.classGrantedRitualIds ?? []).map((id) => ritualMap.get(id)).filter((x): x is Entry => !!x),
-    [char.classGrantedRitualIds, ritualMap]
-  );
+  const featMap = useMemo(() => new Map(feats.map((f) => [f.id, f])), [feats]);
   // 选择型专长的已选对象（键 = 槽位下标 → { cat, item }）
   const featChoicesList = useMemo(
     () =>
@@ -5062,66 +2074,24 @@ export default function CharacterSheet({
         .filter((c) => c.item),
     [char.featChoices, char.featSlots, featMap]
   );
-  // 亚种：解析所有含「属于[[原种族]]的亚种」的条目，按键为原种族显示名（如「矮人 Dwarf」）
-  const subracesByBase = useMemo(() => {
-    const map = new Map<string, Entry[]>();
-    for (const r of races) {
-      const info = parseSubraceInfo(r.sourceText);
-      if (info) {
-        const list = map.get(info.baseRaceName) ?? [];
-        list.push(r);
-        map.set(info.baseRaceName, list);
-      }
-    }
-    return map;
-  }, [races]);
-  const raceBaseName = raceEntry ? `${raceEntry.name} ${raceEntry.nameEn ?? ""}`.trim() : "";
-  const subraces = raceEntry ? (subracesByBase.get(raceBaseName) ?? []) : [];
-  const subraceEntry = useMemo(() => (char.subraceId ? subraces.find((s) => s.id === char.subraceId) : undefined), [char.subraceId, subraces]);
-  const subraceInfo = useMemo(() => (subraceEntry ? parseSubraceInfo(subraceEntry.sourceText) : undefined), [subraceEntry]);
-  const subraceName = subraceEntry?.name ?? "";
-  // 亚种增益应用到种族文本：被替代的基础特性行替换为增益的「擅长」行（用于擅长计算）
-  const effectiveRaceText = useMemo(() => {
-    if (!raceEntry || !subraceInfo) return raceEntry?.sourceText;
-    let text = raceEntry.sourceText;
-    for (const b of subraceInfo.benefits) {
-      if (char.subraceBenefits?.[b.title] === false || !b.replaces) continue;
-      const line = subraceProfLine(b);
-      const esc = b.replaces.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      // 匹配被替代的基础特性行（''名称：''…至下一特性行/文本末尾）
-      const re = new RegExp(`^''${esc}：''[^\\n]*(?:\\n(?!''[^：:]*：'')[^\\n]*)*`, "m");
-      text = text.replace(re, line ?? "");
-    }
-    return text;
-  }, [raceEntry, subraceInfo, char.subraceBenefits]);
   // 武器擅长 token 集：职业（含混职）/种族 的「武器擅长」行 + 已选专长白名单 + 选择型专长选定对象
   const archerWarlordOn = !!classEntry && Object.entries(char.classFeatureChoices ?? {}).some(([k, v]) => k.startsWith(classEntry!.id + "::射手督军") && v === "on");
   // 前线领袖（Battlefront Leader）：替代组「战斗领袖」的替代项，选中时获得重盾擅长（以键前缀+选中值前缀判断）
   const frontLineLeaderOn = !!classEntry && Object.entries(char.classFeatureChoices ?? {}).some(([k, v]) => k.startsWith(classEntry!.id + "::战斗领袖") && String(v).startsWith("前线领袖"));
-  // 刺客（行刑者）三工会选择 → 忍者之道的额外武器擅长（手里剑/锁镰）
-  const exeGuildChosen = classEntry ? (typeof (char.classFeatureChoices ?? {})[classEntry.id + "::刺客公会"] === "string" ? String((char.classFeatureChoices ?? {})[classEntry.id + "::刺客公会"]) : "") : "";
-  const exeNinjaWeapons = exeGuildChosen === "忍者之道" ? ["手里剑", "锁镰"] : [];
   const proficiencyTokens = useMemo(
     () => {
       const tokens = collectProficiencyTokens({
         classText: classEntry?.sourceText,
         classText2: classEntry2?.sourceText,
-        raceText: effectiveRaceText,
-        featNames: [...char.featSlots.map((id) => featMap.get(id)?.name ?? ""), ...grantedFeatNameList],
+        raceText: raceEntry?.sourceText,
+        featNames: char.featSlots.map((id) => featMap.get(id)?.name ?? ""),
         featChoiceTokens: featChoicesList.map((c) => c.item.split(/\s/)[0]),
       });
       // 射手督军：获得军用远程武器擅长（失去的链甲/轻盾在防具/盾牌处处理）
       if (archerWarlordOn) tokens.add("军用远程");
-      // 符文牧师「符文艺术」：愤怒之锤→军用锤/军用硬头锤；平静之刃→军用重刃
-      if (runeWrathful) { tokens.add("军用锤"); tokens.add("军用硬头锤"); }
-      if (runeSerene) tokens.add("军用重刃");
-      // 混职天赋选项：正文「获得X的擅长」中的武器 token
-      for (const w of hybridProf.weapon) tokens.add(w);
-      // 刺客（行刑者）忍者之道：手里剑/锁镰擅长
-      for (const w of exeNinjaWeapons) tokens.add(w);
       return tokens;
     },
-    [classEntry, classEntry2, effectiveRaceText, char.featSlots, featMap, featChoicesList, archerWarlordOn, grantedFeatNameList, runeWrathful, runeSerene, hybridProf, exeNinjaWeapons]
+    [classEntry, classEntry2, raceEntry, char.featSlots, featMap, featChoicesList, archerWarlordOn]
   );
   // 已擅长武器条目（供「选择基础武器」/擅长武器专长弹窗左下角「已擅长武器」展示）
   const proficientWeaponInfos = useMemo<WeapInfo[]>(
@@ -5139,35 +2109,31 @@ export default function CharacterSheet({
       const info = featEntry ? featChoiceInfo(featEntry) : null;
       if (info?.cat === "implement") implChoices.push({ cat: "implement", item: char.featChoices?.[idx] ?? "" });
     }
-    return collectImplementGroups({ classText: classEntry?.sourceText, classText2: classEntry2?.sourceText, raceText: effectiveRaceText, featChoices: implChoices });
-  }, [char.featSlots, char.featChoices, featMap, classEntry, classEntry2, effectiveRaceText]);
-  // 防具/盾牌擅长 token 集：职业（含混职）/种族 + 已选「盔甲擅长/盾牌擅长」专长（含职业赠送专长）；用于专长前置「擅长鳞甲」类判定
-  const featNameList = useMemo(() => [...char.featSlots.map((id) => featMap.get(id)?.name ?? ""), ...grantedFeatNameList], [char.featSlots, featMap, grantedFeatNameList]);
+    return collectImplementGroups({ classText: classEntry?.sourceText, classText2: classEntry2?.sourceText, raceText: raceEntry?.sourceText, featChoices: implChoices });
+  }, [char.featSlots, char.featChoices, featMap, classEntry, classEntry2, raceEntry]);
+  // 防具/盾牌擅长 token 集：职业（含混职）/种族 + 已选「盔甲擅长/盾牌擅长」专长；用于专长前置「擅长鳞甲」类判定
+  const featNameList = useMemo(() => char.featSlots.map((id) => featMap.get(id)?.name ?? ""), [char.featSlots, featMap]);
   const armorTokens = useMemo(
     () => {
-      const tokens = collectArmorTokens(classEntry?.sourceText, classEntry2?.sourceText, effectiveRaceText, featNameList);
+      const tokens = collectArmorTokens(classEntry?.sourceText, classEntry2?.sourceText, raceEntry?.sourceText, featNameList);
       // 射手督军：失去链甲擅长（token 可能以「链甲；轻盾」合并形式存在，按包含匹配删除）
       if (archerWarlordOn) for (const t of [...tokens]) if (t.includes("链甲") || t.includes("轻盾")) tokens.delete(t);
       // 前线领袖：获得重盾擅长
       if (frontLineLeaderOn) tokens.add("重盾");
-      // 混职天赋选项：正文「获得X的擅长」中的防具/盾牌 token
-      for (const a of hybridProf.armor) tokens.add(a);
       return tokens;
     },
-    [classEntry, classEntry2, effectiveRaceText, featNameList, archerWarlordOn, frontLineLeaderOn, hybridProf]
+    [classEntry, classEntry2, raceEntry, featNameList, archerWarlordOn, frontLineLeaderOn]
   );
   const shieldTokens = useMemo(
     () => {
-      const tokens = collectShieldTokens(classEntry?.sourceText, classEntry2?.sourceText, effectiveRaceText, featNameList);
+      const tokens = collectShieldTokens(classEntry?.sourceText, classEntry2?.sourceText, raceEntry?.sourceText, featNameList);
       // 射手督军：失去轻盾擅长
       if (archerWarlordOn) for (const t of [...tokens]) if (t.includes("轻盾") || t.includes("链甲")) tokens.delete(t);
       // 前线领袖：获得重盾擅长（盾牌归类到盾牌 token）
       if (frontLineLeaderOn) tokens.add("重盾");
-      // 混职天赋选项：正文「获得X的擅长」中的盾牌 token
-      for (const s of hybridProf.shield) tokens.add(s);
       return tokens;
     },
-    [classEntry, classEntry2, effectiveRaceText, featNameList, archerWarlordOn, frontLineLeaderOn, hybridProf]
+    [classEntry, classEntry2, raceEntry, featNameList, archerWarlordOn, frontLineLeaderOn]
   );
   // 擅长总览（装备面板「擅长」弹窗）：职业/种族/专长提供的武器、法器、防具擅长
   const profSources = useMemo(
@@ -5178,8 +2144,8 @@ export default function CharacterSheet({
         classText: classEntry?.sourceText,
         classText2: classEntry2?.sourceText,
         raceName: raceEntry ? cleanDisplayName(raceEntry.name) : "种族",
-        raceText: effectiveRaceText,
-        featNames: [...char.featSlots.map((id) => featMap.get(id)?.name ?? ""), ...grantedFeatNameList],
+        raceText: raceEntry?.sourceText,
+        featNames: char.featSlots.map((id) => featMap.get(id)?.name ?? ""),
         featChoices: featChoicesList,
       });
       // 射手督军：失去链甲/轻盾擅长，获得军用远程武器擅长 → 调整擅长总览
@@ -5208,31 +2174,10 @@ export default function CharacterSheet({
           else cls2.groups.push({ cat: "防具", items: ["重盾"] });
         }
       }
-      // 符文牧师「符文艺术」：愤怒之锤→军用锤/军用硬头锤；平静之刃→军用重刃 → 加入职业来源的武器组
-      if (runeWrathful || runeSerene) {
-        const addWeapon = sources.find((s) => classEntry && s.source === cleanDisplayName(classEntry.name))
-          ?? (classEntry ? (() => { const n = { source: cleanDisplayName(classEntry.name), groups: [] as ProfGroup[] }; sources.push(n); return n; })() : undefined);
-        if (addWeapon) {
-          let wp = addWeapon.groups.find((g) => g.cat === "武器");
-          if (!wp) { wp = { cat: "武器", items: [] }; addWeapon.groups.push(wp); }
-          for (const it of [runeWrathful ? ["军用锤", "军用硬头锤"] : [], runeSerene ? ["军用重刃"] : []].flat()) {
-            if (!wp.items.includes(it)) wp.items.push(it);
-          }
-        }
-      }
       return sources;
     },
-    [classEntry, classEntry2, effectiveRaceText, char.featSlots, featMap, featChoicesList, archerWarlordOn, frontLineLeaderOn, grantedFeatNameList, runeWrathful, runeSerene]
+    [classEntry, classEntry2, raceEntry, char.featSlots, featMap, featChoicesList, archerWarlordOn, frontLineLeaderOn]
   );
-  // 混职天赋选项授予的擅长，作为独立来源追加到「擅长」弹窗（防具/盾牌/武器）
-  const hybridProfSources = useMemo(() => {
-    if (hybridProf.armor.length + hybridProf.shield.length + hybridProf.weapon.length === 0) return [] as { source: string; groups: ProfGroup[] }[];
-    const groups: ProfGroup[] = [];
-    if (hybridProf.weapon.length) groups.push({ cat: "武器", items: hybridProf.weapon });
-    const defItems = [...hybridProf.armor, ...hybridProf.shield];
-    if (defItems.length) groups.push({ cat: "防具", items: defItems });
-    return [{ source: "混职天赋", groups }];
-  }, [hybridProf]);
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const swapList = swapPicker
     ? (() => {
@@ -5252,7 +2197,7 @@ export default function CharacterSheet({
       })()
     : [];
   const swapCurId = swapPicker
-    ? (swapPicker.kind === "power" ? char.powerSlots[swapPicker.cat][swapPicker.index] ?? "" : ((swapPicker.ekind === "fixed" ? char.equipmentSlots : swapPicker.ekind === "other" ? char.otherSlots : swapPicker.ekind === "consumable" ? char.consumableSlots : char.wondrousSlots)[swapPicker.index] ?? ""))
+    ? (swapPicker.kind === "power" ? char.powerSlots[swapPicker.cat][swapPicker.index] ?? "" : ((swapPicker.ekind === "fixed" ? char.equipmentSlots : swapPicker.ekind === "other" ? char.otherSlots : char.consumableSlots)[swapPicker.index] ?? ""))
     : "";
   const swapCurName = swapCurId ? ((swapPicker?.kind === "power" ? powerMap.get(swapCurId)?.name : itemMap.get(swapCurId)?.name) ?? swapCurId) : "";
   // 自动花销：基础物品 + 魔法装备（增强档位对应等级价格）+ 冒险装备手动价格
@@ -5285,17 +2230,8 @@ export default function CharacterSheet({
     for (const a of char.adventureItems) {
       if (a.name && a.cost > 0) list.push({ label: a.name, cost: a.cost });
     }
-    // 已学会的仪式按市场价格计入自动花销（含职业赠送的置顶仪式）
-    const autoRitualIds = new Set<string>([...(char.ritualSlots ?? []).filter((x): x is string => !!x), ...(char.classGrantedRitualIds ?? [])]);
-    for (const id of autoRitualIds) {
-      if (!id) continue;
-      const r = ritualMap.get(id);
-      if (!r) continue;
-      const cost = ritualMarketPrice(r);
-      if (cost > 0) list.push({ label: "仪式·" + r.name, cost });
-    }
     return list;
-  }, [char, itemMap, ritualMap]);
+  }, [char, itemMap]);
   const autoTotal = autoCosts.reduce((s, x) => s + x.cost, 0);
   const moneyBalance = char.money.earned - char.money.spent - autoTotal;
   const trainedCount = useMemo(() => {
@@ -5311,15 +2247,14 @@ export default function CharacterSheet({
     if (classEntry2) names.push(...parseBuiltinTrainedSkills(classEntry2.sourceText));
     return [...new Set(names)];
   }, [classEntry, classEntry2]);
-  // 职业技能池（供点选受训）：主职与混职去重合并，按技能面板标准顺序（SKILL_TABLE）排序
+  // 职业技能池（供点选受训）：主职与混职去重合并
   const classSkillPool = useMemo(() => {
     const pool = new Map<string, { name: string; ability: AbilityKey }>();
     for (const e of [classEntry, classEntry2]) {
       if (!e) continue;
       for (const s of parseClassSkills(e.sourceText)) if (!pool.has(s.name)) pool.set(s.name, s);
     }
-    const order = new Map(SKILL_TABLE.map((s, i) => [s.name, i]));
-    return [...pool.values()].sort((a, b) => (order.get(a.name) ?? 99) - (order.get(b.name) ?? 99));
+    return [...pool.values()];
   }, [classEntry, classEntry2]);
   // 有效受训技能 = 杂项受训 + 职业内置自动受训 + 职业点选受训
   const effectiveTrained = useMemo(
@@ -5327,17 +2262,30 @@ export default function CharacterSheet({
     [char.trainedSkills, classAutoTrained, char.classTrainedSkills]
   );
   const trainedSet = useMemo(() => new Set(effectiveTrained), [effectiveTrained]);
-  // 技能巧手：未受训技能检定 +1（含主职与混职），更换职业时随职业选项重建自动移除
-  const hasSkillVersatility = useMemo(
-    () => [classEntry, classEntry2].some((e) => !!e && /^!!\s*技能巧手 Skill Versatility/m.test(e.sourceText)),
-    [classEntry, classEntry2]
-  );
   const classTrainedSet = useMemo(() => new Set(char.classTrainedSkills), [char.classTrainedSkills]);
   const levelInfo = useMemo(() => (char.level >= 1 ? LEVELS[char.level - 1] : undefined), [char.level]);
   const isBoostLevel = levelInfo?.abilityBoost === "两个 +1";
   const raceTrait = useMemo(() => (raceEntry ? raceTraitHtml(raceEntry.sourceText) : undefined), [raceEntry]);
   const raceBody = useMemo(() => (raceEntry ? raceBodyHtml(raceEntry.sourceText) : undefined), [raceEntry]);
   const raceLoreSections = useMemo(() => (raceBody ? splitRaceLore(raceBody) : []), [raceBody]);
+  // 亚种：解析所有含「属于[[原种族]]的亚种」的条目，按键为原种族显示名（如「矮人 Dwarf」）
+  const subracesByBase = useMemo(() => {
+    const map = new Map<string, Entry[]>();
+    for (const r of races) {
+      const info = parseSubraceInfo(r.sourceText);
+      if (info) {
+        const list = map.get(info.baseRaceName) ?? [];
+        list.push(r);
+        map.set(info.baseRaceName, list);
+      }
+    }
+    return map;
+  }, [races]);
+  const raceBaseName = raceEntry ? `${raceEntry.name} ${raceEntry.nameEn ?? ""}`.trim() : "";
+  const subraces = raceEntry ? (subracesByBase.get(raceBaseName) ?? []) : [];
+  const subraceEntry = useMemo(() => (char.subraceId ? subraces.find((s) => s.id === char.subraceId) : undefined), [char.subraceId, subraces]);
+  const subraceInfo = useMemo(() => (subraceEntry ? parseSubraceInfo(subraceEntry.sourceText) : undefined), [subraceEntry]);
+  const subraceName = subraceEntry?.name ?? "";
   // 亚种 lore 直接「替换」对应的基础 lore 小节（无需切换按钮）：按标题中文段匹配（同类别或共享≥3字前缀），
   // 匹配到的位置用亚种小节顶替，名称用【亚种名】标识；未匹配的基础小节保留，未匹配的亚种小节追加末尾。
   const mergedLore = useMemo(() => {
@@ -5374,6 +2322,12 @@ export default function CharacterSheet({
     // 选中亚种时清空基础内部替代（如「龙惧」），避免与亚种增益（如「腐蚀传统」代替「龙息」）在同一条特性上互相冲突
     setChar({ ...char, subraceId: id, subraceBenefits: applied, raceSwaps: {} });
   };
+  // 切换某个亚种增益：true=使用替代版（默认），false=回到原版基础特性
+  const toggleSubraceBenefit = (title: string) => {
+    const next = { ...(char.subraceBenefits ?? {}) };
+    next[title] = !next[title];
+    setChar({ ...char, subraceBenefits: next });
+  };
   // 被替代的基础特性名 → 亚种增益（含正文，用于授予增益自带的威能）
   const subraceBenefitByBase = useMemo(() => {
     const map = new Map<string, { title: string; body: string }>();
@@ -5386,37 +2340,23 @@ export default function CharacterSheet({
     const body = raceTraitHtml(raceEntry.sourceText);
     return body ? parseRaceTraitLines(body) : [];
   }, [raceEntry]);
-  // 简洁模式：仅保留「技能奖励」之后的实用特性（身高/体重/属性调整/语言/技能奖励等已自动填写的条目不再展示）
-  const compactRaceTraits = useMemo(() => {
-    const i = raceTraits.findIndex((t) => /技能/.test(t.name));
-    return i >= 0 ? raceTraits.slice(i + 1) : raceTraits;
-  }, [raceTraits]);
   // 基础种族内部的可替代特性：被替代特性名（如「龙息」）→ 替代特性行（如「龙惧」）
   const raceAltForBase = useMemo(() => {
     const map = new Map<string, (typeof raceTraits)[number]>();
     for (const t of raceTraits) if (t.replaces && t.replaces !== t.name) map.set(t.replaces, t);
     return map;
   }, [raceTraits]);
+  // 基础种族内部可替代特性切换（如「龙惧」代替「龙息」），翻转后由种族 effect 依据 raceSwaps 重算威能授予
+  const toggleRaceSwap = (altName: string) => {
+    setChar((p) => ({ ...p, raceSwaps: { ...(p.raceSwaps ?? {}), [altName]: !(p.raceSwaps?.[altName]) } }));
+  };
   const slotCounts = levelInfo ? levelInfo.powers : { atWill: 0, encounter: 0, daily: 0, utility: 0 };
   const featSlotCount = levelInfo ? levelInfo.feats : 0;
   const effFeatCount = char.featSlotOverride ?? featSlotCount;
-  // 实际渲染的槽位数：以「自定义/等级默认」与数组长度的较大者为准，
-  // 避免「恢复」后数组里仍有额外已填充槽位时，计数与渲染不一致。
-  const featRenderCount = Math.max(effFeatCount, char.featSlots.length);
-  // 仪式槽位数：默认随角色等级（4E 规则无上限，可手动 +/− 覆盖）
-  const effRitualCount = char.ritualSlotOverride ?? char.level;
-  const ritualRenderCount = Math.max(effRitualCount, (char.ritualSlots ?? []).length);
-  // 德鲁伊「自然平衡 Balance of Nature」：随意攻击威能槽位由默认 2 个改为 3 个（换其他职业自动恢复）
-  const isDruidBalance = useMemo(
-    () => [classEntry, classEntry2].some((e) => !!e && /^!!\s*自然平衡/m.test(e.sourceText)),
-    [classEntry, classEntry2]
-  );
   const effPowerCount = (cat: keyof PowerSlots): number => {
     if (cat === "special") return char.powerSlots.special.length;
     const o = char.powerSlotOverrides?.[cat];
-    if (o !== undefined) return o;
-    if (cat === "atWill" && isDruidBalance) return Math.max(3, slotCounts[cat]);
-    return slotCounts[cat];
+    return o !== undefined ? o : slotCounts[cat];
   };
 
   // 威能面板当前含有的全部威能 id（供职业特性「已加入」判定）
@@ -5425,8 +2365,7 @@ export default function CharacterSheet({
     for (const c of SLOT_CATS) for (const id of char.powerSlots[c.key]) if (id) set.add(id);
     return set;
   }, [char.powerSlots]);
-  // 把特性授予的威能加入威能面板：优先按威能名尾缀（攻击N/辅助N）归类，否则按 grantedPowerCategory
-  // 落入对应空位（无空位则顺延追加一格，避免威能丢失）。种族/职业/专长赠送威能均遵守此规则。
+  // 把特性授予的威能加入威能面板：按 grantedPowerCategory 归类落入对应空位（无空位则顺延追加一格，避免威能丢失）
   function onAddPowers(powers: Entry[]) {
     setChar((p) => {
       const slots = { ...p.powerSlots };
@@ -5434,7 +2373,7 @@ export default function CharacterSheet({
       for (const c of SLOT_CATS) for (const id of slots[c.key]) if (id) used.add(id);
       for (const pw of powers) {
         if (!pw || used.has(pw.id)) continue;
-        const cat = grantedPowerSlot(pw.usage, pw.powerKind, pw.name);
+        const cat = grantedPowerCategory(pw.usage, pw.powerKind);
         if (!cat) continue;
         const arr = [...slots[cat]];
         const idx = arr.findIndex((x) => !x);
@@ -5484,18 +2423,11 @@ export default function CharacterSheet({
     }
   };
   // 选择/更换种族时：自动填充技能种族加值、语言槽，自动加入种族授予威能（特性内 [[...]] 威能，
-  // 如半身人「死里逃生」）。辅助威能需用户手动选择。
-  // 特性自动授予与手动选择分离：切换基础内部替代/亚种增益时仅重算自动授予部分，手动选择的辅助威能保留；
-  // 更换种族时清空全部种族威能（含手动选择），防止遗留。
-  const prevRaceIdRef = useRef<string | undefined>(undefined);
+  // 如半身人「死里逃生」），并清理旧种族已选的威能（防止遗留）。辅助威能需用户手动选择。
   useEffect(() => {
     setChar((p) => {
-      // 无种族且无任何种族威能记录时，无需重算（默认角色的技能/语言已初始化）
-      if (!raceEntry && (p.raceAutoGrantedPowerIds ?? []).length === 0 && (p.raceGrantedPowerIds ?? []).length === 0) return p;
-      if (prevRaceIdRef.current === undefined) prevRaceIdRef.current = raceEntry?.id;
-      const prevRaceId = prevRaceIdRef.current;
-      const raceChanged = raceEntry?.id !== prevRaceId;
-      prevRaceIdRef.current = raceEntry?.id;
+      const oldRace = new Set(p.raceGrantedPowerIds ?? []);
+      if (oldRace.size === 0 && !raceEntry) return p;
       let newRace: Entry[] = [];
       const newIds = new Set<string>();
       if (raceEntry) {
@@ -5504,16 +2436,9 @@ export default function CharacterSheet({
         newRace = raceGrantedPowerEntries(ct, { swaps: p.raceSwaps, subBenefits: p.subraceBenefits, subByBase: subraceBenefitByBase }, (t) => wikiLookup(t));
         for (const pw of newRace) newIds.add(pw.id);
       }
-      // 旧的自动授予集合（切换特性时重算），与手动选择的辅助威能区分开
-      const oldAuto = new Set(p.raceAutoGrantedPowerIds ?? []);
-      const oldManual = (p.raceGrantedPowerIds ?? []).filter((id) => !oldAuto.has(id));
-      // 仅清空需要重算的部分：切换特性只清旧自动；更换种族则自动+手动全部清空
-      const clearIds = new Set<string>();
-      for (const id of oldAuto) clearIds.add(id);
-      if (raceChanged) for (const id of oldManual) clearIds.add(id);
       const slots = { ...p.powerSlots };
-      if (clearIds.size > 0) {
-        for (const c of SLOT_CATS) slots[c.key] = slots[c.key].map((id) => (id && clearIds.has(id) ? "" : id));
+      if (oldRace.size) {
+        for (const c of SLOT_CATS) slots[c.key] = slots[c.key].map((id) => (id && oldRace.has(id) ? "" : id));
       }
       const used = new Set<string>();
       for (const c of SLOT_CATS) for (const id of slots[c.key]) if (id) used.add(id);
@@ -5535,138 +2460,10 @@ export default function CharacterSheet({
         cur.race = skills[s.name] ?? 0;
         sm[s.name] = cur;
       }
-      const keepManual = raceChanged ? [] : oldManual;
-      return { ...p, powerSlots: slots, skillMods: sm, languages, raceAutoGrantedPowerIds: [...newIds], raceGrantedPowerIds: Array.from(new Set([...keepManual, ...newIds])) };
+      return { ...p, powerSlots: slots, skillMods: sm, languages, raceGrantedPowerIds: [...newIds] };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceEntry, powerMap, char.raceSwaps, char.subraceBenefits, subraceBenefitByBase]);
-
-  // 记录「职业赠送专长」id（不占用常规专长槽位）：展示与更换职业时据此清除
-  const trackClassFeats = (feats: Entry[]) => {
-    if (!feats || feats.length === 0) return;
-    setChar((p) => ({
-      ...p,
-      classGrantedFeatIds: Array.from(new Set([...p.classGrantedFeatIds, ...feats.map((x) => x.id)])),
-    }));
-  };
-  // 特性选择变化时，把「不再赠送」的职业专长从记录移除（如战斗流派切换选项后旧流派赠送的专长）
-  const onRemoveClassFeats = (ids: string[]) => {
-    if (!ids || ids.length === 0) return;
-    setChar((p) => ({ ...p, classGrantedFeatIds: p.classGrantedFeatIds.filter((id) => !ids.includes(id)) }));
-  };
-
-  // 记录「职业赠送仪式」id 及来源特性名（置顶展示，不占用仪式槽位）：更换职业时据此清除
-  const trackClassRituals = (rituals: { entry: Entry; source: string }[]) => {
-    if (!rituals || rituals.length === 0) return;
-    setChar((p) => ({
-      ...p,
-      classGrantedRitualIds: Array.from(new Set([...p.classGrantedRitualIds, ...rituals.map((x) => x.entry.id)])),
-      classGrantedRitualSources: { ...p.classGrantedRitualSources, ...Object.fromEntries(rituals.map((x) => [x.entry.id, x.source])) },
-    }));
-  };
-  // 特性选择变化时，把「不再赠送」的职业仪式从记录移除（连同来源特性名）
-  const onRemoveClassRituals = (ids: string[]) => {
-    if (!ids || ids.length === 0) return;
-    setChar((p) => {
-      const sources = { ...p.classGrantedRitualSources };
-      for (const id of ids) delete sources[id];
-      return { ...p, classGrantedRitualIds: p.classGrantedRitualIds.filter((id) => !ids.includes(id)), classGrantedRitualSources: sources };
-    });
-  };
-
-  // —— 专长赠送威能 / 威能替换 ——
-  // 选择专长时把赠送威能加入面板，并记录「专长槽位 → 赠送威能 id」，清空/更换专长时据此移除。
-  // 前提与职业特性相关的专长（如「引导神力」类专长）赠送的威能送入「种族/职业威能」；其余按威能后缀/用法归类。
-  const addFeatGrantedPowers = (idx: number, feat: Entry, powers: Entry[]) => {
-    if (!powers || powers.length === 0) return;
-    const toSpecial = featPrereqClassFeature(feat);
-    setChar((p) => {
-      const slots = { ...p.powerSlots };
-      const used = new Set<string>();
-      for (const c of SLOT_CATS) for (const id of slots[c.key]) if (id) used.add(id);
-      for (const pw of powers) {
-        if (!pw || used.has(pw.id)) continue;
-        const cat = toSpecial ? "special" : grantedPowerSlot(pw.usage, pw.powerKind, pw.name);
-        if (!cat) continue;
-        const arr = [...slots[cat]];
-        const i = arr.findIndex((x) => !x);
-        if (i >= 0) arr[i] = pw.id;
-        else arr.push(pw.id);
-        slots[cat] = arr;
-        used.add(pw.id);
-      }
-      return { ...p, powerSlots: slots, featGrantedPowerIds: { ...p.featGrantedPowerIds, [idx]: powers.map((x) => x.id) } };
-    });
-  };
-  // 清空/更换专长：把该槽位赠送的威能从面板移除，并清除记录
-  const removeFeatGrantedPowers = (idx: number) => {
-    setChar((p) => {
-      const prevIds = p.featGrantedPowerIds?.[idx] ?? [];
-      if (prevIds.length === 0) return p;
-      const idSet = new Set(prevIds);
-      const slots = { ...p.powerSlots };
-      for (const c of SLOT_CATS) {
-        slots[c.key] = slots[c.key].map((id) => (id && idSet.has(id) ? "" : id));
-      }
-      const featGrantedPowerIds = { ...p.featGrantedPowerIds };
-      delete featGrantedPowerIds[idx];
-      return { ...p, powerSlots: slots, featGrantedPowerIds };
-    });
-  };
-  // 选择型专长选定选项：记录到 featChoices，并为混职天赋选项落地「赠送威能」（清除旧选项的旧威能）
-  const handleFeatChoice = (item: string) => {
-    const picker = featChoicePicker;
-    if (!picker) return;
-    const idx = picker.index;
-    const isHybrid = picker.hybridGroups && picker.hybridGroups.length > 0;
-    // 先移除旧选项赠送的威能（武器/法器专长无赠送，为空操作）
-    removeFeatGrantedPowers(idx);
-    setChar((p) => ({ ...p, featChoices: { ...p.featChoices, [idx]: item } }));
-    if (isHybrid) {
-      const f = featMap.get(char.featSlots[idx]);
-      const r = resolveHybridOption(picker.hybridGroups!, item);
-      if (f && r) {
-        const gates = levelGatedWikiLinks(r.body);
-        const powers: Entry[] = [];
-        for (const t of wikiLinkTargets(r.body)) {
-          const g = gates.get(t);
-          if (g !== undefined && char.level < g) continue;
-          const e = wikiLookup(t);
-          if (e && e.category === "power") powers.push(e);
-        }
-        if (powers.length) addFeatGrantedPowers(idx, f, powers);
-      }
-    }
-    setFeatChoicePicker(null);
-  };
-  // 替换型专长：用户选定格子后，把新威能填入该槽位并记录
-  const fillFeatReplacementSlot = (idx: number, newPowerId: string, cat: keyof PowerSlots, index: number) => {
-    setChar((p) => ({
-      ...p,
-      powerSlots: setPowerSlot(p.powerSlots, cat, index, newPowerId),
-      featGrantedPowerIds: { ...p.featGrantedPowerIds, [idx]: [newPowerId] },
-    }));
-    setReplacementPicker(null);
-  };
-  // 替换型专长弹窗的格子列表：威能面板全部类别 × 槽位（含空位与等级标签）
-  const replSlotGroups = useMemo<ReplSlotGroup[]>(
-    () =>
-      SLOT_CATS.map((cat) => {
-        const arr = char.powerSlots[cat.key] ?? [];
-        const isSpecial = cat.key === "special";
-        const lvls = isSpecial ? [] : powerSlotLevels(cat.key as "atWill", char.level);
-        const fallbackLv = lvls.length ? lvls[lvls.length - 1] : undefined;
-        const count = Math.max(isSpecial ? arr.length : effPowerCount(cat.key), arr.length);
-        return {
-          key: cat.key,
-          label: cat.label,
-          color: cat.color,
-          items: Array.from({ length: count }, (_, i) => ({ id: arr[i] ?? "", level: isSpecial ? undefined : (lvls[i] ?? fallbackLv) })),
-        };
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [char.powerSlots, char.level, isDruidBalance, slotCounts, char.powerSlotOverrides]
-  );
 
   function addEarn() {
     const n = parseInt(earnInput, 10);
@@ -5689,7 +2486,7 @@ export default function CharacterSheet({
       xp: lv === 0 ? "0" : String(xpForLevel(lv)),
       paragonPathId: lv < 11 ? undefined : p.paragonPathId,
       epicDestinyId: lv < 21 ? undefined : p.epicDestinyId,
-      powerPoints: hybridPowerPoints(p, resolveClassId, resolvePowerId) ?? psionicPowerPoints(p.classId, lv) ?? p.powerPoints,
+      powerPoints: psionicPowerPoints(p.classId, lv) ?? p.powerPoints,
     }));
   }
 
@@ -5804,101 +2601,21 @@ export default function CharacterSheet({
     });
   }
 
-  // 仪式：按槽位选择/清空；默认槽位数随角色等级，可通过 +/− 覆盖
-  function openRitualPicker(index: number) {
-    setRitualPickerSlot(index);
-  }
-  function selectRitualSlot(index: number, id: string) {
-    setChar((p) => ({ ...p, ritualSlots: setRitualSlot(p.ritualSlots ?? [], index, id) }));
-  }
-  function clearRitualSlotAt(index: number) {
-    setChar((p) => ({ ...p, ritualSlots: clearRitualSlot(p.ritualSlots ?? [], index) }));
-  }
-  function growRitualSlots() {
-    setChar((p) => {
-      const base = p.level;
-      const eff = p.ritualSlotOverride ?? base;
-      const render = Math.max(eff, (p.ritualSlots ?? []).length);
-      const desired = Math.max(0, Math.min(30, render + 1));
-      return { ...p, ritualSlots: padEmpty(p.ritualSlots ?? [], desired), ritualSlotOverride: desired === base ? undefined : desired };
-    });
-  }
-  function reduceRitualSlots() {
-    setChar((p) => {
-      const base = p.level;
-      const eff = p.ritualSlotOverride ?? base;
-      const render = Math.max(eff, (p.ritualSlots ?? []).length);
-      const desired = Math.max(0, render - 1);
-      return { ...p, ritualSlots: trimTrailingEmpty(p.ritualSlots ?? [], desired), ritualSlotOverride: desired === base ? undefined : desired };
-    });
-  }
-  function restoreRitualOverride() {
-    setChar((p) => ({ ...p, ritualSlotOverride: undefined, ritualSlots: trimTrailingEmpty(p.ritualSlots ?? [], p.level) }));
-  }
-
-  // 某类别威能的等级默认槽位数（含德鲁伊「自然平衡」对随意威能特判）
-  const powerDefaultCount = (cat: keyof PowerSlots): number => {
-    if (cat === "special") return char.powerSlots.special.length;
-    if (cat === "atWill" && isDruidBalance) return Math.max(3, slotCounts.atWill);
-    return slotCounts[cat];
-  };
-  function growPowerSlots(cat: keyof PowerSlots) {
-    setChar((p) => {
-      const base = powerDefaultCount(cat);
-      const eff = p.powerSlotOverrides?.[cat] ?? base;
-      const render = Math.max(eff, p.powerSlots[cat].length);
-      const desired = Math.max(0, Math.min(20, render + 1));
-      const overrides = { ...(p.powerSlotOverrides ?? {}) };
-      if (desired === base) delete overrides[cat]; else overrides[cat] = desired;
-      return {
-        ...p,
-        powerSlots: { ...p.powerSlots, [cat]: padEmpty(p.powerSlots[cat], desired) },
-        powerSlotOverrides: overrides,
-      };
-    });
-  }
-  function reducePowerSlots(cat: keyof PowerSlots) {
-    setChar((p) => {
-      const base = powerDefaultCount(cat);
-      const eff = p.powerSlotOverrides?.[cat] ?? base;
-      const render = Math.max(eff, p.powerSlots[cat].length);
-      const desired = Math.max(0, render - 1);
-      const overrides = { ...(p.powerSlotOverrides ?? {}) };
-      if (desired === base) delete overrides[cat]; else overrides[cat] = desired;
-      return {
-        ...p,
-        powerSlots: { ...p.powerSlots, [cat]: trimTrailingEmpty(p.powerSlots[cat], desired) },
-        powerSlotOverrides: overrides,
-      };
-    });
+  function setPowerOverride(cat: keyof PowerSlots, n: number) {
+    setChar((p) => ({ ...p, powerSlotOverrides: { ...(p.powerSlotOverrides ?? {}), [cat]: n } }));
   }
   function restorePowerOverride(cat: keyof PowerSlots) {
     setChar((p) => {
       const o = { ...(p.powerSlotOverrides ?? {}) };
       delete o[cat];
-      return { ...p, powerSlotOverrides: o, powerSlots: { ...p.powerSlots, [cat]: trimTrailingEmpty(p.powerSlots[cat], powerDefaultCount(cat)) } };
+      return { ...p, powerSlotOverrides: o };
     });
   }
-  function growFeatSlots() {
-    setChar((p) => {
-      const base = featSlotCount;
-      const eff = p.featSlotOverride ?? base;
-      const render = Math.max(eff, p.featSlots.length);
-      const desired = Math.max(0, Math.min(20, render + 1));
-      return { ...p, featSlots: padEmpty(p.featSlots, desired), featSlotOverride: desired === base ? undefined : desired };
-    });
-  }
-  function reduceFeatSlots() {
-    setChar((p) => {
-      const base = featSlotCount;
-      const eff = p.featSlotOverride ?? base;
-      const render = Math.max(eff, p.featSlots.length);
-      const desired = Math.max(0, render - 1);
-      return { ...p, featSlots: trimTrailingEmpty(p.featSlots, desired), featSlotOverride: desired === base ? undefined : desired };
-    });
+  function setFeatOverride(n: number) {
+    setChar((p) => ({ ...p, featSlotOverride: n }));
   }
   function restoreFeatOverride() {
-    setChar((p) => ({ ...p, featSlotOverride: undefined, featSlots: trimTrailingEmpty(p.featSlots, featSlotCount) }));
+    setChar((p) => ({ ...p, featSlotOverride: undefined }));
   }
 
   // 行动资源面板：行动点 / 里程碑 / 灵能点（位于经验下方，尺寸与原先一致）
@@ -5939,7 +2656,7 @@ export default function CharacterSheet({
             <button type="button" className="step" onClick={() => setChar({ ...char, powerPoints: Math.max(0, (char.powerPoints ?? 0) - 1) })}>−</button>
             <span className="level-value">{char.powerPoints ?? 0}</span>
             <button type="button" className="step" onClick={() => setChar({ ...char, powerPoints: Math.min(99, (char.powerPoints ?? 0) + 1) })}>+</button>
-            <button type="button" className="step reset" title="重置灵能点" onClick={() => setChar({ ...char, powerPoints: hybridPowerPoints(char, resolveClassId, resolvePowerId) ?? psionicPowerPoints(char.classId, char.level) ?? 0 })}>↺</button>
+            <button type="button" className="step reset" title="重置灵能点" onClick={() => setChar({ ...char, powerPoints: psionicPowerPoints(char.classId, char.level) ?? 0 })}>↺</button>
           </div>
         )}
       </div>
@@ -6016,10 +2733,7 @@ export default function CharacterSheet({
       <div className="stat-layout">
         <div className="stat-col">
           <div className="mini-block">
-            <div className="mb-head">
-              <span className="mb-label">先攻</span>
-              <button type="button" className="def-detail-btn" onClick={() => setInitDetailOpen(true)} title="查看先攻加值的构成">查看详情</button>
-            </div>
+            <span className="mb-label">先攻</span>
             <span className="mb-value">{fmtMod(stats.initiative + char.initMods.other)}</span>
             {mode === "edit" ? (
               <ModInputs sources={[{ key: "other", label: "其他" }]} mods={char.initMods} onChange={(k, v) => setInitMod(k as keyof InitMods, v)} />
@@ -6037,15 +2751,10 @@ export default function CharacterSheet({
                   购点 {BUY_POINTS - buyPointsUsed(char.abilities)}/{BUY_POINTS}
                 </button>
               ))}
-            </div>
-            <div className="ability-actions-row">
-              <span className="ability-actions-left">
-                <label className="buy-switch" title="22 购点法：起始 8、10、10、10、10、10">
-                  <span>购点</span>
-                  <Switch selected={abilityMode === "buy"} onChange={(e) => setAbilityMode((e.target as any).selected ? "buy" : "free")} />
-                </label>
-              </span>
-              <button type="button" className="def-detail-btn" onClick={() => setAbilityDetailOpen(true)} title="查看每项属性的基础值与种族加成构成">查看详情</button>
+              <label className="buy-switch" title="22 购点法：起始 8、10、10、10、10、10">
+                <span>购点</span>
+                <Switch selected={abilityMode === "buy"} onChange={(e) => setAbilityMode((e.target as any).selected ? "buy" : "free")} />
+              </label>
             </div>
             {raceInfo && (raceInfo.one || raceInfo.two.length > 0) && (
               <div className="race-bonus-inline">
@@ -6087,10 +2796,7 @@ export default function CharacterSheet({
             </div>
           </div>
           <div className="mini-block">
-            <div className="mb-head">
-              <span className="mb-label">抵御</span>
-              <button type="button" className="def-detail-btn" onClick={() => setDefDetailOpen(true)} title="查看各防御属性的详细计算过程">查看详情</button>
-            </div>
+            <span className="mb-label">抵御</span>
             <div className="defense-grid">
               <DefenseCell label="AC" value={stats.ac} mods={acMods} mode={mode} onChange={(src, v) => setDefenseMod("ac", src, v)} />
               <DefenseCell label="强韧" value={stats.fort} mods={fortMods} mode={mode} onChange={(src, v) => setDefenseMod("fort", src, v)} />
@@ -6101,10 +2807,7 @@ export default function CharacterSheet({
         </div>
         <div className="stat-col">
           <div className="mini-block">
-            <div className="mb-head">
-              <span className="mb-label">移动力</span>
-              <button type="button" className="def-detail-btn" onClick={() => setSpeedDetailOpen(true)} title="查看基础速度与各类加成构成">查看详情</button>
-            </div>
+            <span className="mb-label">移动力</span>
             <span className="mb-value">{speedDisplay}<span className="mb-unit">速度(格)</span></span>
             {mode === "edit" ? (
               <ModInputs
@@ -6124,10 +2827,7 @@ export default function CharacterSheet({
             )}
           </div>
           <div className="mini-block tall">
-            <div className="mb-head">
-              <span className="mb-label">生命</span>
-              <button type="button" className="def-detail-btn" onClick={() => setLifeDetailOpen(true)} title="查看生命值、重伤值、回复值、回复力的构成">查看详情</button>
-            </div>
+            <span className="mb-label">生命</span>
             <div className="health-list">
               <div className="health-main">
                 <div className="health-main-row">
@@ -6203,15 +2903,15 @@ export default function CharacterSheet({
     () => collectClassSources([classEntry?.sourceText, classEntry2?.sourceText], "攻击骰", char.level),
     [classEntry, classEntry2, char.level]
   );
-  // 已选专长中提及「攻击骰」的 → 攻击面板专长加值来源（含职业赠送专长）
+  // 已选专长中提及「攻击骰」的 → 攻击面板专长加值来源
   const featAttackSources = useMemo(
-    () => collectFeatSources([...char.featSlots.map((id) => featMap.get(id)), ...grantedFeatEntries], "攻击骰", char.level),
-    [char.featSlots, featMap, char.level, grantedFeatEntries]
+    () => collectFeatSources(char.featSlots.map((id) => featMap.get(id)), "攻击骰", char.level),
+    [char.featSlots, featMap, char.level]
   );
-  // 已选专长中提及「伤害骰」的 → 伤害面板专长加值来源（含职业赠送专长）
+  // 已选专长中提及「伤害骰」的 → 伤害面板专长加值来源
   const featDamageSources = useMemo(
-    () => collectFeatSources([...char.featSlots.map((id) => featMap.get(id)), ...grantedFeatEntries], "伤害骰", char.level),
-    [char.featSlots, featMap, char.level, grantedFeatEntries]
+    () => collectFeatSources(char.featSlots.map((id) => featMap.get(id)), "伤害骰", char.level),
+    [char.featSlots, featMap, char.level]
   );
   // 攻击/伤害：数据面板下方并排（攻击在左、伤害在右），单栏与双栏均通栏展示
   const combatRow = (
@@ -6232,58 +2932,11 @@ export default function CharacterSheet({
     }
     setChar({ ...char, classFeatureChoices: next });
   };
-  // 职业特性正文中的 [[威能/专长/野兽]] 超链接 → 悬浮卡片查找
+  // 职业特性正文中的 [[威能/专长]] 超链接 → 悬浮卡片查找
   const wikiLookup = useMemo(
-    () => (target: string) => powerMap.get(target) ?? featMap.get(target) ?? itemMap.get(target) ?? ritualMap.get(target) ?? creatureMap.get(target) ?? viceMap.get(target) ?? pactMap.get(target) ?? magicSchoolMap.get(target) ?? domainMap.get(target) ?? virtueMap.get(target),
-    [powerMap, featMap, itemMap, ritualMap, creatureMap, viceMap, pactMap, magicSchoolMap, domainMap, virtueMap]
+    () => (target: string) => powerMap.get(target) ?? featMap.get(target) ?? itemMap.get(target),
+    [powerMap, featMap, itemMap]
   );
-  // 威能条目解析（混职灵能点选项按「可强化」关键字与等级计算用）
-  const resolvePowerId = useMemo(() => (id: string) => powerMap.get(id), [powerMap]);
-  // 职业条目解析（混职灵能点选项按「灵能强化（混职）」特性检测用）
-  const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
-  const resolveClassId = useMemo(() => (id: string) => classById.get(id), [classById]);
-  // 专长赠送威能自动补入（与职业特性行为一致）：数据加载后扫描当前已选专长一次，
-  // 把「应赠送但尚未进入威能面板」的威能自动加入；替换型专长需玩家手动选格子，跳过。
-  const featGrantScanned = useRef(false);
-  useEffect(() => {
-    if (feats.length === 0 || powers.length === 0 || featGrantScanned.current) return;
-    featGrantScanned.current = true;
-    if (!char.featSlots || char.featSlots.length === 0) return;
-    const missingByIdx: { idx: number; feat: Entry; powers: Entry[] }[] = [];
-    char.featSlots.forEach((id, idx) => {
-      if (!id) return;
-      const f = featMap.get(id);
-      if (!f || featReplacementInfo(f, wikiLookup)) return;
-      const granted = featGrantedPowers(f, wikiLookup).filter((p) => !panelIds.has(p.id));
-      if (granted.length) missingByIdx.push({ idx, feat: f, powers: granted });
-    });
-    if (missingByIdx.length === 0) return;
-    setChar((p) => {
-      let slots = p.powerSlots;
-      const featGrantedPowerIds = { ...p.featGrantedPowerIds };
-      for (const { idx, feat, powers } of missingByIdx) {
-        const toSpecial = featPrereqClassFeature(feat);
-        const used = new Set<string>();
-        for (const c of SLOT_CATS) for (const id of slots[c.key]) if (id) used.add(id);
-        const added: string[] = [];
-        for (const pw of powers) {
-          if (!pw || used.has(pw.id)) continue;
-          const cat = toSpecial ? "special" : grantedPowerSlot(pw.usage, pw.powerKind, pw.name);
-          if (!cat) continue;
-          const arr = [...slots[cat]];
-          const i = arr.findIndex((x) => !x);
-          if (i >= 0) arr[i] = pw.id;
-          else arr.push(pw.id);
-          slots = { ...slots, [cat]: arr };
-          used.add(pw.id);
-          added.push(pw.id);
-        }
-        if (added.length) featGrantedPowerIds[idx] = Array.from(new Set([...(featGrantedPowerIds[idx] ?? []), ...added]));
-      }
-      return { ...p, powerSlots: slots, featGrantedPowerIds };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feats, powers]);
   const raceClassCol = (
     <><section className="block">
         <div className="block-head">
@@ -6308,7 +2961,7 @@ export default function CharacterSheet({
         </div>
         {raceEntry ? (
           <>
-            <div className="pf-entry-title">{subraceEntry ? subraceEntry.name : raceEntry.name}</div>
+            <div className="race-panel-title">{subraceEntry ? subraceEntry.name : raceEntry.name}</div>
             {subraces.length > 0 && subraceOpen && (
               <div className="subrace-chooser">
                 <span className="subrace-chooser-label">亚种：</span>
@@ -6335,7 +2988,7 @@ export default function CharacterSheet({
             <div className="race-detail">
               {raceTraits.length > 0 && (
                 <div className="race-trait">
-                  {(raceDetail ? raceTraits : compactRaceTraits).map((t, i) => {
+                  {raceTraits.map((t, i) => {
                     // 三选一：同一基础特性同时被「基础内部替代」（龙惧替代龙息）与「亚种增益」（腐蚀传统/复仇震击替代龙息）替换时，
                     // 展示三个互斥选项（基础 / 替代 / 亚种），选中其一即自动停用其余，并同步到威能面板。
                     const multiSub = subraceBenefitByBase.get(t.name);
@@ -6352,44 +3005,42 @@ export default function CharacterSheet({
                         setChar({ ...char, raceSwaps: rs, subraceBenefits: sb });
                       };
                       const activeBody = subActive
-                        ? `''${chineseName(multiSub.title)}：''${reorderBenefitBody(multiSub.body, raceDetail)}`
+                        ? `''${chineseName(multiSub.title)}：''${reorderBenefitBody(multiSub.body)}`
                         : swapActive
-                          ? `''${chineseName(multiSwap.name)}：''${reorderBenefitBody(multiSwap.body, raceDetail)}`
+                          ? `''${chineseName(multiSwap.name)}：''${reorderBenefitBody(multiSwap.body)}`
                           : `''${chineseName(t.name)}：''${t.body}`;
                       return (
                         <div key={i} className={`race-trait-line sr-replaceable${subActive || swapActive ? " replaced" : ""}`}>
                           <div className="race-trait-row">
-                            {raceDetail && (
-                              <div className="race-trait-opts">
-                                <button
-                                  type="button"
-                                  className={`sr-tag${baseActive ? " active" : ""}`}
-                                  onClick={() => pick("base")}
-                                  title={baseActive ? "当前为原始特性" : `切回原始特性「${chineseName(t.name)}」`}
-                                >
-                                  <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                  {chineseName(t.name)}
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`sr-tag${swapActive ? " active" : ""}`}
-                                  onClick={() => pick("swap")}
-                                  title={swapActive ? `当前已用「${chineseName(multiSwap.name)}」替代` : `改用「${chineseName(multiSwap.name)}」替代`}
-                                >
-                                  <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                  {chineseName(multiSwap.name)}
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`sr-tag${subActive ? " active" : ""}`}
-                                  onClick={() => pick("sub")}
-                                  title={subActive ? `当前已用亚种增益「${chineseName(multiSub.title)}」替代` : `改用亚种增益「${chineseName(multiSub.title)}」替代`}
-                                >
-                                  <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                  {chineseName(multiSub.title)}
-                                </button>
-                              </div>
-                            )}
+                            <div className="race-trait-opts">
+                              <button
+                                type="button"
+                                className={`sr-tag${baseActive ? " active" : ""}`}
+                                onClick={() => pick("base")}
+                                title={baseActive ? "当前为原始特性" : `切回原始特性「${chineseName(t.name)}」`}
+                              >
+                                <span className="material-symbols-outlined sr-ic">swap_horiz</span>
+                                {chineseName(t.name)}
+                              </button>
+                              <button
+                                type="button"
+                                className={`sr-tag${swapActive ? " active" : ""}`}
+                                onClick={() => pick("swap")}
+                                title={swapActive ? `当前已用「${chineseName(multiSwap.name)}」替代` : `改用「${chineseName(multiSwap.name)}」替代`}
+                              >
+                                <span className="material-symbols-outlined sr-ic">swap_horiz</span>
+                                {chineseName(multiSwap.name)}
+                              </button>
+                              <button
+                                type="button"
+                                className={`sr-tag${subActive ? " active" : ""}`}
+                                onClick={() => pick("sub")}
+                                title={subActive ? `当前已用亚种增益「${chineseName(multiSub.title)}」替代` : `改用亚种增益「${chineseName(multiSub.title)}」替代`}
+                              >
+                                <span className="material-symbols-outlined sr-ic">swap_horiz</span>
+                                {chineseName(multiSub.title)}
+                              </button>
+                            </div>
                             <div className="race-trait-content">
                               <WikiBody body={activeBody} fields={raceEntry.fields} lookup={wikiLookup} />
                             </div>
@@ -6405,36 +3056,21 @@ export default function CharacterSheet({
                       if (raceAlt) {
                         const altName = raceAlt.name;
                         const swapApplied = !!char.raceSwaps?.[altName];
-                        const pickAlt = (useAlt: boolean) => setChar({ ...char, raceSwaps: { ...(char.raceSwaps ?? {}), [altName]: useAlt } });
-                        const activeBody = swapApplied ? `''${altName}：''${reorderBenefitBody(raceAlt.body, raceDetail)}` : `''${t.name}：''${t.body}`;
                         return (
                           <div key={i} className={`race-trait-line sr-replaceable${swapApplied ? " replaced" : ""}`}>
                             <div className="race-trait-row">
-                              {raceDetail && (
-                                <div className="race-trait-opts">
-                                  <button
-                                    type="button"
-                                    className={`sr-tag${!swapApplied ? " active" : ""}`}
-                                    onClick={() => pickAlt(false)}
-                                    title={!swapApplied ? `当前为原始特性` : `切回原始特性「${chineseName(t.name)}」`}
-                                  >
-                                    <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                    {chineseName(t.name)}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`sr-tag${swapApplied ? " active" : ""}`}
-                                    onClick={() => pickAlt(true)}
-                                    title={swapApplied ? `当前已用「${chineseName(altName)}」替代` : `改用「${chineseName(altName)}」替代`}
-                                  >
-                                    <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                    {chineseName(altName)}
-                                  </button>
-                                </div>
-                              )}
+                              <button
+                                type="button"
+                                className={`sr-tag${swapApplied ? " active" : ""}`}
+                                onClick={() => toggleRaceSwap(altName)}
+                                title={swapApplied ? `已使用「${altName}」替代「${t.name}」，点击还原` : `点击以「${altName}」替代「${t.name}」`}
+                              >
+                                <span className="material-symbols-outlined sr-ic">swap_horiz</span>
+                                {swapApplied ? chineseName(t.name) : altName}
+                              </button>
                               <div className="race-trait-content">
                                 <WikiBody
-                                  body={activeBody}
+                                  body={swapApplied ? `''${altName}：''${reorderBenefitBody(raceAlt.body)}` : `''${t.name}：''${t.body}`}
                                   fields={raceEntry.fields}
                                   lookup={wikiLookup}
                                 />
@@ -6449,42 +3085,23 @@ export default function CharacterSheet({
                         </div>
                       );
                     }
-                    // 可用亚种特性替换的基础特性：与三选一一致，提供「原始特性 / 亚种增益」两个按钮互斥选择
+                    // 可用亚种特性替换的基础特性：前置标签即切换按钮，点一下直接替换，再点一下还原
                     const applied = char.subraceBenefits?.[repl.title] !== false;
-                    const pickSub = (useSub: boolean) => {
-                      const sb = { ...(char.subraceBenefits ?? {}) };
-                      sb[repl.title] = useSub;
-                      setChar({ ...char, subraceBenefits: sb });
-                    };
-                    const activeBody = applied ? `''${repl.title}：''${reorderBenefitBody(repl.body, raceDetail)}` : `''${t.name}：''${t.body}`;
                     return (
                       <div key={i} className={`race-trait-line sr-replaceable${applied ? " replaced" : ""}`}>
                         <div className="race-trait-row">
-                          {raceDetail && (
-                            <div className="race-trait-opts">
-                              <button
-                                type="button"
-                                className={`sr-tag${!applied ? " active" : ""}`}
-                                onClick={() => pickSub(false)}
-                                title={!applied ? `当前为原始特性` : `切回原始特性「${chineseName(t.name)}」`}
-                              >
-                                <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                {chineseName(t.name)}
-                              </button>
-                              <button
-                                type="button"
-                                className={`sr-tag${applied ? " active" : ""}`}
-                                onClick={() => pickSub(true)}
-                                title={applied ? `当前已用亚种增益「${chineseName(repl.title)}」替代` : `改用亚种增益「${chineseName(repl.title)}」替代`}
-                              >
-                                <span className="material-symbols-outlined sr-ic">swap_horiz</span>
-                                {chineseName(repl.title)}
-                              </button>
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            className={`sr-tag${applied ? " active" : ""}`}
+                            onClick={() => toggleSubraceBenefit(repl.title)}
+                            title={applied ? `已替换为「${repl.title}」，点击还原为「${t.name}」` : `点击替换为「${repl.title}」`}
+                          >
+                            <span className="material-symbols-outlined sr-ic">swap_horiz</span>
+                            {applied ? chineseName(t.name) : repl.title}
+                          </button>
                           <div className="race-trait-content">
                             <WikiBody
-                              body={activeBody}
+                              body={applied ? `''${repl.title}：''${reorderBenefitBody(repl.body)}` : `''${t.name}：''${t.body}`}
                               fields={raceEntry.fields}
                               lookup={wikiLookup}
                             />
@@ -6495,20 +3112,19 @@ export default function CharacterSheet({
                   })}
                 </div>
               )}
-              {raceDetail && mergedLore.length > 0 && (
+              {mergedLore.length > 0 && (
                 <div className="race-lore">
                   {mergedLore.map((item, i) => {
                     const sec = item.section;
                     const isSub = item.sub;
                     // 辅助威能：小节标题不折叠，仅各威能的描述文本折叠
-                    // （标题可能为「XX辅助威能」或「XX种族威能」，如龙裔）
-                    if (!isSub && sec.title && (sec.title.includes("辅助威能") || sec.title.includes("种族威能"))) {
+                    if (!isSub && sec.title?.includes("辅助威能")) {
                       const aux = splitAuxPowers(sec.body);
                       return (
                         <div key={`${raceDetail}-aux-${i}`} className="lore-powers">
                           <div className="lore-powers-title">{sec.title}</div>
                           {aux.intro && (
-                            <details key={`${raceDetail}-aux-intro-${i}`} className="lore-fold">
+                            <details key={`${raceDetail}-aux-intro-${i}`} className="lore-fold" {...(raceDetail ? { open: true } : {})}>
                               <summary>
                                 <span className="lore-fold-title">简介</span>
                                 <span className="material-symbols-outlined lore-fold-ic">expand_more</span>
@@ -6520,7 +3136,7 @@ export default function CharacterSheet({
                             const power = p.title ? powerMap.get(p.title) : undefined;
                             const selected = !!power && panelIds.has(power.id);
                             return (
-                              <details key={`${raceDetail}-aux-${i}-${j}`} className="lore-fold">
+                              <details key={`${raceDetail}-aux-${i}-${j}`} className="lore-fold" {...(raceDetail ? { open: true } : {})}>
                                 <summary>
                                   {power && (
                                     <button
@@ -6547,7 +3163,7 @@ export default function CharacterSheet({
                       );
                     }
                     return (
-                      <details key={`${raceDetail}-lore-${i}`} className="lore-fold">
+                      <details key={`${raceDetail}-lore-${i}`} className="lore-fold" {...(raceDetail ? { open: true } : {})}>
                         <summary>
                           {isSub && <span className="lore-fold-badge">{subraceName}</span>}
                           <span className="lore-fold-title">{sec.title ?? "种族背景"}</span>
@@ -6567,56 +3183,26 @@ export default function CharacterSheet({
 
       <section className="block">
         <div className="block-head">
-          <h3 className="block-title">{char.hybrid ? "混职职业能力" : "职业能力"}</h3>
-          <div className="block-head-actions">
-            {char.hybrid && classEntry2 && (
-              <button type="button" className="mode-chip" onClick={() => setHybridDetailOpen(true)}>详情</button>
-            )}
-            <button type="button" className="mode-chip" onClick={() => setClassFeatDetail((p) => !p)}>
-              <span className="material-symbols-outlined mode-chip-ic">{classFeatDetail ? "density_small" : "density_large"}</span>
-              {classFeatDetail ? "简洁" : "详细"}
-            </button>
-          </div>
+          <h3 className="block-title">职业能力</h3>
+          <button type="button" className="mode-chip" onClick={() => setClassFeatDetail((p) => !p)}>
+            <span className="material-symbols-outlined mode-chip-ic">{classFeatDetail ? "density_small" : "density_large"}</span>
+            {classFeatDetail ? "简洁" : "详细"}
+          </button>
         </div>
         {classEntry ? (
           <>
-            {char.hybrid && classEntry2 && <HybridAbilityBlock entry={classEntry} entry2={classEntry2} detail={classFeatDetail} />}
-            <ClassFeatureBlock key={classEntry.id} entry={classEntry} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} classes={classes} magicSchools={magicSchools} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} onTrackClassFeats={trackClassFeats} onRemoveFeats={onRemoveClassFeats} onTrackClassRituals={trackClassRituals} onRemoveClassRituals={onRemoveClassRituals} featureOnly={char.hybrid} domains={domains} />
+            {classEntry2 && <div className="class-entry-title">{cleanDisplayName(classEntry.name)}</div>}
+            <ClassFeatureBlock entry={classEntry} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} />
             {classEntry2 && (
-              <div className="hy-class-feat-sep">
-                <ClassFeatureBlock key={classEntry2.id} entry={classEntry2} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} classes={classes} magicSchools={magicSchools} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} onTrackClassFeats={trackClassFeats} onRemoveFeats={onRemoveClassFeats} onTrackClassRituals={trackClassRituals} onRemoveClassRituals={onRemoveClassRituals} featureOnly={char.hybrid} domains={domains} />
-              </div>
+              <>
+                <hr className="class-entry-sep" />
+                <div className="class-entry-title">{cleanDisplayName(classEntry2.name)}</div>
+                <ClassFeatureBlock entry={classEntry2} detail={classFeatDetail} level={char.level} choices={char.classFeatureChoices} onChoose={setClassFeatureChoice} lookup={wikiLookup} panelIds={panelIds} onAddPowers={onAddClassPowers} onTrackClassPowers={trackClassPowers} onRemovePowers={onRemoveClassPowers} />
+              </>
             )}
           </>
         ) : <p className="hint">请先选择职业。</p>}
       </section>
-
-      {hybridDetailOpen && classEntry && classEntry2 && createPortal(
-        <div className="picker-overlay" onClick={() => setHybridDetailOpen(false)}>
-          <div className="picker-dialog class-dialog base-dialog hybrid-detail-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="picker-head">
-              <span className="picker-title">混职职业原始数据</span>
-              <div className="picker-head-btns">
-                <button type="button" className="crop-btn" onClick={() => setHybridDetailOpen(false)}>关闭</button>
-              </div>
-            </div>
-            <div className="hybrid-detail-grid">
-              {[classEntry, classEntry2].map((e) => {
-                const t = classTraitHtml(e.sourceText);
-                return (
-                  <div key={e.id} className="hybrid-detail-col">
-                    <div className="hybrid-detail-name">{cleanDisplayName(e.name)}</div>
-                    {t ? (
-                      <div className="class-trait" dangerouslySetInnerHTML={{ __html: wikiToHtml(splitTraitLabels(t), e.fields).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br/>") }} />
-                    ) : <p className="hint">无 trait 数据。</p>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       
       {char.level >= 11 && (
@@ -6634,7 +3220,7 @@ export default function CharacterSheet({
                 <>
                   {pathParse.hasTitle && <div className="pf-entry-title">{cleanDisplayName(paragonPathEntry.name)}</div>}
                   {pathDetail && pathParse.intro && <div className="pf-intro" dangerouslySetInnerHTML={{ __html: wikiToHtml(pathParse.intro, paragonPathEntry.fields) }} />}
-                  <FeatureSectionList sections={pathSections} detail={pathDetail} fields={paragonPathEntry.fields} powerOf={(id) => powerMap.get(id)} panelIds={panelIds} onAddPowers={onAddPowers} />
+                  <FeatureSectionList sections={pathParse.sections} detail={pathDetail} fields={paragonPathEntry.fields} powerOf={(id) => powerMap.get(id)} panelIds={panelIds} onAddPowers={onAddPowers} />
                 </>
               ) : (
                 <pre className="feature-text">{stripWiki(paragonPathEntry.sourceText)}</pre>
@@ -6687,8 +3273,7 @@ export default function CharacterSheet({
               const trained = trainedSet.has(s.name);
               const sm = char.skillMods[s.name] ?? { race: 0, other: 0, armor: 0 };
               const hasArmor = ARMOR_PENALTY_SKILLS.has(s.name);
-              const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
-              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? sm.armor : 0);
+              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + sm.race + sm.other - (hasArmor ? sm.armor : 0);
               return (
                 <div key={s.name} className={trained ? "skill-item trained" : "skill-item"} onClick={() => toggleTrained(s.name)} title="点击切换受训">
                   <span className="skill-check">{trained ? "✓" : ""}</span>
@@ -6737,8 +3322,7 @@ export default function CharacterSheet({
               const trained = trainedSet.has(s.name);
               const sm = char.skillMods[s.name] ?? { race: 0, other: 0, armor: 0 };
               const hasArmor = ARMOR_PENALTY_SKILLS.has(s.name);
-              const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
-              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? sm.armor : 0);
+              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + sm.race + sm.other - (hasArmor ? sm.armor : 0);
               return (
                 <div key={s.name} className={trained ? "skill-compact-row trained" : "skill-compact-row"} title="简略模式为静态展示，受训请在详细模式中切换">
                   <span className="sc-name">{s.name}</span>
@@ -6782,11 +3366,8 @@ export default function CharacterSheet({
         </div>
         {SLOT_CATS.map((cat) => {
           const isSpecial = cat.key === "special";
-          // 各等级槽位应填充的威能等级（special 为种族/职业威能，无固定等级概念）
-          const slotLvls = cat.key === "special" ? [] : powerSlotLevels(cat.key as "atWill", char.level);
           const effCount = isSpecial ? char.powerSlots.special.length : effPowerCount(cat.key);
           const filled = char.powerSlots[cat.key].filter(Boolean).length;
-          // 实际渲染槽位数：以「等级默认/自定义」与数组长度较大者为准（恢复后仅显示应有的空位数）
           const count = Math.max(effCount, char.powerSlots[cat.key].length);
           const customized = !isSpecial && char.powerSlotOverrides?.[cat.key] !== undefined;
           return (
@@ -6794,16 +3375,16 @@ export default function CharacterSheet({
               <div className="sg-title">
                 {cat.key !== "utility" && cat.key !== "special" && <span className="sg-dot" style={{ background: cat.color }} />}
                 {cat.label}
-                <span className="sg-count">（{filled}/{count}）</span>
+                <span className="sg-count">（{filled}/{effCount}）</span>
                 {isSpecial ? (
                   <>
-                    <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: trimTrailingEmpty(p.powerSlots.special, Math.max(0, p.powerSlots.special.length - 1)).map((x) => x ?? "") } }))}>−</button>
-                    <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: padEmpty(p.powerSlots.special, Math.min(20, p.powerSlots.special.length + 1)).map((x) => x ?? "") } }))}>+</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: resizeSlots(p.powerSlots.special, p.powerSlots.special.length - 1).map((x) => x ?? "") } }))}>−</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, powerSlots: { ...p.powerSlots, special: resizeSlots(p.powerSlots.special, p.powerSlots.special.length + 1).map((x) => x ?? "") } }))}>+</button>
                   </>
                 ) : (
                   <>
-                    <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => reducePowerSlots(cat.key)}>−</button>
-                    <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => growPowerSlots(cat.key)}>+</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setPowerOverride(cat.key, Math.max(0, effCount - 1))}>−</button>
+                    <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setPowerOverride(cat.key, Math.min(20, effCount + 1))}>+</button>
                   </>
                 )}
                 {customized && <span className="sg-custom">自定义</span>}
@@ -6824,7 +3405,7 @@ export default function CharacterSheet({
                     return (
                       <button key={i} type="button" className="slot-empty" onClick={() => onPowerSlotClick(cat.key, i)}>
                         <span className="material-symbols-outlined">add</span>
-                        <span>{isSpecial ? "选择" + cat.label : slotLevelText(slotLvls[i], cat.label)}</span>
+                        <span>选择{cat.label}</span>
                       </button>
                     );
                   })}
@@ -6846,7 +3427,7 @@ export default function CharacterSheet({
                       );
                     }
                     return (
-                      <button key={i} type="button" className="compact-empty" onClick={() => onPowerSlotClick(cat.key, i)}>＋ {isSpecial ? "选择" + cat.label : slotLevelText(slotLvls[i], cat.label)}</button>
+                      <button key={i} type="button" className="compact-empty" onClick={() => onPowerSlotClick(cat.key, i)}>＋ 选择{cat.label}</button>
                     );
                   })}
                 </div>
@@ -6893,7 +3474,6 @@ export default function CharacterSheet({
             <button type="button" className="equip-nav-btn" onClick={() => document.getElementById("equip-g-其他")?.scrollIntoView({ behavior: "smooth", block: "start" })}>他</button>
             <button type="button" className="equip-nav-btn" title="消耗品" onClick={() => document.getElementById("equip-g-消耗品")?.scrollIntoView({ behavior: "smooth", block: "start" })}>耗</button>
             <button type="button" className="equip-nav-btn" title="冒险装备" onClick={() => document.getElementById("equip-g-冒险装备")?.scrollIntoView({ behavior: "smooth", block: "start" })}>冒</button>
-            <button type="button" className="equip-nav-btn" title="奇物" onClick={() => document.getElementById("equip-g-奇物")?.scrollIntoView({ behavior: "smooth", block: "start" })}>奇</button>
           </nav>
           <div className="equip-groups">
         {EQUIP_GROUPS.map((g) => {
@@ -6922,23 +3502,6 @@ export default function CharacterSheet({
             </div>
           );
         })}
-          <div id="equip-g-奇物" className="equip-sub">
-            <div className="sg-title">
-              奇物
-              <span className="sg-count">（{char.wondrousSlots.filter(Boolean).length}/{char.wondrousSlots.length}）</span>
-              <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, wondrousSlots: resizeSlots(p.wondrousSlots, p.wondrousSlots.length - 1) }))}>−</button>
-              <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, wondrousSlots: resizeSlots(p.wondrousSlots, p.wondrousSlots.length + 1) }))}>+</button>
-            </div>
-            <EquipGroupSlots
-              slots={char.wondrousSlots}
-              detail={blockDetail.equipment}
-              names={(i) => "奇物 " + (i + 1)}
-              items={(i) => { const id = char.wondrousSlots[i]; return id ? itemMap.get(id) : undefined; }}
-              picker={(i) => onEquipSlotClick("wondrous", i)}
-              clear={(i) => { if (slotMode) return; setChar((c) => ({ ...c, wondrousSlots: clearEquipmentSlot(c.wondrousSlots, i) })); }}
-              usedOf={(i) => isEquipUsed("wondrous", i)}
-            />
-          </div>
           <div id="equip-g-其他" className="equip-sub">
             <div className="sg-title">
               其他
@@ -6972,7 +3535,6 @@ export default function CharacterSheet({
               clear={(i) => { if (slotMode) return; setChar((c) => ({ ...c, consumableSlots: clearEquipmentSlot(c.consumableSlots, i) })); }}
               usedOf={(i) => isEquipUsed("consumable", i)}
             />
-          </div>
           <div id="equip-g-冒险装备" className="equip-sub">
             <div className="sg-title">
               冒险装备
@@ -6997,6 +3559,7 @@ export default function CharacterSheet({
                 </div>
               ))}
             </div>
+          </div>
           </div>
         </div>
         </div>
@@ -7037,131 +3600,11 @@ export default function CharacterSheet({
           </div>
         </div>
       </section>
-
-      <section className="block ritual-block">
-        <div className="block-head">
-          <h3 className="block-title">{ritualKind === "practice" ? "武术奥义" : "仪式"}</h3>
-          <span className="ritual-counter">
-            <span className="sg-count">（{(char.ritualSlots ?? []).filter(Boolean).length}/{ritualRenderCount}）</span>
-            <button type="button" className="sg-step" title="减少槽位" onClick={reduceRitualSlots}>−</button>
-            <button type="button" className="sg-step" title="增加槽位" onClick={growRitualSlots}>+</button>
-            {char.ritualSlotOverride !== undefined && (
-              <>
-                <span className="sg-custom">自定义</span>
-                <button type="button" className="sg-restore" title="恢复跟随等级" onClick={restoreRitualOverride}>恢复</button>
-              </>
-            )}
-          </span>
-          <span className="ritual-kind-toggle">
-            <button type="button" className={"kind-chip" + (ritualKind === "ritual" ? " active" : "")} title="仪式魔法（需「仪式施法者」专长）" onClick={() => setRitualKind("ritual")}>仪式魔法</button>
-            <button type="button" className={"kind-chip" + (ritualKind === "practice" ? " active" : "")} title="武术奥义（需「奥义学习」专长）" onClick={() => setRitualKind("practice")}>武术奥义</button>
-          </span>
-          <button type="button" className="mode-chip" onClick={() => setBlockDetail((p) => ({ ...p, rituals: !p.rituals }))}>
-            <span className="material-symbols-outlined mode-chip-ic">{blockDetail.rituals ? "density_large" : "density_small"}</span>
-            {blockDetail.rituals ? "详细" : "简洁"}
-          </button>
-        </div>
-        {((char.ritualSlots ?? []).filter(Boolean).length === 0) && (char.classGrantedRitualIds ?? []).length === 0 && (
-          <p className="hint">{ritualKind === "practice" ? "尚未掌握任何武术奥义。掌握武术奥义需要「奥义学习」专长，且需满足等级与关键技能受训要求，成本按市场价格计入自动花销。" : "尚未学会任何仪式。学会仪式需要「仪式施法者」专长，学习成本按市场价格计入自动花销。"}</p>
-        )}
-        {blockDetail.rituals ? (
-          <div className="ritual-list">
-            {grantedRitualEntries.length > 0 && (
-              <div className="granted-rituals">
-                {grantedRitualEntries.map((r) => {
-                  const price = ritualMarketPrice(r);
-                  return (
-                    <div key={r.id} className="ritual-line gr-item" title={"职业特性「" + (char.classGrantedRitualSources?.[r.id] ?? "") + "」赠送（不占用仪式槽位）"}>
-                      <div className="ritual-main">
-                        <span className="ritual-name">
-                          <SmartHover className="ritual-name-link" popClass="wiki-ref-pop" portal pop={<EntryCard entry={r} />}>
-                            {r.name}{r.nameEn ? " " + r.nameEn : ""}
-                          </SmartHover>
-                        </span>
-                        <span className="ritual-meta">
-                          {r.ritualLevel ? "Lv" + r.ritualLevel : ""}
-                          {r.ritualCategory ? " · " + r.ritualCategory : ""}
-                          {r.keySkill ? " · 关键技能 " + r.keySkill : ""}
-                        </span>
-                      </div>
-                      {price > 0 && <span className="ritual-cost" title="市场价格（计入自动花销）">{price.toLocaleString("zh-CN")} gp</span>}
-                      <span className="gr-badge" title="来源职业特性">{char.classGrantedRitualSources?.[r.id] ?? "赠送"}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {Array.from({ length: ritualRenderCount }, (_, i) => {
-              const id = (char.ritualSlots ?? [])[i] ?? "";
-              const r = id ? ritualMap.get(id) : undefined;
-              if (r) {
-                const price = ritualMarketPrice(r);
-                return (
-                  <div key={i} className="ritual-line" onClick={() => mode === "edit" && openRitualPicker(i)} title={mode === "edit" ? "点击更换" : undefined}>
-                    <div className="ritual-main">
-                      <span className="ritual-name">
-                        <SmartHover className="ritual-name-link" popClass="wiki-ref-pop" portal pop={<EntryCard entry={r} />}>
-                          {r.name}{r.nameEn ? " " + r.nameEn : ""}
-                        </SmartHover>
-                      </span>
-                      <span className="ritual-meta">
-                        {r.ritualLevel ? "Lv" + r.ritualLevel : ""}
-                        {r.ritualCategory ? " · " + r.ritualCategory : ""}
-                        {r.keySkill ? " · 关键技能 " + r.keySkill : ""}
-                      </span>
-                    </div>
-                    {price > 0 && <span className="ritual-cost" title="市场价格（计入自动花销）">{price.toLocaleString("zh-CN")} gp</span>}
-                    {mode === "edit" && (
-                      <button type="button" className="ritual-remove" title="清空槽位" onClick={(e) => { e.stopPropagation(); clearRitualSlotAt(i); }}>×</button>
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <button key={i} type="button" className="compact-empty" onClick={() => openRitualPicker(i)}>＋ {ritualKind === "practice" ? "选择武术奥义" : "选择仪式"}</button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="ritual-detail-list">
-            {grantedRitualEntries.length > 0 && (
-              <div className="granted-rituals">
-                {grantedRitualEntries.map((r) => (
-                  <div key={r.id} className="ritual-detail-item gr-item" title={"职业特性「" + (char.classGrantedRitualSources?.[r.id] ?? "") + "」赠送（不占用仪式槽位）"}>
-                    <EntryCard entry={r} />
-                    <span className="gr-badge" title="来源职业特性">{char.classGrantedRitualSources?.[r.id] ?? "赠送"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {Array.from({ length: ritualRenderCount }, (_, i) => {
-              const id = (char.ritualSlots ?? [])[i] ?? "";
-              const r = id ? ritualMap.get(id) : undefined;
-              if (r) {
-                return (
-                  <div key={i} className="ritual-detail-item" onClick={() => mode === "edit" && openRitualPicker(i)} title={mode === "edit" ? "点击更换" : undefined}>
-                    <EntryCard entry={r} />
-                    {mode === "edit" && (
-                      <button type="button" className="ritual-detail-remove" title="清空槽位" onClick={(e) => { e.stopPropagation(); clearRitualSlotAt(i); }}>×</button>
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <button key={i} type="button" className="ritual-slot-empty" onClick={() => openRitualPicker(i)}>
-                  <span className="material-symbols-outlined">add</span>
-                  <span>{ritualKind === "practice" ? "选择武术奥义" : "选择仪式"}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
     </>
   );
   const featsCol = (
     <>
-      <section className="block feats-block">
+      <section className="block">
         <div className="block-head">
           <h3 className="block-title">专长</h3>
           <button type="button" className="mode-chip" onClick={() => setBlockDetail((p) => ({ ...p, feats: !p.feats }))}>
@@ -7172,9 +3615,9 @@ export default function CharacterSheet({
         <div className="selected-group">
           <div className="sg-title">
             专长
-            <span className="sg-count">（{char.featSlots.filter(Boolean).length}/{featRenderCount}）</span>
-            <button type="button" className="sg-step" title="减少槽位" onClick={reduceFeatSlots}>−</button>
-            <button type="button" className="sg-step" title="增加槽位" onClick={growFeatSlots}>+</button>
+            <span className="sg-count">（{char.featSlots.filter(Boolean).length}/{effFeatCount}）</span>
+            <button type="button" className="sg-step" title="减少槽位" onClick={() => setFeatOverride(Math.max(0, effFeatCount - 1))}>−</button>
+            <button type="button" className="sg-step" title="增加槽位" onClick={() => setFeatOverride(Math.min(20, effFeatCount + 1))}>+</button>
             {char.featSlotOverride !== undefined && (
               <>
                 <span className="sg-custom">自定义</span>
@@ -7184,17 +3627,13 @@ export default function CharacterSheet({
           </div>
           {blockDetail.feats ? (
             <div className="power-grid">
-              {Array.from({ length: featRenderCount }, (_, i) => {
+              {Array.from({ length: Math.max(effFeatCount, char.featSlots.length) }, (_, i) => {
                 const id = char.featSlots[i] ?? "";
                 const f = id ? featMap.get(id) : undefined;
                 if (f) {
-                  // 详细模式：专长卡本体已直接展示全部内容，无需再 hover 弹出专长卡；仅保留正文中 [[威能]] 链接的悬浮预览
                   return (
                     <div key={i} className="slot-filled" onClick={() => openFeatPicker(i)} title="点击更换">
-                      <EntryCard entry={f} lookup={wikiLookup} />
-                      {isHybridTalentFeat(f) && char.featChoices?.[i] && (
-                        <div className="feat-choice-label">{char.featChoices[i]}</div>
-                      )}
+                      <EntryCard entry={f} />
                     </div>
                   );
                 }
@@ -7208,19 +3647,17 @@ export default function CharacterSheet({
             </div>
           ) : (
             <div className="compact-list">
-              {Array.from({ length: featRenderCount }, (_, i) => {
+              {Array.from({ length: Math.max(effFeatCount, char.featSlots.length) }, (_, i) => {
                 const id = char.featSlots[i] ?? "";
                 const f = id ? featMap.get(id) : undefined;
                 if (f) {
                   return (
-                    <div key={i} className="compact-row feat-line" onClick={() => openFeatPicker(i)} title="点击更换">
+                    <div key={i} className="compact-row" onClick={() => openFeatPicker(i)} title="点击更换">
                       <span className="cr-dot" style={{ background: FEAT_COLOR }} />
-                      <span className="cr-name">{f.name}：</span>
-                      <span className="cr-sub">{compactFeatText(f)}</span>
+                      <span className="cr-name">{f.name}{f.nameEn ? " " + f.nameEn : ""}</span>
+                      <span className="cr-sub">{f.tierZh ?? ""}</span>
                       <IconButton className="slot-x" title="清空槽位" aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); setChar((c) => ({ ...c, featSlots: clearFeatSlot(c.featSlots, i) })); }}><span className="material-symbols-outlined">close</span></IconButton>
-                      <div className="compact-pop">
-                        <EntryCard entry={f} lookup={wikiLookup} />
-                      </div>
+                      <div className="compact-pop"><EntryCard entry={f} /></div>
                     </div>
                   );
                 }
@@ -7231,25 +3668,6 @@ export default function CharacterSheet({
             </div>
           )}
         </div>
-        {(char.classGrantedFeatIds ?? []).length > 0 && (
-          <div className="granted-feats">
-            <div className="gf-title">奖励专长</div>
-            <div className="compact-list">
-              {char.classGrantedFeatIds.map((id) => {
-                const f = featMap.get(id);
-                if (!f) return null;
-                return (
-                  <div key={id} className="compact-row gf-item feat-line" title="奖励专长（不占用常规专长槽位）">
-                    <span className="cr-dot" style={{ background: FEAT_COLOR }} />
-                    <span className="cr-name">{f.name}：</span>
-                    <span className="cr-sub">{compactFeatText(f)}</span>
-                    <div className="compact-pop"><EntryCard entry={f} lookup={wikiLookup} /></div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </section>
     </>
   );
@@ -7304,11 +3722,8 @@ return (
               classId2: ids[1],
               classTrainedSkills: [],
               classGrantedPowerIds: [],
-              classGrantedFeatIds: [],
-              classGrantedRitualIds: [],
-              classGrantedRitualSources: {},
               powerSlots: slots,
-              powerPoints: hybridPowerPoints({ classId: ids[0], classId2: ids[1], powerSlots: slots }, resolveClassId, resolvePowerId) ?? psionicPowerPoints(ids[0], p.level) ?? p.powerPoints,
+              powerPoints: psionicPowerPoints(ids[0], p.level) ?? p.powerPoints,
             };
           })}
           onClose={() => setPicker(null)}
@@ -7344,7 +3759,6 @@ return (
           entries={paragonPaths}
           selectedId={char.paragonPathId}
           onSelect={(id) => setChar({ ...char, paragonPathId: id })}
-          onClear={() => setChar({ ...char, paragonPathId: undefined })}
           onClose={() => setPicker(null)}
           renderSub={(e) => e.prerequisite}
           restrict={{ level: char.level, raceNames: restrictNames.raceNames, classNames: restrictNames.classNames, myNames: restrictNames.myNames }}
@@ -7356,7 +3770,6 @@ return (
           entries={epicDestinies}
           selectedId={char.epicDestinyId}
           onSelect={(id) => setChar({ ...char, epicDestinyId: id })}
-          onClear={() => setChar({ ...char, epicDestinyId: undefined })}
           onClose={() => setPicker(null)}
           renderSub={(e) => e.prerequisite}
           restrict={{ level: char.level, raceNames: restrictNames.raceNames, classNames: restrictNames.classNames, myNames: restrictNames.myNames }}
@@ -7373,16 +3786,8 @@ return (
           category={slotPicker.cat === "atWill" ? "at-will" : slotPicker.cat}
           currentLevel={char.level}
           currentId={char.powerSlots[slotPicker.cat][slotPicker.index] || undefined}
-          onSelect={(id) => setChar((p) => {
-            const powerSlots = setPowerSlot(p.powerSlots, slotPicker.cat, slotPicker.index, id);
-            const rec = slotPicker.cat === "atWill" ? hybridPowerPoints({ ...p, powerSlots }, resolveClassId, resolvePowerId) : undefined;
-            return { ...p, powerSlots, ...(rec !== undefined ? { powerPoints: rec } : {}) };
-          })}
-          onClear={() => setChar((p) => {
-            const powerSlots = clearPowerSlot(p.powerSlots, slotPicker.cat, slotPicker.index);
-            const rec = slotPicker.cat === "atWill" ? hybridPowerPoints({ ...p, powerSlots }, resolveClassId, resolvePowerId) : undefined;
-            return { ...p, powerSlots, ...(rec !== undefined ? { powerPoints: rec } : {}) };
-          })}
+          onSelect={(id) => setChar((p) => ({ ...p, powerSlots: setPowerSlot(p.powerSlots, slotPicker.cat, slotPicker.index, id) }))}
+          onClear={() => setChar((p) => ({ ...p, powerSlots: clearPowerSlot(p.powerSlots, slotPicker.cat, slotPicker.index) }))}
           onClose={() => setSlotPicker(null)}
         />
       )}
@@ -7391,27 +3796,25 @@ return (
           entries={feats}
           allRaces={races}
           allClasses={classes}
+          raceEntry={raceEntry}
+          classEntry={classEntry}
+          classEntry2={classEntry2}
           currentLevel={char.level}
+          abilities={char.abilities}
+          trainedSkills={effectiveTrained}
+          weaponTokens={proficiencyTokens}
+          armorTokens={armorTokens}
+          shieldTokens={shieldTokens}
           currentId={char.featSlots[slotPicker.index] || undefined}
-          lookup={wikiLookup}
           onSelect={(id) => {
             const f = featMap.get(id);
             const choice = f ? featChoiceInfo(f) : null;
             const idx = slotPicker.index;
-            // 更换专长时，先移除该槽位旧专长赠送的威能
-            removeFeatGrantedPowers(idx);
             setChar((p) => {
               const featChoices = { ...p.featChoices };
               delete featChoices[idx]; // 重新选择时清除旧选择
               return { ...p, featSlots: setFeatSlot(p.featSlots, idx, id), featChoices };
             });
-            // 混职天赋 Hybrid Talent：不同于武器/法器选择，选项来自角色两个混职职业的「混职天赋选项」，故单独组装
-            if (isHybridTalentFeat(f)) {
-              const groups = hybridTalentGroups([classEntry, classEntry2], classes);
-              if (groups.length > 0) {
-                setFeatChoicePicker({ index: idx, featName: f?.name ?? "混职天赋", label: "从你的混职职业中，选择一个混职天赋选项", options: [], hybridGroups: groups });
-              }
-            }
             if (choice) {
               if (choice.cat === "weapon") {
                 const weaponPool = BASE_WEAPONS.filter((w) => choice.options.some((o) => o.name === w.name));
@@ -7424,46 +3827,31 @@ return (
                 setFeatChoicePicker({ index: idx, featName: f?.name ?? "", label: choice.label, options: choice.options });
               }
             }
-            // 专长赠送/替换威能：替换型弹面板询问填入哪个格子；普通赠送自动加入威能面板
-            if (f) {
-              const repl = featReplacementInfo(f, wikiLookup);
-              if (repl) {
-                setReplacementPicker({ index: idx, newPowerId: repl.newPower.id, hint: repl.hint, targetCat: repl.targetCat });
-              } else {
-                const granted = featGrantedPowers(f, wikiLookup);
-                if (granted.length) addFeatGrantedPowers(idx, f, granted);
-              }
-            }
           }}
-          onClear={() => {
-            removeFeatGrantedPowers(slotPicker.index);
-            setChar((p) => {
-              const featChoices = { ...p.featChoices };
-              delete featChoices[slotPicker.index];
-              return { ...p, featSlots: clearFeatSlot(p.featSlots, slotPicker.index), featChoices };
-            });
-          }}
+          onClear={() => setChar((p) => {
+            const featChoices = { ...p.featChoices };
+            delete featChoices[slotPicker.index];
+            return { ...p, featSlots: clearFeatSlot(p.featSlots, slotPicker.index), featChoices };
+          })}
           onClose={() => setSlotPicker(null)}
         />
       )}
       {equipPicker && (
         <ItemSlotPicker
           entries={items}
-          slotName={equipPicker.kind === "fixed" ? EQUIPMENT_SLOTS[equipPicker.index] ?? "" : equipPicker.kind === "other" ? "其他" : equipPicker.kind === "consumable" ? "消耗品" : "奇物"}
-          currentId={equipPicker.kind === "fixed" ? char.equipmentSlots[equipPicker.index] : equipPicker.kind === "other" ? char.otherSlots[equipPicker.index] : equipPicker.kind === "consumable" ? char.consumableSlots[equipPicker.index] : char.wondrousSlots[equipPicker.index]}
+          slotName={equipPicker.kind === "fixed" ? EQUIPMENT_SLOTS[equipPicker.index] ?? "" : equipPicker.kind === "other" ? "其他" : "消耗品"}
+          currentId={equipPicker.kind === "fixed" ? char.equipmentSlots[equipPicker.index] : equipPicker.kind === "other" ? char.otherSlots[equipPicker.index] : char.consumableSlots[equipPicker.index]}
           onSelect={(id) => setChar((p) => ({
             ...p,
             equipmentSlots: equipPicker.kind === "fixed" ? setEquipmentSlot(p.equipmentSlots, equipPicker.index, id) : p.equipmentSlots,
             otherSlots: equipPicker.kind === "other" ? setEquipmentSlot(p.otherSlots, equipPicker.index, id) : p.otherSlots,
             consumableSlots: equipPicker.kind === "consumable" ? setEquipmentSlot(p.consumableSlots, equipPicker.index, id) : p.consumableSlots,
-            wondrousSlots: equipPicker.kind === "wondrous" ? setEquipmentSlot(p.wondrousSlots, equipPicker.index, id) : p.wondrousSlots,
           }))}
           onClear={() => setChar((p) => ({
             ...p,
             equipmentSlots: equipPicker.kind === "fixed" ? clearEquipmentSlot(p.equipmentSlots, equipPicker.index) : p.equipmentSlots,
             otherSlots: equipPicker.kind === "other" ? clearEquipmentSlot(p.otherSlots, equipPicker.index) : p.otherSlots,
             consumableSlots: equipPicker.kind === "consumable" ? clearEquipmentSlot(p.consumableSlots, equipPicker.index) : p.consumableSlots,
-            wondrousSlots: equipPicker.kind === "wondrous" ? clearEquipmentSlot(p.wondrousSlots, equipPicker.index) : p.wondrousSlots,
           }))}
           onClose={() => setEquipPicker(null)}
         />
@@ -7494,69 +3882,6 @@ return (
           </div>,
           document.body
         )}
-      {defDetailOpen && (
-        <DefenseDetailDialog
-          stats={stats}
-          acMods={acMods}
-          fortMods={fortMods}
-          refMods={refMods}
-          willMods={willMods}
-          classDefSources={classDefSources}
-          cls={cls}
-          raceDefs={raceDefs}
-          acKey={activeAcKey}
-          className={classEntry ? cleanDisplayName(classEntry.name) : undefined}
-          raceName={raceEntry ? cleanDisplayName(raceEntry.name) : undefined}
-          onClose={() => setDefDetailOpen(false)}
-        />
-      )}
-      {abilityDetailOpen && (
-        <AbilityDetailDialog
-          abilities={char.abilities}
-          bonus={bonus}
-          effective={effectiveAbilities}
-          mods={stats.mods}
-          raceName={raceEntry ? cleanDisplayName(raceEntry.name) : undefined}
-          onClose={() => setAbilityDetailOpen(false)}
-        />
-      )}
-      {lifeDetailOpen && (
-        <LifeDetailDialog
-          className={classEntry ? cleanDisplayName(classEntry.name) : undefined}
-          maxHpTotal={maxHpTotal}
-          bloodiedTotal={bloodiedTotal}
-          surgeValueTotal={surgeValueTotal}
-          surgesTotal={surgesTotal}
-          baseHp={cls?.baseHp ?? 0}
-          conScore={char.abilities.con}
-          hpPerLevel={cls?.hpPerLevel ?? 0}
-          level={char.level}
-          conMod={stats.mods.con}
-          baseSurges={cls?.surges ?? 0}
-          hpBonus={hpBonus}
-          surgeBonus={surgeBonus}
-          surgeValueBonus={surgeValueBonus}
-          onClose={() => setLifeDetailOpen(false)}
-        />
-      )}
-      {speedDetailOpen && (
-        <SpeedDetailDialog
-          display={speedDisplay}
-          baseSpeed={raceEntry?.speed ?? "—"}
-          speedMods={char.speedMods}
-          primalSpeed={primalPredatorSpeed}
-          onClose={() => setSpeedDetailOpen(false)}
-        />
-      )}
-      {initDetailOpen && (
-        <InitiativeDetailDialog
-          dexMod={stats.mods.dex}
-          halfLevel={stats.halfLevel}
-          other={char.initMods.other}
-          total={stats.initiative + char.initMods.other}
-          onClose={() => setInitDetailOpen(false)}
-        />
-      )}
       {alignmentOpen && (
         <SheetDialog
           open
@@ -7590,11 +3915,11 @@ return (
           sub="职业、种族、专长提供的武器、法器、防具擅长"
           onClose={() => setProfOpen(false)}
         >
-          {profSources.length === 0 && hybridProfSources.length === 0 ? (
+          {profSources.length === 0 ? (
             <p className="hint">暂无可展示的擅长信息。</p>
           ) : (
             <div className="prof-sources">
-              {[...profSources, ...hybridProfSources].map((s) => (
+              {profSources.map((s) => (
                 <div key={s.source} className="prof-source">
                   <div className="prof-source-name">{s.source}</div>
                   {s.groups.map((g) => (
@@ -7621,20 +3946,8 @@ return (
           proficientImplGroups={proficientImplGroups}
           proficientInfos={proficientWeaponInfos}
           current={char.featChoices[featChoicePicker.index]}
-          hybridGroups={featChoicePicker.hybridGroups}
-          lookup={wikiLookup}
-          onChoose={handleFeatChoice}
+          onChoose={(item) => setChar((p) => ({ ...p, featChoices: { ...p.featChoices, [featChoicePicker.index]: item } }))}
           onClose={() => setFeatChoicePicker(null)}
-        />
-      )}
-      {replacementPicker && (
-        <PowerReplacementDialog
-          newPower={powerMap.get(replacementPicker.newPowerId) ?? powers[0]}
-          hint={replacementPicker.hint}
-          groups={replacementPicker.targetCat ? replSlotGroups.filter((g) => g.key === replacementPicker.targetCat) : replSlotGroups}
-          powerOf={(id) => powerMap.get(id)}
-          onPick={(cat, index) => fillFeatReplacementSlot(replacementPicker.index, replacementPicker.newPowerId, cat, index)}
-          onClose={() => setReplacementPicker(null)}
         />
       )}
       {basePicker && (
@@ -7661,16 +3974,6 @@ return (
           </div>
           <div className="money-detail-total">合计：{autoTotal.toLocaleString("zh-CN")} gp</div>
         </SheetDialog>
-      )}
-      {ritualPickerSlot !== null && (
-        <RitualPicker
-          entries={rituals}
-          kind={ritualKind}
-          currentId={char.ritualSlots?.[ritualPickerSlot] || undefined}
-          onSelect={(id) => { selectRitualSlot(ritualPickerSlot, id); setRitualPickerSlot(null); }}
-          onClear={() => { clearRitualSlotAt(ritualPickerSlot); setRitualPickerSlot(null); }}
-          onClose={() => setRitualPickerSlot(null)}
-        />
       )}
       {buyPresetOpen && (
         <SheetDialog open headline="快速购点（22 点预设）" onClose={() => setBuyPresetOpen(false)}>

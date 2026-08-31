@@ -1,9 +1,8 @@
-import { useMemo, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import type { Entry } from "../data/types";
 import { POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import { CATEGORY_LABELS } from "../data/labels";
-import { tokenizeWikiBody, wikiToHtml } from "../lib/wikirender";
-import { SmartHover } from "./SmartHover";
+import { stripWiki } from "../lib/text";
 
 // 展开 details 中的 {{!!字段}} 引用、[[链接]] 与宏
 function expandDetails(html: string, entry: Entry): string {
@@ -55,40 +54,7 @@ function ItemCard({ entry }: { entry: Entry }) {
   );
 }
 
-// 专长文本中的 [[链接]]：resolve 到词条时转为悬浮预览卡片（portal 固定定位，避免被卡片 overflow 裁剪）
-function FeatRichText({ text, fields, lookup }: { text: string; fields: Record<string, string>; lookup: (t: string) => Entry | undefined }) {
-  const tokens = useMemo(() => tokenizeWikiBody(text, fields), [text, fields]);
-  return (
-    <>
-      {tokens.map((t, i) => {
-        if (t.kind === "link") {
-          const e = lookup(t.target);
-          if (!e) return <span key={i} className="wiki-ref-plain">{t.alias}</span>;
-          return (
-            <SmartHover key={i} className="wiki-ref" popClass="wiki-ref-pop" portal pop={<EntryCard entry={e} />}>
-              {t.alias}
-            </SmartHover>
-          );
-        }
-        if (t.kind === "html") return <div key={i} className="wiki-html" dangerouslySetInnerHTML={{ __html: t.html }} />;
-        return <span key={i} dangerouslySetInnerHTML={{ __html: t.html }} />;
-      })}
-    </>
-  );
-}
-
-function FeatBlock({ label, text, entry, lookup }: { label: string; text: string; entry: Entry; lookup?: (t: string) => Entry | undefined }) {
-  return (
-    <div className="fc-block">
-      <div className="fc-label">{label}</div>
-      <div className="fc-content">
-        {lookup ? <FeatRichText text={text} fields={entry.fields} lookup={lookup} /> : <span dangerouslySetInnerHTML={{ __html: expandDetails(text, entry) }} />}
-      </div>
-    </div>
-  );
-}
-
-function FeatCard({ entry, lookup }: { entry: Entry; lookup?: (t: string) => Entry | undefined }) {
+function FeatCard({ entry }: { entry: Entry }) {
   const special = entry.fields.special;
   return (
     <div className="feat-card" style={{ "--fc": FEAT_COLOR } as CSSProperties}>
@@ -97,9 +63,24 @@ function FeatCard({ entry, lookup }: { entry: Entry; lookup?: (t: string) => Ent
         {entry.origin === "user" && <span className="origin-badge">自制</span>}
         <span className="fc-meta">{entry.tierZh}{entry.source ? " · " + entry.source : ""}</span>
       </div>
-      {entry.prerequisite && <FeatBlock label="前提" text={entry.prerequisite} entry={entry} lookup={lookup} />}
-      {entry.benefit && <FeatBlock label="增益" text={entry.benefit} entry={entry} lookup={lookup} />}
-      {special && <FeatBlock label="特殊" text={special} entry={entry} lookup={lookup} />}
+      {entry.prerequisite && (
+        <div className="fc-block">
+          <div className="fc-label">前提</div>
+          <div className="fc-content" dangerouslySetInnerHTML={{ __html: expandDetails(entry.prerequisite, entry) }} />
+        </div>
+      )}
+      {entry.benefit && (
+        <div className="fc-block">
+          <div className="fc-label">增益</div>
+          <div className="fc-content" dangerouslySetInnerHTML={{ __html: expandDetails(entry.benefit, entry) }} />
+        </div>
+      )}
+      {special && (
+        <div className="fc-block">
+          <div className="fc-label">特殊</div>
+          <div className="fc-content" dangerouslySetInnerHTML={{ __html: expandDetails(special, entry) }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -137,19 +118,16 @@ function GenericCard({ entry }: { entry: Entry }) {
       {entry.flavorText && <div className="gc-flavor">{entry.flavorText}</div>}
       {entry.details ? (
         <div className="pc-details" dangerouslySetInnerHTML={{ __html: entry.details }} />
-      ) : entry.sourceText ? (
-        // sourceText 含不少原生 HTML（如生物 <div class=creature>…），需经 wikiToHtml 渲染，
-        // 直接 stripWiki 会把 HTML 标签当成可见代码显示出来。
-        <div className="pc-details gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(entry.sourceText, entry.fields) }} />
-      ) : null}
+      ) : (
+        <pre className="gc-text">{stripWiki(entry.sourceText)}</pre>
+      )}
     </div>
   );
 }
 
-// lookup 提供时，专长卡片正文中的 [[威能]] 等链接转为悬浮预览卡片（角色卡与选择专长界面共用）
-export default function EntryCard({ entry, lookup }: { entry: Entry; lookup?: (t: string) => Entry | undefined }) {
+export default function EntryCard({ entry }: { entry: Entry }) {
   if (entry.category === "power") return <PowerCard entry={entry} />;
   if (entry.category === "equipment") return <ItemCard entry={entry} />;
-  if (entry.category === "feat") return <FeatCard entry={entry} lookup={lookup} />;
+  if (entry.category === "feat") return <FeatCard entry={entry} />;
   return <GenericCard entry={entry} />;
 }

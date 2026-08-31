@@ -15,7 +15,7 @@ export function wikiToHtml(text: string, fields: Record<string, string>): string
     .replace(/^!{3,} (.+)$/gm, "<h6>$1</h6>")
     .replace(/^!{2} (.+)$/gm, "<h5>$1</h5>")
     .replace(/^! (.+)$/gm, "<h4>$1</h4>")
-    .replace(/^\s*-{3,}\s*$/gm, "");
+    .replace(/^-{3,}\s*$/gm, "");
 }
 
 // @@.classTrait """...""" 引言块
@@ -32,11 +32,9 @@ export function classFeaturesHtml(text: string): string | undefined {
   // 无后续一级标题：取到结尾
   const mEnd = text.match(/^! [^\n]*职业特性[^\n]*\n([\s\S]*)$/m);
   if (mEnd && mEnd[1].trim()) return mEnd[1].trim();
-  // 无「职业特性」一级标题（吸血鬼/精华职业变体）：从第一个「!! N级：」标题起始。
-  // 捕获组必须包含标题行本身，否则 parseFeatureSections 会丢失第一个特性（如吸血鬼「暗夜之子」）。
-  const m2 = text.match(/^(!! [^\n]*\n[\s\S]*?)(?=^! )/m);
+  const m2 = text.match(/^!! [^\n]*\n([\s\S]*?)(?=^! )/m);
   if (m2 && m2[1].trim()) return m2[1].trim();
-  const m2End = text.match(/^(!! [^\n]*\n[\s\S]*)$/m);
+  const m2End = text.match(/^!! [^\n]*\n([\s\S]*)$/m);
   return m2End && m2End[1].trim() ? m2End[1].trim() : undefined;
 }
 
@@ -108,48 +106,6 @@ export function splitRaceLore(body: string): RaceLoreSection[] {
     const secBody = body.slice(heads[i].index, end).replace(/^!!\s+.+$/m, "").replace(/^\s*$/gm, "").trim();
     if (secBody) out.push({ title: heads[i].title, body: secBody });
   }
-  return out;
-}
-
-// 职业 lore 分段：classTrait 块与「! XX职业特性」之间的引言叙述段 + 侧边栏「XX简介」，
-// 与种族 lore 同样按折叠小节返回，供职业面板详图模式在职业特性上方展示
-export function splitClassLore(text: string): RaceLoreSection[] {
-  const ct = text.match(/@@\.classTrait\s+"""[\s\S]*?"""/);
-  if (!ct || ct.index === undefined) return [];
-  const rest = text.slice(ct.index + ct[0].length);
-  // lore 区间终点：优先「! XX职业特性」标题；若无该标题（如刺客(行刑者)直接用「!! 刺客公会」），
-  // 则在第一个「!! 」特性标题处截断，避免把全部职业特性误吞进「职业背景」
-  const feat = rest.match(/^! [^\n]*职业特性/m);
-  const h22 = rest.search(/^!!\s/m);
-  let cut = feat ? feat.index! : (h22 >= 0 ? h22 : rest.length);
-  const region = rest.slice(0, cut)
-    .replace(/^@@\s*$/m, "")        // classTrait 块的收尾 @@
-    .replace(/^#{3,}?$/gm, "")      // 分隔线
-    .replace(/^[-]{3,}\s*$/gm, "")
-    .replace(/^\s*$/gm, "")
-    .trim();
-  if (!region) return [];
-  const out: RaceLoreSection[] = [];
-  // 抽出性侧边栏「XX简介」，作为独立折叠小节
-  const narrate = region.replace(/<div class="sidebar">([\s\S]*?)<\/div>/g, (_m, inner: string) => {
-    const t = inner.match(/^!!!\s+(.+?)\s*$/m);
-    const b = inner
-      .replace(/^!!!\s+.+$/m, "")
-      .replace(/@@\.\w+\s*/g, "")
-      .replace(/^@@\s*$/gm, "")
-      .replace(/\{\{[^}]+\}\}/g, "")
-      .replace(/^\s*$/gm, "")
-      .trim();
-    if (b) out.push({ title: t ? t[1].trim() : "职业简介", body: b });
-    return "";
-  });
-  const main = narrate
-    .replace(/@@\.\w+\s*/g, "")
-    .replace(/^@@\s*$/gm, "")
-    .replace(/\{\{[^}]+\}\}/g, "")
-    .replace(/^\s*$/gm, "")
-    .trim();
-  if (main) out.unshift({ title: "职业背景", body: main });
   return out;
 }
 
@@ -310,8 +266,7 @@ export function featureBlocksHtml(text: string, fields: Record<string, string> =
 export interface FeatureSection {
   title: string;
   body?: string;
-  powerRef?: string;      // 正文中第一个 {{威能}} 模板引用（兼容旧逻辑）
-  powerRefs?: string[];   // 正文中全部 {{威能}} 模板引用（普通特性：「获得下列N个威能」同时授予全部）
+  powerRef?: string;
 }
 export interface FeatureParse {
   hasTitle: boolean; // 存在 ! 开头标题（{{!!title}} 宏）
@@ -337,17 +292,15 @@ export function parseFeatureSections(text: string): FeatureParse {
     if (!m) continue;
     const title = m[1].trim();
     let body = m[2].trim();
-    // 收集正文全部 {{威能}} 模板引用：普通特性（如「获得下列3个威能」的专业射手）需同时授予全部，
-    // 而不仅是第一个；选择型/替换型特性的选项威能由各自分支按所选逐项授予。
-    const powerRefs = [...body.matchAll(/\{\{([^}]+)\}\}/g)].map((mm) => mm[1].trim()).filter(Boolean);
-    const powerRef = powerRefs[0];
+    const powerM = body.match(/\{\{([^}]+)\}\}/);
+    const powerRef = powerM ? powerM[1].trim() : undefined;
     body = body
       .replace(/\{\{[^}]+\}\}/g, "")
       .replace(/^@@\.\w+\s*/gm, "")
       .replace(/^@@\s*$/gm, "")
       .replace(/^\s*$/gm, "")
       .trim();
-    out.push({ title, body: body.length > 0 ? body : undefined, powerRef, powerRefs });
+    out.push({ title, body: body.length > 0 ? body : undefined, powerRef });
   }
   return { hasTitle, intro, sections: out };
 }
@@ -362,14 +315,13 @@ export interface ClassFeatureOptionsParse {
   intro?: string;        // 选项之前的引言（含选择说明，需渲染）
   options: ClassFeatureOption[];
   count?: number;        // 需选择的个数（默认 1；多选型如戏法「获得 4 个」）
-  forceDefault?: string; // 4c「代替」型：未选择时默认生效的保留项（如机关术士「治疗注射」的耐力制剂、邪术师「魔能爆」）
 }
 
 // 明确的「选择一个」指示语（仅命中明确的建立角色时的选择表述，避免把战斗中的临时抉择/描述性文字误判为可选项）。
 // 覆盖：在以下选项中选择 / 从下列契约中选择一种 / 从下列选项中挑选一个 /
 // 选择下列(一个)选项 / 选择以下……中(一个) / 获得 N 个(由)你选择的……（戏法/原力协调类）
 const CLASS_CHOICE_INSTR =
-  /(在(以下|下列)(选项)?中选择|从(所列|下列|以下)[^。！？\n]{0,12}?中(选(择)?|挑选)(一个|一项|一种)?|选择(下列|以下)?(其中|其一|一个|1个|一项|一种)|选择下列(选项|契约)?中?(一个|一项|一种)|选择(下列|以下)[^。！？\n]{0,25}?(中)?(一个|一项|一种|之(?:[一二三四五六七八九十]{1,3}|两))|(选择|挑选)[^。！？\n]{0,10}?(下列|以下)[^。！？\n]{0,18}?[0-9一二三四五六七八九十两]+个|选择获得(下列|以下)[^。！？\n]{0,30}?的?[0-9一二三四五六七八九十两]+[种项个]|选择获得[0-9一二三四五六七八九十两]+个的?(下列|以下)(选项|特性|增益)?|获得[0-9一二三四五六七八九十两]*个?[^。！？\n]{0,12}?(由|你|由你)?选择|获得[0-9一二三四五六七八九十两]+个[^。！？\n]{0,24}威能|选择[^。！？\n]{0,12}魔宠)/;
+  /(在(以下|下列)(选项)?中选择|从(所列|下列|以下)[^。！？\n]{0,12}?中(选(择)?|挑选)(一个|一项|一种)?|选择(下列|以下)?(其中|其一|一个|1个|一项|一种)|选择下列(选项|契约)?中?(一个|一项|一种)|选择(下列|以下)[^。！？\n]{0,25}?(中)?(一个|一项|一种|之(?:[一二三四五六七八九十]{1,3}|两))|(选择|挑选)[^。！？\n]{0,10}?(下列|以下)[^。！？\n]{0,18}?[0-9一二三四五六七八九十两]+个|获得[0-9一二三四五六七八九十两]*个?[^。！？\n]{0,12}?(由|你|由你)?选择)/;
 
 // C 形态（[[链接]] 列表选项）额外要求：引言必须引用「下列/以下/所列」的列表，
 // 避免把正文中顺带提及的[[链接]]（如混职特性里的交叉引用）误判为选项列表
@@ -539,25 +491,18 @@ export function parseClassFeatureOptions(body: string | undefined): ClassFeature
     }
     }
     // 4c. 「代替」形态：「可以选择用[[A]]来代替[[B]]」→ 保留 B 或改用 A，二选一（邪术师「魔能爆」= 魔能爆/魔能击）
-    // 兼容「选择[[A]]来替换[[B]]威能」的句式（刺客「阴影形态」可替换为「影焰形态」，
-    // 威能词位于第二个链接之后），避免把两个威能都当作普通特性正文自动授予。
-    const repl2M = body.match(/(?:你可以)?选择(?:用)?\[\[([^\]]+)\]\]来(?:代替|替代|替换)\[\[([^\]]+)\]\](?:威能)?/);
+    const repl2M = body.match(/(?:你可以)?选择(?:用)?\[\[([^\]]+)\]\]来代替\[\[([^\]]+)\]\](?:威能)?/);
     if (repl2M) {
       const replA = repl2M[1].trim();
       const replDef = repl2M[2].trim();
       if (replA && replDef && replA !== replDef) {
-        // 引言：替换句之前若为多段实质规则正文（如机关术士「治疗注射」的制造/消耗规则），
-        // 保留全文并把替换句改写为选择提示，避免整节正文被吞掉；单段短引言（如魔能爆）则只留改写提示。
-        const prompt = "除[[" + replDef + "]]之外，你还可以选择[[" + replA + "]]";
-        const introR = /\n\s*\n/.test(body.slice(0, repl2M.index))
-          ? body.replace(repl2M[0], prompt).trim()
-          : prompt;
+        // 引言仅保留改写后的选择提示（去除原正文里多余的说明段，如魔能爆的「所有邪术师都获得…」）
+        const introR = "除[[" + replDef + "]]之外，你还可以选择[[" + replA + "]]";
         return {
           selectable: true,
           intro: introR,
           options: [{ label: replDef, desc: "" }, { label: replA, desc: "" }],
           count: 1,
-          forceDefault: replDef, // 未选择时默认保留原威能（如机关术士「治疗注射」的耐力制剂）
         };
       }
     }
@@ -673,47 +618,24 @@ function textTokenHtml(segment: string, fields: Record<string, string>): string 
     .replace(/(<\/h[1-6]\s*>)(\s*<br\/>)+/g, "$1");
 }
 
-// 段落首行缩进两格（全角空格 ×2）：供职业能力面板中风味以外的规则正文使用。
-// 跳过空行、标题行（! 开头）、@@ 指令行、以及独立成行的 HTML 块占位符行。
-function indentParagraphs(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const t = line.trimStart();
-      if (!t) return line; // 空行
-      if (/^[!@]/.test(t)) return line; // 标题 / @@ 指令行不缩进
-      if (/^-{3,}\s*$/.test(t)) return line; // wikitext 水平分隔线不缩进（保持整行，便于后续移除）
-      if (/^\u0001\d+\u0001$/.test(t)) return line; // 独立 HTML 块占位符行不缩进
-      return "\u3000\u3000" + line;
-    })
-    .join("\n");
-}
-
 // 将职业特性正文拆为 token：原始 HTML 块原样保留；[[链接]] 供 hover 卡片查找；
 // 其余文本经 wikiToHtml 渲染并保留换行（<br/>）。
-// indent=true 时对全文（含跨 [[链接]] 的段落）的每个自然段首行缩进两格。
-export function tokenizeWikiBody(body: string, fields: Record<string, string>, indent?: boolean): WikiBodyToken[] {
+export function tokenizeWikiBody(body: string, fields: Record<string, string>): WikiBodyToken[] {
   const { text, blocks } = protectHtmlBlocks(body);
-  const src = indent ? indentParagraphs(text) : text;
   const tokens: WikiBodyToken[] = [];
   const linkRe = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
   let last = 0;
   let m: RegExpExecArray | null;
-  while ((m = linkRe.exec(src)) !== null) {
-    if (m.index > last) tokens.push({ kind: "text", html: textTokenHtml(src.slice(last, m.index), fields) });
+  while ((m = linkRe.exec(text)) !== null) {
+    if (m.index > last) tokens.push({ kind: "text", html: textTokenHtml(text.slice(last, m.index), fields) });
     tokens.push({ kind: "link", target: m[1].trim(), alias: (m[2] ?? m[1]).trim() });
     last = m.index + m[0].length;
   }
-  if (last < src.length) tokens.push({ kind: "text", html: textTokenHtml(src.slice(last), fields) });
+  if (last < text.length) tokens.push({ kind: "text", html: textTokenHtml(text.slice(last), fields) });
   // 还原 HTML 块占位符（同时移除占位符相邻的换行标记）
-  // 块内（如层级表的 <td> 单元格）可能残留原始 wiki 链接 [[目标|别名]]，这里统一剥离方括号，
-  // 避免 `[[威能]]` 以字面量形式泄露到角色卡正文（HTML 块内容不参与链接 token 化，无 hover 交互）
   for (const t of tokens) {
     if (t.kind === "text") {
-      t.html = t.html.replace(/(?:<br\/>\s*)?\u0001(\d+)\u0001(?:\s*<br\/>)?/g, (_a, n: string) =>
-        (blocks[Number(n)] ?? "")
-          .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
-          .replace(/\[\[([^\]]+)\]\]/g, "$1"));
+      t.html = t.html.replace(/(?:<br\/>\s*)?\u0001(\d+)\u0001(?:\s*<br\/>)?/g, (_a, n: string) => blocks[Number(n)] ?? "");
     }
   }
   return tokens;
