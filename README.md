@@ -1,5 +1,6 @@
 # 4E NEXT
-面向 D&D 4E 中文社区，基于4e Wiki 数据的网页端车卡器：
+面向 D&D 4E 中文社区，基于4e Wiki 数据的网页端车卡器。
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
 使用完全的 **Google Material Design 3** 设计风格开发。
 ## 快速开始
 点击访问[在线版本](https://northopen.github.io/4E-NEXT/)
@@ -11,7 +12,7 @@
 | MD3 组件 | @material/web 2.5.0+ @lit/react 1.0.8                              |
 | 动态取色   | @material/material-color-utilities 0.3.0                           |
 | 头像裁切   | react-easy-crop 5                                                  |
-| 字体     | Chiron Sung HK VF + Chiron Sans HK VF + Material Symbols Outlined） |
+| 字体     | Chiron Sung HK VF + Chiron Sans HK VF + Material Symbols Outlined |
 ## 本地开发
 如您希望在本地部署并开发，克隆本仓库至本地后使用pnpm --filter dnd4e-kcc-web build，在本地浏览器构建即可。
 ## 开源许可
