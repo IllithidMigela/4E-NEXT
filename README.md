@@ -1,6 +1,8 @@
 # 4E NEXT
 面向 D&D 4E 中文社区，基于4e Wiki 数据的网页端车卡器。
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
+
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL 2.0-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
+
 使用完全的 **Google Material Design 3** 设计风格开发。
 ## 快速开始
 点击访问[在线版本](https://northopen.github.io/4E-NEXT/)
