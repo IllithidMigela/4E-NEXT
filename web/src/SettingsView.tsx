@@ -1,4 +1,5 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { HexColorPicker } from "react-colorful";
 import { useTheme, type BgMode } from "./ThemeProvider";
 import { FilledSelect, SelectOption, Switch, FilledButton, Slider } from "./components/md";
 import { readFileAsDataUrl } from "./lib/image";
@@ -8,8 +9,12 @@ import { shouldWarnOversize, prepareImageForStore, IMAGE_SIZE_HINT } from "./lib
 export default function SettingsView({ layout }: { layout: "single" | "double" }) {
   const { seedMode, seedHex, presetHex, isDark, setSeedMode, setSeedHex, setPresetHex, setDark, bgMode, setBgMode, setBgCustom, bgImage, bgBlur, bgFeather, setBgBlur, setBgFeather, fontMode, setFontMode } = useTheme();
   const bgFileRef = useRef<HTMLInputElement>(null);
-  const colorRef = useRef<HTMLInputElement>(null);
   const [oversize, setOversize] = useState<File | null>(null);
+  const [colorOpen, setColorOpen] = useState(false);
+  const [hexInput, setHexInput] = useState(seedHex);
+
+  // 自选色变化（选色器/外部）时同步 HEX 输入框
+  useEffect(() => setHexInput(seedHex), [seedHex]);
 
   async function applyBg(f: File, compress: boolean) {
     const url = await readFileAsDataUrl(f);
@@ -72,10 +77,27 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
           </div>
         )}
         {seedMode === "picker" && (
-          <div className="settings-row">
-            <span className="field-label">种子色</span>
-            <button type="button" className={presetHex === seedHex ? "swatch active" : "swatch"} style={{ background: seedHex }} title="点击打开浏览器色板" onClick={() => colorRef.current?.showPicker()} />
-            <input ref={colorRef} type="color" value={seedHex} onChange={(e) => setSeedHex(e.target.value)} style={{ display: "none" }} />
+          <div className="picker-color">
+            <div className="settings-row">
+              <span className="field-label">种子色</span>
+              <button type="button" className={presetHex === seedHex ? "swatch active" : "swatch"} style={{ background: seedHex }} title="点击切换选色器" onClick={() => setColorOpen((v) => !v)} />
+              <input
+                className="hex-input"
+                value={hexInput}
+                aria-label="HEX 颜色值"
+                onChange={(e) => {
+                  setHexInput(e.target.value);
+                  const v = e.target.value.trim();
+                  if (/^#[0-9a-fA-F]{6}$/.test(v)) setSeedHex(v.toLowerCase());
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") setColorOpen(false); }}
+              />
+            </div>
+            {colorOpen && (
+              <div className="color-picker-pop">
+                <HexColorPicker color={seedHex} onChange={setSeedHex} />
+              </div>
+            )}
           </div>
         )}
         {seedMode === "portrait" && <p className="hint">取色来自车卡页上传的立绘原图（非裁切版本）。</p>}
@@ -146,7 +168,7 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
         </div>
         <div className="settings-row">
           <span className="field-label">作者</span>
-          <span className="label">KitaAkeru</span>
+          <span className="label">北开 KitaAkeru</span>
         </div>
         <div className="settings-row">
           <span className="field-label">贡献者</span>
@@ -169,7 +191,7 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
       <section className="block">
         <h3 className="block-title">法律声明与版权信息</h3>
         <p className="hint">
-          4E NEXT的开发目标是制作一个基于网页的数据处理与表格排版工具。4E NEXT不涉及对于龙与地下城四版规则内容与对海岸巫师威世智所持版权内容的二次分发。仅为了方便用户使用，项目内部封装了由中文译者提供，中文开发者维护的4e Wiki作为数据来源。
+          4E NEXT的开发目标是制作一个基于网页的数据处理、自动计算与表格排版工具。4E NEXT不涉及对于龙与地下城四版规则内容与对海岸巫师威世智所持版权内容的二次分发。为了方便用户使用，项目内部封装了由中文译者提供，中文开发者维护的4e Wiki作为数据来源。
         </p>
         <p className="hint">
           《龙与地下城》（DUNGEONS &amp; DRAGONS）、DUNGEONS &amp; DRAGONS 兼容性标志、D&amp;D、《玩家手册》（PLAYER&rsquo;S HANDBOOK）、《地下城主指南》（DUNGEON MASTER&rsquo;S GUIDE）和《怪物图鉴》（MONSTER MANUAL）是 Wizards of the Coast, Inc. 在美国和其他国家的商标。

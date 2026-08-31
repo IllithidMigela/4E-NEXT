@@ -335,6 +335,31 @@ body {
   scrollbar-width: none; /* Firefox：隐藏竖向滚动条 */
 }
 .side-bar::-webkit-scrollbar { display: none; }
+
+/* 顶部品牌区：Logo + 版本号，置于导航栏最上方，与下方按钮用分隔符隔开 */
+.app-brand {
+  flex: none;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+.app-logo {
+  flex: none;
+  width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--md-sys-color-primary);
+  opacity: .95;
+  transition: color .2s ease, opacity .2s ease;
+}
+.app-logo svg { width: 100%; height: 100%; display: block; }
+.app-logo:hover { color: var(--md-sys-color-primary); opacity: 1; }
+@media (max-width: 960px) {
+  .app-logo { width: 38px; height: 38px; }
+}
+@media (max-height: 640px) {
+  .app-brand { gap: 2px; margin: 0 0 3px; }
+  .app-logo { width: 34px; height: 34px; }
+}
 .rail-spacer { flex: 1 1 auto; min-height: 6px; }
 .side-btn {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -356,9 +381,9 @@ body {
 .content { max-width: 1600px; }
 .app { padding-left: 76px; }
 
-/* 存档弹窗：窄屏时导出面板放到列表下方 */
+/* 存档弹窗：窄屏时导出分组回单列（存档列表本身单列） */
 @media (max-width: 720px) {
-  .dialog-save-layout { grid-template-columns: minmax(0, 1fr); }
+  .export-groups { grid-template-columns: minmax(0, 1fr); }
 }
 /* 视口过矮（横向手机/小窗）时压缩导航间距，配合竖向滚动避免挤压 */
 @media (max-height: 640px) {
@@ -640,15 +665,37 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .sorter-chip:active { cursor: grabbing; }
 .sorter-chip.drag-over { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; }
 .sorter-grip { font-size: 18px; color: var(--md-sys-color-on-surface-variant); margin-right: 1px; }
-/* 存档弹窗：左存档列表 + 右导出面板（MD3 双栏，窄屏塌缩为单列堆叠） */
-.dialog-save-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 20px; align-items: start; }
+/* 存档弹窗：上存档列表（全宽） + 下导出面板（统一沉底，MD3 纵向布局） */
+.dialog-save-layout { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
 .dialog-save-list { min-width: 0; }
-.dialog-save-export { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); }
-.dialog-save-export-title { font-size: 14px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }
+/* 存档列表维持单列，导出的两分组在其下方左右并排 */
+.dialog-save-export { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-high); }
+.dialog-save-export-title { font-size: 16px; font-weight: var(--fw-heading); color: var(--md-sys-color-on-surface); }
+.dialog-save-export-sub { margin: 0; font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.5; }
+/* 导出分组（角色卡图片 / 存档备份）：下方面板内左右并排，窄屏时上下堆叠 */
+.export-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.export-group {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container);
+}
+.export-group-label { font-size: 13px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }
+.export-group .hint { margin: 0; }
+.export-group md-filled-button, .export-group md-outlined-button { align-self: flex-start; margin-top: auto; }
 .export-format-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.export-format-btn { border: 1px solid var(--md-sys-color-outline-variant); padding: 6px 18px; border-radius: var(--md-sys-shape-corner-full); background: transparent; color: var(--md-sys-color-on-surface-variant); cursor: pointer; font: inherit; font-size: 13px; font-weight: var(--fw-label); }
-.export-format-btn:hover { background: var(--md-sys-color-surface-container-high); }
-.export-format-btn.active { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+/* MD3 分段式按钮（segmented button）：选中段为二次容器色，未选中为描边 */
+.export-format-btn {
+  flex: 1 1 0;
+  min-width: 0; height: 36px; padding: 0 14px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background: transparent; color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer; font: inherit; font-size: 13px; font-weight: var(--fw-label);
+  transition: background-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard), color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard), border-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+.export-format-btn:hover { background: var(--md-sys-color-surface-container-highest); }
+.export-format-btn.active { background: var(--md-sys-color-secondary-container); border-color: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 .dialog-save-export .crop-btn { align-self: flex-start; }
 .preset-list { display: flex; flex-direction: column; gap: 8px; }
 .preset-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); cursor: pointer; text-align: left; font-family: inherit; }
@@ -901,6 +948,28 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 /* Nord 预设色板 */
 .swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatch { width: 34px; height: 34px; border-radius: var(--md-sys-shape-corner-full); border: 2px solid transparent; cursor: pointer; }
+/* 自选色：HEX 输入 + react-colorful 选色器（MD3 风格） */
+.picker-color { display: flex; flex-direction: column; gap: 10px; }
+.hex-input {
+  width: 88px; height: 36px; box-sizing: border-box; padding: 0 8px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  font: inherit; font-size: 13px; text-align: center;
+  -moz-appearance: textfield; appearance: textfield;
+  transition: border-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard), box-shadow var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+.hex-input:hover { border-color: var(--md-sys-color-on-surface); }
+.hex-input:focus { outline: none; border-color: var(--md-sys-color-primary); box-shadow: 0 0 0 2px var(--md-sys-color-primary-container); }
+.color-picker-pop {
+  width: fit-content; padding: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container);
+  box-shadow: var(--md-sys-elevation-shadow-level2);
+}
+.color-picker-pop .react-colorful { width: 224px; height: 224px; }
 .swatch.active { border-color: var(--md-sys-color-on-surface); }
 
 /* ===== VF 字重层级（Chiron Sung HK VF） =====
@@ -1386,6 +1455,10 @@ md-dialog.sheet-dialog {
 }
 md-dialog.sheet-dialog-xw {
   max-width: min(1000px, calc(100% - 48px));
+}
+/* 存档弹窗：进一步加宽，为存档列表与下方导出双板块留出横向空间 */
+md-dialog.sheet-dialog.sheet-dialog-save {
+  max-width: min(1240px, calc(100% - 48px));
 }
 md-dialog.sheet-dialog .sheet-dialog-head {
   --sheet-dialog-head-color: var(--md-sys-color-primary);

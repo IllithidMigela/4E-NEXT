@@ -1,5 +1,5 @@
 import type { BgMode, FontMode } from "../ThemeProvider";
-import type { SeedMode } from "../theme";
+import { NORD_PRESETS, type SeedMode } from "../theme";
 import { dataUrlSizeBytes, compressDataUrlToBudget } from "./image";
 
 // 单张图片的存储预算：localStorage 上限约 5MB，需为多张卡片数据留足余量
@@ -44,7 +44,8 @@ export function loadSettings(): Settings {
       const s = JSON.parse(raw) as Partial<Settings>;
       if (typeof s.seedMode === "string") out.seedMode = s.seedMode as SeedMode;
       if (typeof s.seedHex === "string") out.seedHex = s.seedHex;
-      if (typeof s.presetHex === "string") out.presetHex = s.presetHex;
+      // 预设色已移除（如冰蓝/极夜/雪花）时回落默认，避免旧存档指向不存在的色板
+      if (typeof s.presetHex === "string" && NORD_PRESETS.some((p) => p.color === s.presetHex)) out.presetHex = s.presetHex;
       if (typeof s.isDark === "boolean") out.isDark = s.isDark;
       if (typeof s.bgMode === "string") out.bgMode = s.bgMode as BgMode;
       if (typeof s.bgBlur === "number") out.bgBlur = s.bgBlur;

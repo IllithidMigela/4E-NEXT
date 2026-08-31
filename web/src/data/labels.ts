@@ -1,3 +1,10 @@
+// 分类展示顺序（与词条页 / manifest 一致），供私设页分类管理与统计复用
+export const CATEGORY_ORDER: string[] = [
+  "race", "class", "paragon-path", "epic-destiny", "feat", "power", "equipment",
+  "item-set", "ritual", "theme", "domain", "magic-school", "pact", "vice",
+  "virtue", "bloodline", "creature", "reference", "dictionary",
+];
+
 export const CATEGORY_LABELS: Record<string, string> = {
   race: "种族",
   class: "职业",

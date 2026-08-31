@@ -8,12 +8,9 @@ import {
 
 export type SeedMode = "preset" | "picker" | "portrait" | "background";
 
-// Nord 风格预设色板
+// Nord 风格预设色板（冰蓝/极夜/雪花与冰霜同为近似偏蓝灰色调，已移除）
 export const NORD_PRESETS: { name: string; color: string }[] = [
   { name: "冰霜", color: "#5e81ac" },
-  { name: "冰蓝", color: "#88c0d0" },
-  { name: "极夜", color: "#2e3440" },
-  { name: "雪花", color: "#d8dee9" },
   { name: "极光绿", color: "#a3be8c" },
   { name: "极光紫", color: "#b48ead" },
   { name: "极光红", color: "#bf616a" },

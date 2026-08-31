@@ -12,8 +12,9 @@ import DrawView from "./DrawView";
 import HomebrewView from "./HomebrewView";
 import { loadCards, saveCards, loadActiveId, saveActiveId, uid, type SavedCard } from "./lib/storage";
 import { defaultCharacter, migrateCharacter, type Character } from "./sheet/character";
-import { FilledButton, TextButton } from "./components/md";
+import { FilledButton, OutlinedButton, TextButton } from "./components/md";
 import SheetDialog from "./components/SheetDialog";
+import Logo from "./components/Logo";
 
 type View = "sheet" | "background" | "reserve" | "overview" | "draw" | "search" | "learn" | "homebrew" | "settings";
 type Layout = "single" | "double";
@@ -241,7 +242,7 @@ function Shell() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = (char.name || "角色").replace(/[\\/:*?"<>|]/g, "_") + ".d4e.json";
+    a.download = (char.name || "角色").replace(/[\\/:*?"<>|]/g, "_") + ".json";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -325,6 +326,11 @@ function Shell() {
     <div className="app">
       {bgImage && <div className="bg-layer" style={bgStyle} />}
       <nav className="side-bar">
+        <div className="app-brand">
+          <div className="app-logo" title="4E NEXT"><Logo /></div>
+          <div className="rail-version">v{__APP_VERSION__}A</div>
+        </div>
+        <div className="side-sep" />
         <button type="button" className={view === "sheet" ? "side-btn active" : "side-btn"} title="人物" onClick={() => setView("sheet")}><span className="material-symbols-outlined">person</span><span className="sb-label">人物</span></button>
         <button type="button" className={view === "background" ? "side-btn active" : "side-btn"} title="背景" onClick={() => setView("background")}><span className="material-symbols-outlined">book</span><span className="sb-label">背景</span></button>
         <button type="button" className={view === "reserve" ? "side-btn active" : "side-btn"} title="储备" onClick={() => setView("reserve")}><span className="material-symbols-outlined">inventory_2</span><span className="sb-label">储备</span></button>
@@ -340,7 +346,6 @@ function Shell() {
         <div className="side-sep" />
         <button type="button" className="side-btn" title={mode === "edit" ? "切换到渲染模式" : "切换到编辑模式"} onClick={() => setMode((m) => (m === "edit" ? "render" : "edit"))}><span className="material-symbols-outlined">{mode === "edit" ? "edit" : "lock"}</span><span className="sb-label">{mode === "edit" ? "编辑" : "渲染"}</span></button>
         <button type="button" className={"side-btn side-btn-layout" + (isMobile ? " hidden-mobile" : "")} title={layout === "single" ? "切换到双栏布局" : "切换到单栏布局"} onClick={toggleLayout} disabled={isMobile}><span className="material-symbols-outlined">{layout === "single" ? "view_module" : "view_agenda"}</span><span className="sb-label">{layout === "single" ? "双栏" : "单栏"}</span></button>
-        <div className="rail-version">v{__APP_VERSION__}A</div>
       </nav>
       <main className="content">
         <div className="view-anim" key={view}>
@@ -355,16 +360,15 @@ function Shell() {
           {view === "overview" && <OverviewView />}
           {view === "search" && <SearchView />}
           {view === "learn" && <LearnView />}
-          {view === "homebrew" && <HomebrewView />}
+          {view === "homebrew" && <HomebrewView layout={layout} />}
           {view === "settings" && <SettingsView layout={layout} />}
         </div>
       </main>
       {cardOpen && (
-        <SheetDialog xwide open headline="存档" onClose={() => setCardOpen(false)} actions={
+        <SheetDialog xwide extraClass="sheet-dialog-save" open headline="存档" onClose={() => setCardOpen(false)} actions={
           <>
             <input ref={importRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importSave(f); e.target.value = ""; }} />
             <TextButton onClick={() => importRef.current?.click()}>导入存档</TextButton>
-            <TextButton onClick={exportSave}>导出存档</TextButton>
             <TextButton onClick={newCard}>＋ 新建人物卡</TextButton>
           </>
         }>
@@ -393,20 +397,33 @@ function Shell() {
               </div>
             </div>
             <div className="dialog-save-export">
-              <span className="dialog-save-export-title">导出角色卡</span>
-              <div className="export-format-row">
-                {([["png", "PNG"], ["jpg", "JPG"], ["pdf", "PDF"]] as const).map(([f, label]) => (
-                  <button key={f} type="button" className={"export-format-btn" + (exportFormat === f ? " active" : "")} onClick={() => setExportFormat(f)}>{label}</button>
-                ))}
+              <div className="dialog-save-export-title">导出</div>
+              <p className="dialog-save-export-sub">将当前人物卡导出为图片或 JSON 备份文件。</p>
+
+              <div className="export-groups">
+                <div className="export-group">
+                  <span className="export-group-label">图片渲染</span>
+                  <p className="hint">
+                    {exportFormat === "pdf"
+                      ? "以渲染模式生成当前人物卡，并按 A4 纸张分页输出为 PDF 文件。"
+                      : exportFormat === "jpg"
+                        ? "以渲染模式生成当前人物卡，输出为 JPG 图片（有损压缩，文件较小）。"
+                        : "以渲染模式生成当前人物卡，输出为 PNG 图片（无损，文件较大）。"}
+                  </p>
+                  <div className="export-format-row">
+                    {([["png", "PNG"], ["jpg", "JPG"], ["pdf", "PDF"]] as const).map(([f, label]) => (
+                      <button key={f} type="button" className={"export-format-btn" + (exportFormat === f ? " active" : "")} onClick={() => setExportFormat(f)}>{label}</button>
+                    ))}
+                  </div>
+                  <FilledButton disabled={exporting} onClick={runExport}>{exporting ? "导出中…" : "导出"}</FilledButton>
+                </div>
+
+                <div className="export-group">
+                  <span className="export-group-label">存档备份</span>
+                  <p className="hint">导出为 JSON 文件，可随时重新导入。</p>
+                  <OutlinedButton onClick={exportSave}>导出存档</OutlinedButton>
+                </div>
               </div>
-              <p className="hint">
-                {exportFormat === "pdf"
-                  ? "以渲染模式生成当前人物卡，并按 A4 纸张分页输出为 PDF 文件。"
-                  : exportFormat === "jpg"
-                    ? "以渲染模式生成当前人物卡，输出为 JPG 图片（有损压缩，文件较小）。"
-                    : "以渲染模式生成当前人物卡，输出为 PNG 图片（无损，文件较大）。"}
-              </p>
-              <FilledButton disabled={exporting} onClick={runExport}>{exporting ? "导出中…" : "导出"}</FilledButton>
             </div>
           </div>
 

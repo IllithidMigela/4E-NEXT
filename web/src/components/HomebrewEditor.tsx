@@ -4,7 +4,7 @@ import { FilledButton, FilledSelect, FilledTextField, SelectOption, TextButton }
 import SheetDialog from "./SheetDialog";
 import { CATEGORY_LABELS } from "../data/labels";
 import { buildEntry, draftToForm, fieldsFor, CATEGORY_LIST, type SheetField } from "../lib/homebrewSchema";
-import { upsertEntryInPool, loadPools, entryPoolId, type HomebrewPool } from "../lib/userdata";
+import { upsertEntryInPool, loadPools, entryPoolId, uniqueEntryId, type HomebrewPool } from "../lib/userdata";
 import { wikiToHtml } from "../lib/wikirender";
 
 const DRAFT_KEY = "kcc.homebrewDraft.v1";
@@ -36,32 +36,52 @@ interface Props {
   open: boolean;
   /** null=新建；否则为编辑对象 */
   initial: Entry | null;
+  /** 新建时默认归属包（二级编辑页传入当前包） */
+  defaultPoolId?: string;
+  /** 新建时默认资源类型（跟随当前分类标签） */
+  defaultCategory?: string;
   onClose: () => void;
   onSaved: (entry: Entry) => void;
 }
 
-const blank = (cats: string[]) => ({ name: "", nameEn: "", category: cats[0] ?? "", tags: "", source: "", sourceText: "" });
+const blank = (cats: string[], cat?: string) => ({
+  name: "",
+  nameEn: "",
+  category: cat && cats.includes(cat) ? cat : cats[0] ?? "",
+  tags: "",
+  source: "",
+  sourceText: "",
+});
 
-export default function HomebrewEditor({ open, initial, onClose, onSaved }: Props) {
+export default function HomebrewEditor({ open, initial, defaultPoolId, defaultCategory, onClose, onSaved }: Props) {
   const isNew = initial === null;
   const [form, setForm] = useState<Record<string, string>>(blank(CATEGORY_LIST));
   const [pools, setPools] = useState<HomebrewPool[]>([]);
   const [err, setErr] = useState<string>("");
+  const [tip, setTip] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
     setErr("");
+    setTip("");
     const all = loadPools();
     setPools(all);
-    const fallback = all[0]?.id ?? "";
+    const fallback = defaultPoolId && all.some((p) => p.id === defaultPoolId) ? defaultPoolId : all[0]?.id ?? "";
     if (isNew) {
       const draft = loadDraft();
-      setForm({ ...blank(CATEGORY_LIST), __pool: (draft.__pool && all.some((p) => p.id === draft.__pool)) ? draft.__pool : fallback, ...draft });
+      const base = blank(CATEGORY_LIST, defaultCategory);
+      setForm({
+        ...base,
+        ...draft,
+        // 默认包/分类由调用方（当前包、当前分类标签）决定，优先于历史草稿
+        category: defaultCategory && CATEGORY_LIST.includes(defaultCategory) ? defaultCategory : draft.category ?? base.category,
+        __pool: defaultPoolId && all.some((p) => p.id === defaultPoolId) ? defaultPoolId : (draft.__pool && all.some((p) => p.id === draft.__pool)) ? draft.__pool : fallback,
+      });
     } else {
       setForm({ ...draftToForm(initial), __pool: entryPoolId(initial.id) ?? fallback });
       clearDraft();
     }
-  }, [open, isNew, initial]);
+  }, [open, isNew, initial, defaultPoolId, defaultCategory]);
 
   const fields = useMemo(() => fieldsFor(form.category ?? ""), [form.category]);
 
@@ -80,19 +100,29 @@ export default function HomebrewEditor({ open, initial, onClose, onSaved }: Prop
   function set(k: string, v: string) {
     const next = { ...form, [k]: v };
     setForm(next);
+    setTip("");
     if (isNew) saveDraft(next);
   }
 
-  function doSave() {
-    const r = buildEntry(form, initial?.id);
+  /** 保存。continueNew=true 时保存后清空表单继续创建下一条（保留归属包与资源类型）。 */
+  function doSave(continueNew: boolean) {
+    // 新建时按名称生成用户层唯一 id，避免不同包内同名条目互相覆盖
+    const targetId = isNew ? uniqueEntryId((form.name ?? "").trim()) : initial.id;
+    const r = buildEntry(form, targetId);
     if (!r.ok) {
       setErr(r.error);
       return;
     }
+    setErr("");
     const poolId = form.__pool && pools.some((p) => p.id === form.__pool) ? form.__pool : undefined;
     const saved = upsertEntryInPool(r.entry.id, r.entry, poolId);
-    if (isNew) clearDraft();
     onSaved(saved);
+    if (isNew) clearDraft();
+    if (continueNew && isNew) {
+      setForm({ ...blank(CATEGORY_LIST, form.category), __pool: form.__pool ?? "" });
+      setTip("已保存「" + saved.name + "」，可继续创建下一条。");
+      return;
+    }
     onClose();
   }
 
@@ -135,21 +165,25 @@ export default function HomebrewEditor({ open, initial, onClose, onSaved }: Prop
   }
 
   const catLabel = CATEGORY_LABELS[form.category ?? ""] ?? form.category ?? "";
+  const poolName = pools.find((p) => p.id === form.__pool)?.name;
 
   return (
     <SheetDialog
+      xwide
       open={open}
       headline={isNew ? "新建私设条目" : "编辑私设条目"}
-      sub={"正文用 wikitext，右侧实时预览" + (isNew ? "（已自动保存草稿）" : "")}
+      sub={(poolName ? poolName + " · " : "") + (isNew ? "正文用 wikitext，右侧实时预览（已自动保存草稿）" : "条目 ID：" + initial.id)}
       actions={
         <>
           <TextButton onClick={discardKeep}>取消</TextButton>
-          <FilledButton onClick={doSave}>保存</FilledButton>
+          {isNew && <TextButton onClick={() => doSave(true)}>保存并继续新建</TextButton>}
+          <FilledButton onClick={() => doSave(false)}>保存</FilledButton>
         </>
       }
       onClose={discardKeep}
     >
       {err && <div className="hb-err">{err}</div>}
+      {tip && <div className="hb-tip">{tip}</div>}
       <div className="hb-grid">
         <div className="hb-form">
           <div className="hb-field">

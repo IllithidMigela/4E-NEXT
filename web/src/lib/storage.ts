@@ -82,3 +82,68 @@ export function fmtBytes(n: number): string {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
   return (n / (1024 * 1024)).toFixed(2) + " MB";
 }
+
+// ===== 缓存明细：把 localStorage 的键按用途分组，供私设页「浏览器缓存」板块直观展示 =====
+
+export type StorageGroupKey = "homebrew" | "cards" | "appearance" | "other";
+
+export interface StorageGroup {
+  key: StorageGroupKey;
+  label: string;
+  bytes: number;
+  keys: number;
+}
+
+export interface StorageBreakdown extends StorageUsage {
+  groups: StorageGroup[];
+}
+
+const GROUP_LABELS: Record<StorageGroupKey, string> = {
+  homebrew: "私设资源包",
+  cards: "人物卡存档",
+  appearance: "外观与设置",
+  other: "其他数据",
+};
+
+function groupOf(key: string): StorageGroupKey {
+  if (key.startsWith("kcc.homebrew") || key === "kcc.userEntries.v1") return "homebrew";
+  if (key === "kcc.cards.v1" || key === "kcc.activeCard.v1") return "cards";
+  if (key === "kcc.settings.v1" || key.startsWith("kcc.bg") || key.startsWith("kcc.portrait") || key === "kcc-layout" || key === "kcc-bg") {
+    return "appearance";
+  }
+  return "other";
+}
+
+/** 分组统计 localStorage 占用（含总量与百分比）。 */
+export function localStorageBreakdown(): StorageBreakdown {
+  const totals: Record<StorageGroupKey, { bytes: number; keys: number }> = {
+    homebrew: { bytes: 0, keys: 0 },
+    cards: { bytes: 0, keys: 0 },
+    appearance: { bytes: 0, keys: 0 },
+    other: { bytes: 0, keys: 0 },
+  };
+  let used = 0;
+  let keys = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      const v = localStorage.getItem(k) ?? "";
+      const size = k.length + v.length;
+      used += size;
+      keys++;
+      const g = totals[groupOf(k)];
+      g.bytes += size;
+      g.keys++;
+    }
+  } catch {
+    /* ignore */
+  }
+  const groups = (Object.keys(totals) as StorageGroupKey[]).map((key) => ({
+    key,
+    label: GROUP_LABELS[key],
+    bytes: totals[key].bytes,
+    keys: totals[key].keys,
+  }));
+  return { used, total: LS_MAX, percent: Math.min(100, (used / LS_MAX) * 100), keys, groups };
+}

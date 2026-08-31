@@ -1,14 +1,25 @@
 import type { Entry, SearchEntry } from "../data/types";
 import { loadSearchIndex } from "../data/loaders";
-import { loadUserEntries } from "./userdata";
+import { loadUserEntries, poolCategoryCounts, type HomebrewPool, type PoolMeta } from "./userdata";
 
 // .d4e 资源包：单文件 JSON，用于个人资源池的导入导出共享。
-// 结构：{ format:"d4e", version:1, meta:{author,exportedAt,count}, entries: Entry[] }
+// 结构：{ format:"d4e", version:1, meta:{name,description,version,icon,author,exportedAt,count,categories}, entries: Entry[] }
+// meta 里的展示信息（包名/简介/版本/图标）随包走，导入方可一键沿用作者设定的外部显示。
 
 export interface D4eMeta {
+  /** 包名（导出时写入，导入时作为默认包名） */
+  name?: string;
+  /** 包简介 */
+  description?: string;
+  /** 包版本号（自由文本） */
+  version?: string;
+  /** 包图标（Material Symbols 名） */
+  icon?: string;
   author?: string;
   exportedAt: string;
   count: number;
+  /** 涉及的资源类型统计，便于导入前预览 */
+  categories?: Record<string, number>;
 }
 
 export interface D4eBundle {
@@ -18,13 +29,47 @@ export interface D4eBundle {
   entries: Entry[];
 }
 
-export function createBundle(entries: Entry[], author?: string): D4eBundle {
+function categoryCounts(entries: Entry[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of entries) out[e.category] = (out[e.category] ?? 0) + 1;
+  return out;
+}
+
+export function createBundle(entries: Entry[], meta: PoolMeta = {}): D4eBundle {
   return {
     format: "d4e",
     version: 1,
-    meta: { author, exportedAt: new Date().toISOString(), count: entries.length },
+    meta: {
+      name: meta.name,
+      description: meta.description,
+      version: meta.version,
+      icon: meta.icon,
+      author: meta.author,
+      exportedAt: new Date().toISOString(),
+      count: entries.length,
+      categories: categoryCounts(entries),
+    },
     entries: entries.map((e) => ({ ...e, origin: "user" })),
   };
+}
+
+/** 由资源包直接生成 .d4e（携带包的外部显示信息）。 */
+export function createPoolBundle(pool: HomebrewPool): D4eBundle {
+  const b = createBundle(pool.entries, {
+    name: pool.name,
+    description: pool.description,
+    version: pool.version,
+    icon: pool.icon,
+    author: pool.author,
+  });
+  b.meta.categories = Object.fromEntries(poolCategoryCounts(pool).map((c) => [c.category, c.count]));
+  return b;
+}
+
+/** 安全的导出文件名（去掉不能作文件名的字符，统一 .d4e 后缀）。 */
+export function bundleFileName(name: string): string {
+  const base = (name || "私设资源包").replace(/[\\/:*?"<>|]/g, "_").trim() || "私设资源包";
+  return base + ".d4e";
 }
 
 export function serializeBundle(b: D4eBundle): string {
@@ -37,7 +82,18 @@ export function parseBundle(text: string): { ok: true; bundle: D4eBundle } | { o
     if (!data || data.format !== "d4e" || data.version !== 1 || !Array.isArray(data.entries)) {
       return { ok: false, error: "不是有效的 .d4e 资源包（format/version/entries 不符）" };
     }
-    return { ok: true, bundle: data as D4eBundle };
+    const meta = (data.meta ?? {}) as Partial<D4eMeta>;
+    const bundle: D4eBundle = {
+      format: "d4e",
+      version: 1,
+      meta: {
+        ...meta,
+        exportedAt: typeof meta.exportedAt === "string" ? meta.exportedAt : "",
+        count: typeof meta.count === "number" ? meta.count : data.entries.length,
+      },
+      entries: data.entries as Entry[],
+    };
+    return { ok: true, bundle };
   } catch {
     return { ok: false, error: "JSON 解析失败" };
   }

@@ -16,6 +16,7 @@ export default function SheetDialog(props: {
   headColor?: string;  // 卡头底色（如 ITEM_COLOR 物品橙）；默认跟随主色
   headFg?: string;     // 卡头文字色；给了 headColor 时默认白色
   xwide?: boolean;     // 加宽变体（880px，供双栏内容如基础物品选择）
+  extraClass?: string; // 追加到 md-dialog 上的自定义类（用于个别弹窗定制宽度等）
   onClose: () => void;
   children: ReactNode;   // slot="content"
   actions?: ReactNode;   // slot="actions"（额外的操作按钮，默认附带「关闭」）
@@ -38,7 +39,7 @@ export default function SheetDialog(props: {
 
   return (
     <Dialog
-      className={"sheet-dialog" + (props.xwide ? " sheet-dialog-xw" : "")}
+      className={"sheet-dialog" + (props.xwide ? " sheet-dialog-xw" : "") + (props.extraClass ? " " + props.extraClass : "")}
       open={visible}
       onClose={close}
       onClosed={() => {

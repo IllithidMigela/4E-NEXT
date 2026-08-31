@@ -13,3 +13,5 @@ out/categories/_audit.json
 
 # DSH vision-router artifacts (local tooling output)
 .dsh-vision-router/
+# npm cache (local)
+.npm-cache/
