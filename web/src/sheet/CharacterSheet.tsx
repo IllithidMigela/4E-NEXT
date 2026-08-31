@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, Switch } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, ENCOUNTER_SLOT_LEVELS, DAILY_SLOT_LEVELS, UTILITY_SLOT_LEVELS, PARAGON_SLOT_LEVELS, LEGENDARY_SLOT_LEVEL, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, armorPenaltyFor, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, ENCOUNTER_SLOT_LEVELS, DAILY_SLOT_LEVELS, UTILITY_SLOT_LEVELS, PARAGON_SLOT_LEVELS, LEGENDARY_SLOT_LEVEL, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import PowerSlotPicker from "./PowerSlotPicker";
 import FeatSlotPicker from "./FeatSlotPicker";
@@ -515,8 +515,20 @@ const ARMOR_BASES: { name: string; cat: string }[] = [
 
 function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: number; baseId?: string; proficientInfos?: WeapInfo[]; proficientImplGroups?: string[]; armorTokens?: Set<string>; shieldTokens?: Set<string>; onSelect: (id: string) => void; onClear: () => void; onClose: () => void }) {
   const [masterwork, setMasterwork] = useState(false);
+  // 当前选中的护甲组（左侧导航高亮；初始定位到已装备护甲所属组）
+  const [armorGroup, setArmorGroup] = useState<string>(() => {
+    const cur = props.baseId ? findBaseItem(props.baseId) : undefined;
+    if (cur?.kind === "armor" && cur.armor) {
+      const a = cur.armor;
+      if (a.masterwork) {
+        const b = ARMOR_BASES.find((x) => a.name.includes(x.name));
+        if (b) return b.cat + "-" + b.name;
+      }
+      return a.category;
+    }
+    return "轻甲";
+  });
   const active = (id: string) => props.baseId === id;
-  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const armorTok = props.armorTokens ?? new Set<string>();
   const shieldTok = props.shieldTokens ?? new Set<string>();
   // 护甲擅长：命中具体护甲名 或 命中所属大类（轻甲/重甲）
@@ -540,6 +552,8 @@ function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: n
   const armorGroups = masterwork
     ? ARMOR_BASES.map((b) => ({ label: b.cat + "-" + b.name, items: BASE_ARMORS.filter((a) => a.name.includes(b.name)) }))
     : [{ label: "轻甲", items: BASE_ARMORS.filter((a) => a.category === "轻甲" && !a.masterwork) }, { label: "重甲", items: BASE_ARMORS.filter((a) => a.category === "重甲" && !a.masterwork) }];
+  // 精制品切换后组集合变化时回退到第一组
+  const activeArmorGroup = armorGroups.some((g) => g.label === armorGroup) ? armorGroup : (armorGroups[0]?.label ?? "");
   const currentBase = props.baseId ? findBaseItem(props.baseId) : undefined;
   const currentBaseName = currentBase
     ? (currentBase.kind === "weapon" ? currentBase.weapon!.name
@@ -576,12 +590,12 @@ function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: n
           onSelect={(id) => props.onSelect(id)}
         />
       ) : props.kind === "shield" ? (
-        <div className="equip-layout base-dialog-layout">
-          <nav className="equip-nav">
-            <button type="button" className="equip-nav-btn" title="盾牌" onClick={() => jump("base-g-盾牌")}>盾牌</button>
-          </nav>
-          <div className="equip-groups">
-            <div id="base-g-盾牌" className="base-cat">
+        <div className="class-layout base-class-layout">
+          <div className="class-sources">
+            <button type="button" className="cl-item active" title="盾牌">盾牌</button>
+          </div>
+          <div className="class-main">
+            <div className="base-cat">
               <div className="base-cat-title">盾牌</div>
               <div className="picker-cards">
                 {BASE_SHIELDS.map((s) => card(s.name, baseItemId("shield", s.name), "+" + s.ac + " AC", s.traits, armorProficient(armorTok, shieldTok, s.name)))}
@@ -590,15 +604,15 @@ function BasePickerDialog(props: { kind: "weapon" | "armor" | "shield"; index: n
           </div>
         </div>
       ) : (
-        <div className="equip-layout base-dialog-layout">
-          <nav className="equip-nav">
+        <div className="class-layout base-class-layout">
+          <div className="class-sources">
             {armorGroups.map((g) => (
-              <button key={g.label} type="button" className="equip-nav-btn" title={g.label} onClick={() => jump("base-g-" + g.label)}>{g.label}</button>
+              <button key={g.label} type="button" className={activeArmorGroup === g.label ? "cl-item active" : "cl-item"} title={g.label} onClick={() => setArmorGroup(g.label)}>{g.label}</button>
             ))}
-          </nav>
-          <div className="equip-groups">
-            {armorGroups.map((g) => (
-              <div key={g.label} id={"base-g-" + g.label} className="base-cat">
+          </div>
+          <div className="class-main">
+            {armorGroups.filter((g) => g.label === activeArmorGroup).map((g) => (
+              <div key={g.label} className="base-cat">
                 <div className="base-cat-title">{g.label}</div>
                 <div className="picker-cards">
                   {g.items.filter((a) => !a.masterwork).map((a) => card(a.name, baseItemId("armor", a.name), "+" + a.ac, a.category, armorProf(a)))}
@@ -5321,6 +5335,11 @@ export default function CharacterSheet({
     const order = new Map(SKILL_TABLE.map((s, i) => [s.name, i]));
     return [...pool.values()].sort((a, b) => (order.get(a.name) ?? 99) - (order.get(b.name) ?? 99));
   }, [classEntry, classEntry2]);
+  // 装备的基础护甲（槽位 5）名称：供自动计算护甲减值
+  const equippedArmorName = useMemo(() => {
+    const b = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
+    return b?.kind === "armor" && b.armor ? b.armor.name : undefined;
+  }, [char.baseItems]);
   // 有效受训技能 = 杂项受训 + 职业内置自动受训 + 职业点选受训
   const effectiveTrained = useMemo(
     () => [...new Set([...char.trainedSkills, ...classAutoTrained, ...char.classTrainedSkills])],
@@ -5332,7 +5351,6 @@ export default function CharacterSheet({
     () => [classEntry, classEntry2].some((e) => !!e && /^!!\s*技能巧手 Skill Versatility/m.test(e.sourceText)),
     [classEntry, classEntry2]
   );
-  const classTrainedSet = useMemo(() => new Set(char.classTrainedSkills), [char.classTrainedSkills]);
   const levelInfo = useMemo(() => (char.level >= 1 ? LEVELS[char.level - 1] : undefined), [char.level]);
   const isBoostLevel = levelInfo?.abilityBoost === "两个 +1";
   const raceTrait = useMemo(() => (raceEntry ? raceTraitHtml(raceEntry.sourceText) : undefined), [raceEntry]);
@@ -5768,20 +5786,40 @@ export default function CharacterSheet({
     }
   }
 
+  // 技能条勾选：自由切换受训，不受职业技能数量上限约束；与职业技能列表双向同步
   function toggleTrained(name: string) {
     setChar((p) => {
-      const has = p.trainedSkills.includes(name);
-      if (has) return { ...p, trainedSkills: p.trainedSkills.filter((s) => s !== name) };
-      if (trainedCount > 0 && p.trainedSkills.length >= trainedCount) return p;
+      // 职业自动受训由职业推导，不可手动切换
+      if (classAutoTrained.includes(name)) return p;
+      const inTrained = p.trainedSkills.includes(name);
+      const inClass = p.classTrainedSkills.includes(name);
+      if (inTrained) {
+        // 取消杂项受训；若该技能同时为职业点选受训，一并取消，保持两处一致
+        return {
+          ...p,
+          trainedSkills: p.trainedSkills.filter((s) => s !== name),
+          classTrainedSkills: inClass ? p.classTrainedSkills.filter((s) => s !== name) : p.classTrainedSkills,
+        };
+      }
+      if (inClass) {
+        // 仅由职业点选受训（如从职业技能列表勾选）：取消职业点选
+        return { ...p, classTrainedSkills: p.classTrainedSkills.filter((s) => s !== name) };
+      }
+      // 自由勾选：写入杂项受训，不占用职业受训名额（其他来源也能提供额外受训）
       return { ...p, trainedSkills: [...p.trainedSkills, name] };
     });
   }
 
-  // 职业受训点选：从职业技能池中选择（上限 = 职业额外受训数），更换职业时清除
+  // 职业受训点选：从职业技能池中选择（上限 = 职业额外受训数），更换职业时清除；
+  // 若该技能已由技能条（杂项）勾选，则点击列表取消的是杂项受训
   function toggleClassTrained(name: string) {
     setChar((p) => {
-      const has = p.classTrainedSkills.includes(name);
-      if (has) return { ...p, classTrainedSkills: p.classTrainedSkills.filter((s) => s !== name) };
+      const inClass = p.classTrainedSkills.includes(name);
+      const inMisc = p.trainedSkills.includes(name);
+      if (inMisc) {
+        return { ...p, trainedSkills: p.trainedSkills.filter((s) => s !== name) };
+      }
+      if (inClass) return { ...p, classTrainedSkills: p.classTrainedSkills.filter((s) => s !== name) };
       if (trainedCount > 0 && p.classTrainedSkills.length >= trainedCount) return p;
       return { ...p, classTrainedSkills: [...p.classTrainedSkills, name] };
     });
@@ -6688,7 +6726,7 @@ export default function CharacterSheet({
               const sm = char.skillMods[s.name] ?? { race: 0, other: 0, armor: 0 };
               const hasArmor = ARMOR_PENALTY_SKILLS.has(s.name);
               const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
-              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? sm.armor : 0);
+              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0);
               return (
                 <div key={s.name} className={trained ? "skill-item trained" : "skill-item"} onClick={() => toggleTrained(s.name)} title="点击切换受训">
                   <span className="skill-check">{trained ? "✓" : ""}</span>
@@ -6698,11 +6736,6 @@ export default function CharacterSheet({
                   <span className="skill-mods" onClick={(e) => e.stopPropagation()}>
                     <label className="skill-mod" title="种族加值"><span>种族</span><input type="number" min={-20} max={50} value={sm.race} onChange={(e) => setSkillMod(s.name, "race", e.target.value)} /></label>
                     <label className="skill-mod" title="其他加值"><span>其他</span><input type="number" min={-20} max={50} value={sm.other} onChange={(e) => setSkillMod(s.name, "other", e.target.value)} /></label>
-                    {hasArmor ? (
-                      <label className="skill-mod" title="盔甲减值（自动计为负值，只填数字）"><span>盔甲</span><span className="skill-mod-minus">−</span><input type="number" min={0} max={50} value={sm.armor} onChange={(e) => setSkillMod(s.name, "armor", e.target.value.replace(/[^0-9]/g, ""))} /></label>
-                    ) : (
-                      <label className="skill-mod armor-placeholder" aria-hidden="true"><span>盔甲</span><span className="skill-mod-minus">−</span><input type="number" disabled value={0} /></label>
-                    )}
                   </span>
                 </div>
               );
@@ -6711,13 +6744,12 @@ export default function CharacterSheet({
           {classSkillPool.length > 0 && (
             <div className="cls-skill-pick">
               <div className="csp-title">
-                <span>职业技能受训（{char.classTrainedSkills.length}/{trainedCount}）</span>
-                <span className="csp-sub">点选受训 · 更换职业时清除</span>
+                <span>职业技能受训（{classSkillPool.filter((s) => trainedSet.has(s.name)).length}/{trainedCount}）</span>
               </div>
               <div className="csp-list">
                 {classSkillPool.map((s) => {
                   const auto = classAutoTrained.includes(s.name);
-                  const sel = classTrainedSet.has(s.name);
+                  const sel = trainedSet.has(s.name);
                   const cls = auto ? "csp-item auto" : sel ? "csp-item active" : "csp-item";
                   return (
                     <button key={s.name} type="button" className={cls} onClick={() => !auto && toggleClassTrained(s.name)}
@@ -6738,7 +6770,7 @@ export default function CharacterSheet({
               const sm = char.skillMods[s.name] ?? { race: 0, other: 0, armor: 0 };
               const hasArmor = ARMOR_PENALTY_SKILLS.has(s.name);
               const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
-              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? sm.armor : 0);
+              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0);
               return (
                 <div key={s.name} className={trained ? "skill-compact-row trained" : "skill-compact-row"} title="简略模式为静态展示，受训请在详细模式中切换">
                   <span className="sc-name">{s.name}</span>
@@ -7141,9 +7173,6 @@ export default function CharacterSheet({
                 return (
                   <div key={i} className="ritual-detail-item" onClick={() => mode === "edit" && openRitualPicker(i)} title={mode === "edit" ? "点击更换" : undefined}>
                     <EntryCard entry={r} />
-                    {mode === "edit" && (
-                      <button type="button" className="ritual-detail-remove" title="清空槽位" onClick={(e) => { e.stopPropagation(); clearRitualSlotAt(i); }}>×</button>
-                    )}
                   </div>
                 );
               }
@@ -7666,6 +7695,7 @@ return (
         <RitualPicker
           entries={rituals}
           kind={ritualKind}
+          currentLevel={char.level}
           currentId={char.ritualSlots?.[ritualPickerSlot] || undefined}
           onSelect={(id) => { selectRitualSlot(ritualPickerSlot, id); setRitualPickerSlot(null); }}
           onClear={() => { clearRitualSlotAt(ritualPickerSlot); setRitualPickerSlot(null); }}

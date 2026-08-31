@@ -10,3 +10,6 @@ web/public/mock_*.d4e.json
 .DS_Store
 # 审计报告（派生产物，不入库）
 out/categories/_audit.json
+
+# DSH vision-router artifacts (local tooling output)
+.dsh-vision-router/

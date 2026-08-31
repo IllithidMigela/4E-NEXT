@@ -24,6 +24,25 @@ export const SKILL_TABLE: { name: string; ability: AbilityKey }[] = [
 // 受盔甲减值影响的技能
 export const ARMOR_PENALTY_SKILLS = new Set(["运动", "坚韧", "杂技", "隐秘", "盗术"]);
 
+// 基础护甲减值（4E 规则按甲种：布 0 / 皮 -1 / 革 -1 / 链 -1 / 鳞 -2 / 板 -2）
+const ARMOR_PENALTY: [RegExp, number][] = [
+  [/^布甲|布制|吉斯布|念织布|精织布|巨灵布|念纹布|星织布/, 0],
+  [/^皮甲|卓尔皮|蛇皮皮|精制皮|咒缚皮|剑翅皮|星制皮/, -1],
+  [/^革甲|大地革|精怪革|黑暗革|伏形革|虚空革|长者革/, -1],
+  [/^链甲|精工链|交织链|晶钢链|熔锻链|密织链|深狱链|灵锻链|镶钢链|板条链/, -1],
+  [/^鳞甲|龙兽鳞|飞龙鳞|风暴鳞|古龙鳞|纳迦鳞|泰坦鳞|长者鳞/, -2],
+  [/^板甲|霜火板|叠层板|吉斯板|幽灵板|战争板|军团板|末日板|神铸板|钉板|全身板/, -2],
+];
+
+/** 由基础护甲名推导护甲减值（未装备或未知甲种时返回 0）。 */
+export function armorPenaltyFor(name: string | undefined): number {
+  if (!name) return 0;
+  for (const [re, pen] of ARMOR_PENALTY) {
+    if (re.test(name)) return pen;
+  }
+  return 0;
+}
+
 export type SkillMods = Record<string, { race: number; other: number; armor: number }>;
 
 export function emptySkillMods(): SkillMods {
@@ -81,6 +100,8 @@ export function migrateCharacter(c: Partial<Character>): Character {
   const base = { ...defaultCharacter(), ...(c as Character) };
   return {
     ...base,
+    portraitOriginal: (base as { portraitOriginal?: string | null }).portraitOriginal ?? null,
+    portraitCropped: (base as { portraitCropped?: string | null }).portraitCropped ?? null,
     defenseMods: normDefenseMods(base.defenseMods ?? emptyDefenseMods()),
     speedMods: normSpeedMods(base.speedMods ?? emptySpeedMods()),
     initMods: normInitMods(base.initMods ?? emptyInitMods()),
@@ -163,6 +184,8 @@ export function migrateCharacter(c: Partial<Character>): Character {
 
 export interface Character {
   name: string;
+  portraitOriginal?: string | null; // 立绘原图（随人物卡存储；已压缩，不随设置导出）
+  portraitCropped?: string | null;  // 立绘裁切图（随人物卡存储）
   level: number;
   abilities: Record<AbilityKey, number>;
   defenseMods: DefenseMods;
@@ -261,6 +284,8 @@ export function defaultCharacter(): Character {
   const abilities = { str: 10, con: 10, dex: 10, int: 10, wis: 10, cha: 10, [lowKey]: 8 } as Record<AbilityKey, number>;
   return {
     name: "未命名角色",
+    portraitOriginal: null,
+    portraitCropped: null,
     level: 1,
     abilities,
     xp: "",

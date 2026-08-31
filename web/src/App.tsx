@@ -12,7 +12,7 @@ import DrawView from "./DrawView";
 import HomebrewView from "./HomebrewView";
 import { loadCards, saveCards, loadActiveId, saveActiveId, uid, type SavedCard } from "./lib/storage";
 import { defaultCharacter, migrateCharacter, type Character } from "./sheet/character";
-import { TextButton } from "./components/md";
+import { FilledButton, TextButton } from "./components/md";
 import SheetDialog from "./components/SheetDialog";
 
 type View = "sheet" | "background" | "reserve" | "overview" | "draw" | "search" | "learn" | "homebrew" | "settings";
@@ -34,7 +34,7 @@ function featherMask(feather: number): string {
 }
 
 function Shell() {
-  const { bgImage, bgBlur, bgFeather } = useTheme();
+  const { bgImage, bgBlur, bgFeather, portraitOriginal, portraitCropped, applyPortrait, clearPortrait } = useTheme();
   const [view, setView] = useState<View>("sheet");
   const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches);
   // 手机端强制单栏：不再提供双栏选项
@@ -60,7 +60,6 @@ function Shell() {
   const [char, setChar] = useState<Character>(() => cards.find((c) => c.id === activeId)?.char ?? defaultCharacter());
   const [cardOpen, setCardOpen] = useState(false);
   const [drawOpen, setDrawOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
   const [exporting, setExporting] = useState(false);
   const captureRef = useRef<HTMLDivElement>(null);
@@ -79,6 +78,66 @@ function Shell() {
     }, 400);
     return () => clearTimeout(t);
   }, [char, activeId]);
+
+  // 立绘跟随卡片：切换/新建/删除卡片时，把该卡的立绘同步进主题显示
+  useEffect(() => {
+    const c = cards.find((x) => x.id === activeId);
+    if (!c || !c.char.portraitOriginal) {
+      clearPortrait();
+      return;
+    }
+    void applyPortrait(c.char.portraitOriginal, c.char.portraitCropped ?? null);
+    // 仅依赖 activeId：cards 变化不应反向触发（避免与下方写回 effect 形成环）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
+  // 一次性迁移：旧版全局立绘（kcc.portraitOriginal.v1 等）迁移到当前卡片
+  const portraitMigrated = useRef(false);
+  useEffect(() => {
+    if (portraitMigrated.current) return;
+    portraitMigrated.current = true;
+    try {
+      const oldOrig = localStorage.getItem("kcc.portraitOriginal.v1");
+      const oldCrop = localStorage.getItem("kcc.portraitCropped.v1");
+      if (oldOrig) {
+        const c = cards.find((x) => x.id === activeId);
+        if (c && !c.char.portraitOriginal) {
+          void applyPortrait(oldOrig, oldCrop ?? null);
+        }
+        localStorage.removeItem("kcc.portraitOriginal.v1");
+        localStorage.removeItem("kcc.portraitCropped.v1");
+      }
+    } catch {
+      /* 忽略 */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 主题立绘变化（上传/裁切确认）时写回当前卡片，随卡存档；首次挂载跳过
+  const portraitInitialized = useRef(false);
+  useEffect(() => {
+    if (!portraitInitialized.current) {
+      portraitInitialized.current = true;
+      return;
+    }
+    if (!activeId) return;
+    setChar((prev) => ({ ...prev, portraitOriginal, portraitCropped }));
+    setCards((prev) => {
+      const next = prev.map((x) => (x.id === activeId ? { ...x, char: { ...x.char, portraitOriginal, portraitCropped }, updatedAt: Date.now() } : x));
+      saveCards(next);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portraitOriginal, portraitCropped]);
+
+  // 把某张卡的立绘同步进主题显示（activeId 不变的路径：导入/抽卡/清空重抽）
+  function syncPortraitFromChar(c: Character) {
+    if (c.portraitOriginal) {
+      void applyPortrait(c.portraitOriginal, c.portraitCropped ?? null);
+    } else {
+      clearPortrait();
+    }
+  }
 
   function toggleLayout() {
     setLayoutRaw((p) => {
@@ -125,6 +184,7 @@ function Shell() {
   // 进入抽卡模式：清空当前存档（保留卡名）
   function enterDrawCleared() {
     setChar(defaultCharacter());
+    clearPortrait();
     setCards((p) => {
       const next = p.map((c) => (c.id === activeId ? { ...c, char: defaultCharacter(), updatedAt: Date.now() } : c));
       saveCards(next);
@@ -140,6 +200,7 @@ function Shell() {
       saveCards(next);
       return next;
     });
+    clearPortrait();
     setView("sheet");
   }
 
@@ -194,6 +255,7 @@ function Shell() {
         const c = data && (data.pages && data.pages.character) ? migrateCharacter(data.pages.character) : null;
         if (!c || data.app !== "dnd4e-kcc") throw new Error("bad");
         setChar(c);
+        syncPortraitFromChar(c);
         setCards((p) => {
           const next = p.map((x) => (x.id === activeId ? { ...x, char: c, name: c.name || x.name, updatedAt: Date.now() } : x));
           saveCards(next);
@@ -269,7 +331,6 @@ function Shell() {
         <button type="button" className={view === "overview" ? "side-btn active" : "side-btn"} title="速览" onClick={() => setView("overview")}><span className="material-symbols-outlined">overview</span><span className="sb-label">速览</span></button>
         <div className="side-sep" />
         <button type="button" className="side-btn" title="存档" onClick={() => setCardOpen(true)}><span className="material-symbols-outlined">folder</span><span className="sb-label">存档</span></button>
-        <button type="button" className="side-btn" title="导出角色卡" onClick={() => setExportOpen(true)}><span className="material-symbols-outlined">download</span><span className="sb-label">导出</span></button>
         <button type="button" className={view === "homebrew" ? "side-btn active" : "side-btn"} title="私设" onClick={() => setView("homebrew")}><span className="material-symbols-outlined">extension</span><span className="sb-label">私设</span></button>
         <button type="button" className={"side-btn" + (view === "draw" ? " active" : "")} title="抽卡" onClick={() => setDrawOpen(true)}><span className="material-symbols-outlined">casino</span><span className="sb-label">抽卡</span></button>
         <button type="button" className={view === "search" ? "side-btn active" : "side-btn"} title="词条" onClick={() => setView("search")}><span className="material-symbols-outlined">search</span><span className="sb-label">词条</span></button>
@@ -299,7 +360,7 @@ function Shell() {
         </div>
       </main>
       {cardOpen && (
-        <SheetDialog open headline="存档" onClose={() => setCardOpen(false)} actions={
+        <SheetDialog xwide open headline="存档" onClose={() => setCardOpen(false)} actions={
           <>
             <input ref={importRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importSave(f); e.target.value = ""; }} />
             <TextButton onClick={() => importRef.current?.click()}>导入存档</TextButton>
@@ -307,26 +368,46 @@ function Shell() {
             <TextButton onClick={newCard}>＋ 新建人物卡</TextButton>
           </>
         }>
-          <div className="preset-list">
-            {cards.map((c) => (
-              <div key={c.id} className={c.id === activeId ? "card-row active" : "card-row"}>
-                <div className="card-row-main">
-                  {renamingId === c.id ? (
-                    <input className="card-rename-input" value={renameText} autoFocus onChange={(e) => setRenameText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); if (e.key === "Escape") { e.preventDefault(); setRenamingId(null); } }} onBlur={() => setRenamingId(null)} />
-                  ) : (
-                    <button type="button" className="card-row-name" onClick={() => switchCard(c.id)} title="切换到这张卡">
-                      <span className="preset-name">{c.name}{c.id === activeId ? "（当前）" : ""}</span>
-                      <span className="preset-label">Lv{c.char.level} · {new Date(c.updatedAt).toLocaleString("zh-CN")}</span>
-                    </button>
-                  )}
-                </div>
-                <div className="card-row-btns">
-                  <button type="button" className="crop-btn" onClick={() => saveCardNow(c.id)}>保存</button>
-                  <button type="button" className="crop-btn" onClick={() => { setRenamingId(c.id); setRenameText(c.name); }}>重命名</button>
-                  {cards.length > 1 && <button type="button" className="crop-btn crop-danger" onClick={() => deleteCard(c.id)}>删除</button>}
-                </div>
+          <div className="dialog-save-layout">
+            <div className="dialog-save-list">
+              <div className="preset-list">
+                {cards.map((c) => (
+                  <div key={c.id} className={c.id === activeId ? "card-row active" : "card-row"}>
+                    <div className="card-row-main">
+                      {renamingId === c.id ? (
+                        <input className="card-rename-input" value={renameText} autoFocus onChange={(e) => setRenameText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); if (e.key === "Escape") { e.preventDefault(); setRenamingId(null); } }} onBlur={() => setRenamingId(null)} />
+                      ) : (
+                        <button type="button" className="card-row-name" onClick={() => switchCard(c.id)} title="切换到这张卡">
+                          <span className="preset-name">{c.name}{c.id === activeId ? "（当前）" : ""}</span>
+                          <span className="preset-label">Lv{c.char.level} · {new Date(c.updatedAt).toLocaleString("zh-CN")}</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="card-row-btns">
+                      <button type="button" className="crop-btn" onClick={() => saveCardNow(c.id)}>保存</button>
+                      <button type="button" className="crop-btn" onClick={() => { setRenamingId(c.id); setRenameText(c.name); }}>重命名</button>
+                      {cards.length > 1 && <button type="button" className="crop-btn crop-danger" onClick={() => deleteCard(c.id)}>删除</button>}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <div className="dialog-save-export">
+              <span className="dialog-save-export-title">导出角色卡</span>
+              <div className="export-format-row">
+                {([["png", "PNG"], ["jpg", "JPG"], ["pdf", "PDF"]] as const).map(([f, label]) => (
+                  <button key={f} type="button" className={"export-format-btn" + (exportFormat === f ? " active" : "")} onClick={() => setExportFormat(f)}>{label}</button>
+                ))}
+              </div>
+              <p className="hint">
+                {exportFormat === "pdf"
+                  ? "以渲染模式生成当前人物卡，并按 A4 纸张分页输出为 PDF 文件。"
+                  : exportFormat === "jpg"
+                    ? "以渲染模式生成当前人物卡，输出为 JPG 图片（有损压缩，文件较小）。"
+                    : "以渲染模式生成当前人物卡，输出为 PNG 图片（无损，文件较大）。"}
+              </p>
+              <FilledButton disabled={exporting} onClick={runExport}>{exporting ? "导出中…" : "导出"}</FilledButton>
+            </div>
           </div>
 
         </SheetDialog>
@@ -344,27 +425,6 @@ function Shell() {
               <span className="preset-label">自动新建一个空白人物卡，原卡不受影响</span>
             </button>
           </div>
-        </SheetDialog>
-      )}
-      {exportOpen && (
-        <SheetDialog open headline="导出角色卡" sub={char.name || "角色"} onClose={() => setExportOpen(false)} actions={
-          <>
-            <TextButton onClick={() => setExportOpen(false)}>取消</TextButton>
-            <TextButton disabled={exporting} onClick={runExport}>{exporting ? "导出中…" : "导出"}</TextButton>
-          </>
-        }>
-          <div className="export-format-row">
-            {([["png", "PNG"], ["jpg", "JPG"], ["pdf", "PDF"]] as const).map(([f, label]) => (
-              <button key={f} type="button" className={"export-format-btn" + (exportFormat === f ? " active" : "")} onClick={() => setExportFormat(f)}>{label}</button>
-            ))}
-          </div>
-          <p className="hint">
-            {exportFormat === "pdf"
-              ? "以渲染模式生成当前人物卡，并按 A4 纸张分页输出为 PDF 文件。"
-              : exportFormat === "jpg"
-                ? "以渲染模式生成当前人物卡，输出为 JPG 图片（有损压缩，文件较小）。"
-                : "以渲染模式生成当前人物卡，输出为 PNG 图片（无损，文件较大）。"}
-          </p>
         </SheetDialog>
       )}
     </div>

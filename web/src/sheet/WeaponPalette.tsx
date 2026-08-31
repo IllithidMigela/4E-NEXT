@@ -71,13 +71,13 @@ export default function WeaponPalette({ weapons: pool, allowImplShield, categori
     <button key={baseItemId("weapon", w.name)} type="button" className={w.name === currentName ? "picker-card base-picker-card selected" : "picker-card base-picker-card"} onClick={() => onSelect(baseItemId("weapon", w.name), w.name)}>
       <span className="wk-row1">
         <span className="bi-name">{w.name.split(/\s/)[0]}</span>
+        {proficient && <span className="prof-badge">擅长</span>}
         <span className="wk-range">{w.range && w.range !== "—" ? "射程 " + w.range : ""}</span>
       </span>
       <span className="wk-en">{w.name.split(/\s/).slice(1).join(" ")}</span>
       <span className="wk-row2">
         <span className="bi-dice">{w.dice}</span>
         <span className="wk-prof">{w.prof ? "+" + w.prof : "—"}</span>
-        {proficient && <span className="prof-badge">擅长</span>}
       </span>
       <span className="wk-row3">
         <span className="bi-traits">{w.traits && w.traits !== "—" ? w.traits : ""}</span>

@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { seedHexToTheme, themeToCssVars, applyCssVars, imageToSeedHex, type SeedMode } from "./theme";
 import { downscaleImage } from "./lib/image";
+import { loadSettings, saveSettings, prepareImageForStore, BG_CACHE_KEY, loadBgCacheMarker, saveBgCacheMarker } from "./lib/settings";
+import { cachePutImage, cacheGetImage, cacheDeleteImage } from "./lib/imageCache";
 
 export type BgMode = "off" | "portrait" | "custom";
 export type FontMode = "serif" | "sans";
@@ -19,6 +21,7 @@ interface ThemeContextValue {
   portraitOriginal: string | null;
   portraitCropped: string | null;
   setPortrait: (original: string, cropped: string) => Promise<void>;
+  applyPortrait: (original: string | null, cropped: string | null) => Promise<void>;
   clearPortrait: () => void;
   bgMode: BgMode;
   bgCustom: string | null;
@@ -37,6 +40,9 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const DEFAULT_SEED = "#5e81ac"; // Nord 冰霜
 
+// 首次渲染前读取一次持久化设置，避免刷新闪回默认主题
+const INITIAL_SETTINGS = typeof window !== "undefined" ? loadSettings() : null;
+
 async function extractHexFromUrl(url: string): Promise<string> {
   // 先缩到 512px 内，避免大图 canvas 内存超限
   const small = await downscaleImage(url, 512);
@@ -50,22 +56,19 @@ async function extractHexFromUrl(url: string): Promise<string> {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [seedMode, setSeedMode] = useState<SeedMode>("preset");
-  const [seedHex, setSeedHex] = useState(DEFAULT_SEED);
-  const [presetHex, setPresetHex] = useState(DEFAULT_SEED);
+  const [seedMode, setSeedMode] = useState<SeedMode>(INITIAL_SETTINGS?.seedMode ?? "preset");
+  const [seedHex, setSeedHex] = useState(INITIAL_SETTINGS?.seedHex ?? DEFAULT_SEED);
+  const [presetHex, setPresetHex] = useState(INITIAL_SETTINGS?.presetHex ?? DEFAULT_SEED);
   const [portraitHex, setPortraitHex] = useState(DEFAULT_SEED);
   const [bgHex, setBgHex] = useState(DEFAULT_SEED);
-  const [isDark, setDark] = useState(false);
+  const [isDark, setDark] = useState(INITIAL_SETTINGS?.isDark ?? false);
   const [portraitOriginal, setPortraitOriginal] = useState<string | null>(null);
   const [portraitCropped, setPortraitCropped] = useState<string | null>(null);
-  const [bgMode, setBgMode] = useState<BgMode>("off");
+  const [bgMode, setBgMode] = useState<BgMode>(INITIAL_SETTINGS?.bgMode ?? "off");
   const [bgCustom, setBgCustom] = useState<string | null>(null);
-  const [bgBlur, setBgBlur] = useState(2);
-  const [bgFeather, setBgFeather] = useState(55);
-  const [fontMode, setFontModeState] = useState<FontMode>(() => {
-    const saved = localStorage.getItem("kcc.fontMode");
-    return saved === "sans" ? "sans" : "serif";
-  });
+  const [bgBlur, setBgBlur] = useState(INITIAL_SETTINGS?.bgBlur ?? 2);
+  const [bgFeather, setBgFeather] = useState(INITIAL_SETTINGS?.bgFeather ?? 55);
+  const [fontMode, setFontModeState] = useState<FontMode>(INITIAL_SETTINGS?.fontMode ?? "serif");
 
   const bgImage = useMemo(() => {
     if (bgMode === "portrait") return portraitOriginal;
@@ -97,25 +100,55 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
   }, [theme, isDark]);
 
-  async function setPortrait(original: string, cropped: string) {
+  // 应用立绘到主题（不写本地存储；立绘随人物卡由 App 同步存档）
+  const portraitVersion = useRef(0);
+  async function applyPortrait(original: string | null, cropped: string | null) {
+    const v = ++portraitVersion.current; // 竞态保护：快速切换卡片时丢弃过期取色结果
+    if (!original) {
+      setPortraitOriginal(null);
+      setPortraitCropped(null);
+      setPortraitHex(DEFAULT_SEED);
+      return;
+    }
     setPortraitOriginal(original);
     setPortraitCropped(cropped);
     try {
-      setPortraitHex(await extractHexFromUrl(original));
+      const h = await extractHexFromUrl(original);
+      if (portraitVersion.current === v) setPortraitHex(h);
     } catch (e) {
       console.error(e);
     }
   }
 
+  // 上传/裁切确认：压缩后应用（压缩后的立绘随卡存档）
+  async function setPortrait(original: string, cropped: string) {
+    const [o, c] = await Promise.all([prepareImageForStore(original), prepareImageForStore(cropped)]);
+    await applyPortrait(o, c);
+  }
+
   function clearPortrait() {
-    setPortraitOriginal(null);
-    setPortraitCropped(null);
-    setPortraitHex(DEFAULT_SEED);
+    applyPortrait(null, null);
   }
 
   function setFontMode(m: FontMode) {
     setFontModeState(m);
-    try { localStorage.setItem("kcc.fontMode", m); } catch { /* 忽略 */ }
+  }
+
+  // 背景自定义图：压缩后写入 IndexedDB 缓存，localStorage 只存「读取路径」（缓存键）；
+  // IndexedDB 不可用时回退为直接把 data URL 存进 localStorage（仍只存一份路径）
+  function setBgCustomPersist(url: string | null) {
+    if (url === null) {
+      setBgCustom(null);
+      saveBgCacheMarker(null);
+      void cacheDeleteImage(BG_CACHE_KEY);
+      return;
+    }
+    void prepareImageForStore(url).then((small) => {
+      setBgCustom(small);
+      void cachePutImage(BG_CACHE_KEY, small)
+        .then(() => saveBgCacheMarker(BG_CACHE_KEY))
+        .catch(() => saveBgCacheMarker(small));
+    });
   }
 
   // 字体切换：html[data-font] 驱动 CSS 变量。
@@ -137,11 +170,48 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [fontMode]);
 
+  // 非图片设置变化时持久化
+  useEffect(() => {
+    saveSettings({ seedMode, seedHex, presetHex, isDark, bgMode, bgBlur, bgFeather, fontMode });
+  }, [seedMode, seedHex, presetHex, isDark, bgMode, bgBlur, bgFeather, fontMode]);
+
+  // 挂载时从缓存恢复背景：localStorage 里只存路径（缓存键或回退 data URL）
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const marker = loadBgCacheMarker();
+        if (!marker) return;
+        let url: string | null = null;
+        if (marker === BG_CACHE_KEY) {
+          url = await cacheGetImage(BG_CACHE_KEY);
+        } else if (marker.startsWith("data:")) {
+          url = marker; // IndexedDB 失败时的回退：data URL 即路径
+        }
+        // 旧版（kcc.bgCustom.v1 直接存 data URL）一次性迁移到缓存
+        if (!url) {
+          const legacy = localStorage.getItem("kcc.bgCustom.v1");
+          if (legacy) {
+            url = legacy;
+            void cachePutImage(BG_CACHE_KEY, legacy).catch(() => {});
+            saveBgCacheMarker(BG_CACHE_KEY);
+            try { localStorage.removeItem("kcc.bgCustom.v1"); } catch { /* 忽略 */ }
+          }
+        }
+        if (!cancelled && url) setBgCustom(url);
+      } catch {
+        /* 忽略 */
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const value: ThemeContextValue = {
     seedMode, seedHex, presetHex, portraitHex, bgHex, isDark,
     setSeedMode, setSeedHex, setPresetHex, setDark,
-    portraitOriginal, portraitCropped, setPortrait, clearPortrait,
-    bgMode, bgCustom, setBgMode, setBgCustom, bgImage,
+    portraitOriginal, portraitCropped, setPortrait, applyPortrait, clearPortrait,
+    bgMode, bgCustom, setBgMode, setBgCustom: setBgCustomPersist, bgImage,
     bgBlur, bgFeather, setBgBlur, setBgFeather,
     fontMode, setFontMode,
   };

@@ -1,23 +1,36 @@
-import { useRef, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useTheme, type BgMode } from "./ThemeProvider";
 import { FilledSelect, SelectOption, Switch, FilledButton, Slider } from "./components/md";
 import { readFileAsDataUrl } from "./lib/image";
 import { NORD_PRESETS, type SeedMode } from "./theme";
+import { shouldWarnOversize, prepareImageForStore, IMAGE_SIZE_HINT } from "./lib/settings";
 
 export default function SettingsView({ layout }: { layout: "single" | "double" }) {
   const { seedMode, seedHex, presetHex, isDark, setSeedMode, setSeedHex, setPresetHex, setDark, bgMode, setBgMode, setBgCustom, bgImage, bgBlur, bgFeather, setBgBlur, setBgFeather, fontMode, setFontMode } = useTheme();
   const bgFileRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLInputElement>(null);
+  const [oversize, setOversize] = useState<File | null>(null);
+
+  async function applyBg(f: File, compress: boolean) {
+    const url = await readFileAsDataUrl(f);
+    setBgCustom(compress ? await prepareImageForStore(url) : url);
+  }
 
   async function onBgFile(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    setBgCustom(await readFileAsDataUrl(f));
     e.target.value = "";
+    // 背景图过大：提醒用户选择「取消 / 由网站自动压缩」后再继续
+    if (shouldWarnOversize(f.size)) {
+      setOversize(f);
+      return;
+    }
+    await applyBg(f, false);
   }
 
   return (
     <div className={"settings" + (layout === "double" ? " double" : "")}>
+      <div className="settings-col">
       <section className="block">
         <h3 className="block-title">外观设置</h3>
         <div className="settings-row">
@@ -110,12 +123,18 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
         )}
 
       </section>
+      </div>
 
+      <div className="settings-col">
       <section className="block">
-        <h3 className="block-title">感谢</h3>
+        <h3 className="block-title">致谢</h3>
         <div className="settings-row">
           <span className="field-label">数据支持</span>
           <a className="settings-link" href="https://4e-wiki.netlify.app/" target="_blank" rel="noreferrer">4e Wiki（现任维护者：风之守护）</a>
+        </div>
+        <div className="settings-row">
+          <span className="field-label">特别感谢</span>
+          <span className="label">所有历代的4E全书维护者、所有的4E中文译者</span>
         </div>
       </section>
 
@@ -134,6 +153,47 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
           <span className="label">灵霜</span>
         </div>
       </section>
+
+      <section className="block">
+        <h3 className="block-title">漏洞提交</h3>
+        <div className="settings-row">
+          <span className="field-label">邮箱</span>
+          <a className="settings-link" href="mailto:kitahard@outlook.com">kitahard@outlook.com</a>
+        </div>
+        <div className="settings-row">
+          <span className="field-label">群聊</span>
+          <span className="label">1064444761</span>
+        </div>
+      </section>
+
+      <section className="block">
+        <h3 className="block-title">法律声明与版权信息</h3>
+        <p className="hint">
+          4E NEXT的开发目标是制作一个基于网页的数据处理与表格排版工具。4E NEXT不涉及对于龙与地下城四版规则内容与对海岸巫师威世智所持版权内容的二次分发。仅为了方便用户使用，项目内部封装了由中文译者提供，中文开发者维护的4e Wiki作为数据来源。
+        </p>
+        <p className="hint">
+          《龙与地下城》（DUNGEONS &amp; DRAGONS）、DUNGEONS &amp; DRAGONS 兼容性标志、D&amp;D、《玩家手册》（PLAYER&rsquo;S HANDBOOK）、《地下城主指南》（DUNGEON MASTER&rsquo;S GUIDE）和《怪物图鉴》（MONSTER MANUAL）是 Wizards of the Coast, Inc. 在美国和其他国家的商标。
+        </p>
+        <p className="hint">
+          《龙与地下城》第 4 版《玩家手册》，由 Rob Heinsoo、Andy Collins 和 James Wyatt 撰写；《地下城主指南》，由 James Wyatt 撰写；《怪物图鉴》，由 Mike Mearls、Stephen Schubert 和 James Wyatt 撰写 &copy; 2008 Wizards of the Coast, Inc. 保留所有权利。
+        </p>
+      </section>
+      </div>
+
+      {oversize && (
+        <div className="crop-overlay" onClick={() => setOversize(null)}>
+          <div className="crop-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="crop-dialog-body">
+              <p className="crop-dialog-title">背景图过大（{Math.ceil(oversize.size / 1024)} KB）</p>
+              <p className="hint">为节省本地存储空间，背景图片建议小于 {Math.ceil(IMAGE_SIZE_HINT / 1024)} KB。请选择：</p>
+            </div>
+            <div className="crop-controls">
+              <button type="button" className="crop-btn" onClick={() => setOversize(null)}>取消，自行压缩上传</button>
+              <button type="button" className="crop-btn primary" onClick={() => { const f = oversize; setOversize(null); void applyBg(f, true); }}>自动压缩</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
