@@ -14,11 +14,9 @@
     "@lit/react": "^1.0.7",
     "@material/material-color-utilities": "^0.3.0",
     "@material/web": "^2.2.0",
-    "html-to-image": "^1.11.13",
-    "jspdf": "^4.2.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-easy-crop": "^5.0.0"
+    "react-easy-crop": "^5.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

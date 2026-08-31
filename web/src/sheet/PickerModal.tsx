@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { FilledTextField } from "../components/md";
 import { ABILITY_LABELS, ABILITY_KEYS } from "./character";
 import type { Entry } from "../data/types";
 import { useIncremental } from "../lib/incremental";
-import { DeepSearchField, matchByName, matchDeep } from "./DeepSearch";
 
 export interface RestrictInfo {
   level: number;
@@ -19,7 +19,6 @@ interface Props {
   selectedId?: string;
   onSelect: (id: string) => void;
   onClose: () => void;
-  onClear?: () => void; // 提供时在头部显示「清除选择」按钮（仅在已选择时）
   renderSub?: (e: Entry) => string | undefined;
   abilityFilter?: boolean;
   restrict?: RestrictInfo;
@@ -45,9 +44,8 @@ function raceGrants(entry: Entry, ability: string): boolean {
   return two.includes(ability);
 }
 
-export default function PickerModal({ title, entries, loading, selectedId, onSelect, onClose, onClear, renderSub, abilityFilter, restrict }: Props) {
+export default function PickerModal({ title, entries, loading, selectedId, onSelect, onClose, renderSub, abilityFilter, restrict }: Props) {
   const [query, setQuery] = useState("");
-  const [deep, setDeep] = useState(false); // 全文搜索开关
   const [abilFilter, setAbilFilter] = useState<string[]>([]);
 
   function toggleAbility(a: string) {
@@ -73,11 +71,11 @@ export default function PickerModal({ title, entries, loading, selectedId, onSel
         for (const n of restrict.classNames) if (n && containsWord(pre, n)) found.push(n);
         if (found.length && !found.some((n) => restrict.myNames.includes(n))) return false;
       }
-      if (q && !(deep ? matchDeep(e, q) : matchByName(e, q))) return false;
+      if (q && !(e.name + " " + (e.nameEn ?? "")).toLowerCase().includes(q)) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, query, deep, abilFilter, restrict]);
+  }, [entries, query, abilFilter, restrict]);
 
   const { visible, sentinelRef, done } = useIncremental(filtered, 80);
   return createPortal(
@@ -85,12 +83,7 @@ export default function PickerModal({ title, entries, loading, selectedId, onSel
       <div className="picker-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
           <span className="picker-title">{title}</span>
-          <div className="picker-head-btns">
-            {onClear && selectedId && (
-              <button type="button" className="crop-btn" onClick={() => { onClear(); onClose(); }}>清除选择</button>
-            )}
-            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
-          </div>
+          <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
         </div>
         {abilityFilter && (
           <div className="slot-filter">
@@ -109,7 +102,7 @@ export default function PickerModal({ title, entries, loading, selectedId, onSel
             </div>
           </div>
         )}
-        <DeepSearchField value={query} deep={deep} onChange={setQuery} onToggleDeep={() => setDeep((d) => !d)} />
+        <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
         <div className="picker-table">
           {loading && entries.length === 0 && <p className="hint">正在加载数据…</p>}
           {!loading && visible.map((e) => (

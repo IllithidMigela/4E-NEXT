@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { FilledTextField } from "../components/md";
 import EntryCard from "./EntryCard";
 import { useIncremental } from "../lib/incremental";
-import { cleanDisplayName, zhName } from "./character";
+import { baseClassName, cleanDisplayName, zhName, type AbilityKey } from "./character";
+import { featPrereqFailReason } from "./feat-req";
 import type { Entry } from "../data/types";
-import { DeepSearchField, matchByName, matchDeep } from "./DeepSearch";
 
 const TIERS = ["英雄", "典范", "传奇"];
 const FEAT_TYPES = ["种族", "职业", "技能", "流派", "通用"];
@@ -34,19 +35,63 @@ interface Props {
   loading?: boolean;
   allRaces: Entry[];
   allClasses: Entry[];
+  raceEntry?: Entry;
+  classEntry?: Entry;
+  classEntry2?: Entry;
   currentLevel: number;
+  abilities?: Record<AbilityKey, number>;
+  trainedSkills?: string[];
+  weaponTokens?: Set<string>;
+  armorTokens?: Set<string>;
+  shieldTokens?: Set<string>;
   currentId?: string;
-  lookup?: (t: string) => Entry | undefined; // [[威能]] 链接悬浮预览解析
   onSelect: (id: string) => void;
   onClear?: () => void;
   onClose: () => void;
 }
 
-export default function FeatSlotPicker({ entries, loading, allRaces, allClasses, currentLevel, currentId, lookup, onSelect, onClear, onClose }: Props) {
+export default function FeatSlotPicker({ entries, loading, allRaces, allClasses, raceEntry, classEntry, classEntry2, currentLevel, abilities, trainedSkills, weaponTokens, armorTokens, shieldTokens, currentId, onSelect, onClear, onClose }: Props) {
   const [tier, setTier] = useState<string>(defaultTier(currentLevel));
+  const [restrict, setRestrict] = useState(true);
   const [type, setType] = useState("");
   const [query, setQuery] = useState("");
-  const [deep, setDeep] = useState(false); // 全文搜索开关
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
+  // 选择前进行前置条件判定所需上下文
+  const reqCtx = useMemo(
+    () => ({
+      currentLevel,
+      abilities: abilities ?? ({} as Record<AbilityKey, number>),
+      trainedSkills: trainedSkills ?? [],
+      raceEntry,
+      classEntry,
+      classEntry2,
+      allRaces,
+      allClasses,
+      weaponTokens: weaponTokens ?? new Set<string>(),
+      armorTokens: armorTokens ?? new Set<string>(),
+      shieldTokens: shieldTokens ?? new Set<string>(),
+    }),
+    [currentLevel, abilities, trainedSkills, raceEntry, classEntry, classEntry2, allRaces, allClasses, weaponTokens, armorTokens, shieldTokens]
+  );
+
+  // 当前角色名称集合（种族 + 职业[含混职双职业]，含去括号变体名、纯中文名与基础职业名）
+  const myNames = useMemo(() => {
+    const set = new Set<string>();
+    const add = (n: string) => { if (!n) return; set.add(n); set.add(cleanDisplayName(n)); set.add(zhName(n)); set.add(baseClassName(n)); };
+    if (raceEntry) add(raceEntry.name);
+    for (const ce of [classEntry, classEntry2]) {
+      if (ce) add(ce.name);
+    }
+    return set;
+  }, [raceEntry, classEntry, classEntry2]);
+
   // 全量种族/职业名称（含去括号变体名与纯中文名），用于识别专长前置条件里的种族/职业要求
   const knownRaces = useMemo(() => {
     const set = new Set<string>();
@@ -69,16 +114,41 @@ export default function FeatSlotPicker({ entries, loading, allRaces, allClasses,
     return "通用";
   }
 
+  // 专长前置条件提到某种族/职业，但当前角色不具备 → 限制
+  function prereqBlocks(f: Entry): boolean {
+    const pre = f.prerequisite ?? "";
+    if (!pre) return false;
+    // 「任意武术/奥术/神术/原力/灵能/影能职业」前置 → 比对角色威能来源
+    const srcMatch = pre.match(/任意(武术|奥术|神术|原力|灵能|影能)职业/);
+    if (srcMatch && (classEntry?.powerSource ?? "") !== srcMatch[1]) return true;
+    const found: string[] = [];
+    for (const name of knownRaces) {
+      if (name && containsWord(pre, name)) found.push(name);
+    }
+    for (const name of knownClasses) {
+      if (name && containsWord(pre, name)) found.push(name);
+    }
+    if (found.length === 0) return false;
+    return !found.some((n) => myNames.has(n));
+  }
+
+  const restrictedCount = useMemo(
+    () => entries.filter((f) => prereqBlocks(f)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries, knownRaces, knownClasses, myNames]
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return entries.filter((f) => {
       if (tier && f.tierZh !== tier) return false;
       if (type && featType(f) !== type) return false;
-      if (q && !(deep ? matchDeep(f, q) : matchByName(f, q))) return false;
+      if (restrict && prereqBlocks(f)) return false;
+      if (q && !(f.name + " " + (f.nameEn ?? "")).toLowerCase().includes(q)) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, tier, type, query, deep, knownRaces, knownClasses]);
+  }, [entries, tier, type, restrict, query, knownRaces, knownClasses, myNames]);
 
 
   const { visible, sentinelRef, done } = useIncremental(filtered, 90);
@@ -107,19 +177,30 @@ export default function FeatSlotPicker({ entries, loading, allRaces, allClasses,
           ))}
           <span className="sf-hint">按前置条件自动归类</span>
         </div>
-        <DeepSearchField value={query} deep={deep} onChange={setQuery} onToggleDeep={() => setDeep((d) => !d)} />
-        <div className="meta">显示 {filtered.length} 条</div>
+        <div className="slot-filter-row">
+          <span className="sf-label">限制</span>
+          <button type="button" className={restrict ? "sf-chip active" : "sf-chip"} onClick={() => setRestrict(true)} title="仅显示前置条件匹配当前种族/职业的专长">仅当前种族/职业</button>
+          <button type="button" className={!restrict ? "sf-chip active" : "sf-chip"} onClick={() => setRestrict(false)}>全部</button>
+          <span className="sf-hint">{restrict && !classEntry && !raceEntry ? "未选择种族/职业" : ""}</span>
+        </div>
+        <FilledTextField value={query} label="搜索" onInput={(e) => setQuery((e.target as any).value ?? "")} />
+        <div className="meta">显示 {filtered.length} 条{restrict && restrictedCount > 0 ? "（已按种族/职业排除 " + restrictedCount + " 条）" : ""}</div>
         <div className="picker-cards">
           {loading && entries.length === 0 && <p className="hint">正在加载专长数据…</p>}
           {!loading && visible.map((f) => (
-            <button key={f.id} type="button" className={f.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => { onSelect(f.id); onClose(); }}>
-              <EntryCard entry={f} lookup={lookup} />
+            <button key={f.id} type="button" className={f.id === currentId ? "picker-card selected" : "picker-card"} onClick={() => {
+              const reason = featPrereqFailReason(f, reqCtx);
+              if (reason) { showToast(reason); return; }
+              onSelect(f.id); onClose();
+            }}>
+              <EntryCard entry={f} />
             </button>
           ))}
           {!loading && filtered.length === 0 && <p className="hint">无匹配专长。</p>}
           {!done && !loading && <div ref={sentinelRef} className="incremental-sentinel">滚动加载更多…</div>}
         </div>
       </div>
+      {toast && <div className="ct-toast" role="status">{toast}</div>}
     </div>,
     document.body
   );
