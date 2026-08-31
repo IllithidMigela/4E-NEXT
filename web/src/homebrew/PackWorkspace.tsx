@@ -1,16 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { Entry } from "../data/types";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "../data/labels";
 import { Checkbox, FilledButton, FilledTextField, IconButton, OutlinedButton, Switch, TextButton } from "../components/md";
-import SheetDialog from "../components/SheetDialog";
-import HomebrewEditor from "../components/HomebrewEditor";
 import EntryCard from "../sheet/EntryCard";
-import PackMetaDialog, { metaToValue, type PackMetaValue } from "./PackMetaDialog";
-import ConfirmDialog from "./ConfirmDialog";
+import EntryEditor from "./EntryEditor";
 import { downloadText, fmtDate } from "./util";
 import { fmtBytes } from "../lib/storage";
 import {
   DEFAULT_POOL_ICON,
+  POOL_ICONS,
   duplicateEntry,
   loadPool,
   loadPools,
@@ -24,7 +22,9 @@ import {
 } from "../lib/userdata";
 import { bundleFileName, createBundle, createPoolBundle, serializeBundle } from "../lib/bundle";
 
-// 资源包二级编辑页：按资源类型分类管理 + 翻页浏览 + 批量操作 + 单包导出。
+// 二级页面：包内工作区。按资源类型分类管理 + 翻页 + 批量操作 + 单包导出。
+// 所有「填写 / 选择」都在页面内完成：包资料是内联面板，移动与删除是内联操作条，
+// 条目编辑进入三级页面 EntryEditor，不使用弹窗。
 
 type SortMode = "custom" | "name" | "category";
 const PAGE_SIZES = [12, 24, 48];
@@ -35,9 +35,28 @@ const SORT_LABELS: Record<SortMode, string> = {
   category: "按类型",
 };
 
+interface MetaForm {
+  name: string;
+  author: string;
+  version: string;
+  description: string;
+  icon: string;
+}
+
+function metaOf(p: HomebrewPool): MetaForm {
+  return {
+    name: p.name,
+    author: p.author ?? "",
+    version: p.version ?? "",
+    description: p.description ?? "",
+    icon: p.icon || DEFAULT_POOL_ICON,
+  };
+}
+
 export default function PackWorkspace({
   poolId,
   initialEntryId,
+  initialMetaOpen,
   layout,
   onBack,
   onChanged,
@@ -45,12 +64,17 @@ export default function PackWorkspace({
   poolId: string;
   /** 从搜索结果跳转进来时，直接选中并翻到该条目所在页 */
   initialEntryId?: string;
+  /** 从包卡片「编辑资料」进来时，直接展开包资料面板 */
+  initialMetaOpen?: boolean;
   layout: "single" | "double";
   onBack: () => void;
   onChanged: () => void;
 }) {
   const [pool, setPool] = useState<HomebrewPool | undefined>(() => loadPool(poolId));
   const [allPools, setAllPools] = useState<HomebrewPool[]>(() => loadPools());
+
+  const [view, setView] = useState<"list" | "editor">("list");
+  const [editing, setEditing] = useState<Entry | null>(null);
 
   const [cat, setCat] = useState("all");
   const [query, setQuery] = useState("");
@@ -64,11 +88,13 @@ export default function PackWorkspace({
   const [picked, setPicked] = useState<string[]>([]);
   const [detailId, setDetailId] = useState<string | null>(initialEntryId ?? null);
 
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<Entry | null>(null);
-  const [metaOpen, setMetaOpen] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [confirmState, setConfirmState] = useState<{ headline: string; message: string; label: string; run: () => void } | null>(null);
+  const [metaOpen, setMetaOpen] = useState(Boolean(initialMetaOpen));
+  const [meta, setMeta] = useState<MetaForm>(() => {
+    const p = loadPool(poolId);
+    return p ? metaOf(p) : { name: "", author: "", version: "", description: "", icon: DEFAULT_POOL_ICON };
+  });
+  const [movePick, setMovePick] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
 
   function refresh() {
     setPool(loadPool(poolId));
@@ -141,6 +167,24 @@ export default function PackWorkspace({
 
   const activePool = pool;
 
+  // 三级页面：条目编辑
+  if (view === "editor") {
+    return (
+      <EntryEditor
+        poolId={activePool.id}
+        entry={editing}
+        defaultCategory={cat === "all" ? undefined : cat}
+        layout={layout}
+        onBack={() => setView("list")}
+        onSaved={(saved, opts) => {
+          refresh();
+          setDetailId(saved.id);
+          if (opts.done) setView("list");
+        }}
+      />
+    );
+  }
+
   function togglePick(id: string) {
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   }
@@ -152,12 +196,12 @@ export default function PackWorkspace({
 
   function openNew() {
     setEditing(null);
-    setEditorOpen(true);
+    setView("editor");
   }
 
   function openEdit(e: Entry) {
     setEditing(e);
-    setEditorOpen(true);
+    setView("editor");
   }
 
   function exportPack() {
@@ -173,25 +217,14 @@ export default function PackWorkspace({
     );
   }
 
-  function removeEntries(ids: string[]) {
+  function confirmDelete() {
+    const ids = pendingDelete ?? [];
+    if (ids.length === 0) return;
     removeEntriesFromAnyPool(ids);
     setPicked((p) => p.filter((x) => !ids.includes(x)));
     if (detailId && ids.includes(detailId)) setDetailId(null);
+    setPendingDelete(null);
     refresh();
-  }
-
-  function askRemove(ids: string[]) {
-    if (ids.length === 0) return;
-    const name = ids.length === 1 ? entries.find((e) => e.id === ids[0])?.name ?? ids[0] : ids.length + " 条条目";
-    setConfirmState({
-      headline: "删除条目",
-      message: "确定删除「" + name + "」吗？该操作不可撤销，建议先导出备份。",
-      label: "删除",
-      run: () => {
-        removeEntries(ids);
-        setConfirmState(null);
-      },
-    });
   }
 
   function doDuplicate(id: string) {
@@ -203,18 +236,25 @@ export default function PackWorkspace({
   function doMove(targetId: string) {
     moveEntriesToPool(picked, targetId);
     setPicked([]);
-    setMoveOpen(false);
+    setMovePick(false);
     refresh();
   }
 
-  function saveMeta(v: PackMetaValue) {
-    updatePoolMeta(activePool.id, v);
+  function openMeta() {
+    setMeta(metaOf(activePool));
+    setMetaOpen(true);
+  }
+
+  function saveMeta() {
+    if (!meta.name.trim()) return;
+    updatePoolMeta(activePool.id, meta);
     setMetaOpen(false);
     refresh();
   }
 
   const otherPools = allPools.filter((p) => p.id !== activePool.id);
   const sizeText = fmtBytes(poolSizeBytes(activePool));
+  const deleteNames = (pendingDelete ?? []).map((id) => entries.find((e) => e.id === id)?.name ?? id);
 
   return (
     <div className={"hb-ws" + (layout === "double" ? " double" : "")}>
@@ -240,7 +280,7 @@ export default function PackWorkspace({
             <span slot="icon" className="material-symbols-outlined">add</span>
             新建条目
           </FilledButton>
-          <OutlinedButton onClick={() => setMetaOpen(true)}>编辑资料</OutlinedButton>
+          <OutlinedButton onClick={() => (metaOpen ? setMetaOpen(false) : openMeta())}>{metaOpen ? "收起资料" : "编辑资料"}</OutlinedButton>
           <OutlinedButton onClick={exportPack}>
             <span slot="icon" className="material-symbols-outlined">download</span>
             导出此包
@@ -248,7 +288,62 @@ export default function PackWorkspace({
         </div>
       </div>
 
-      {activePool.description && <p className="hb-ws-desc">{activePool.description}</p>}
+      {/* 包资料：内联面板（不弹窗） */}
+      {metaOpen ? (
+        <section className="hb-meta-panel">
+          <div className="hb-meta-panel-head">
+            <h4 className="hb-ed-card-title">包资料</h4>
+            <span className="hint">这些信息会展示在私设列表，并随 .d4e 一起导出。</span>
+          </div>
+          <div className="hb-meta-row">
+            <div className="hb-field">
+              <span className="hb-label">包名称 *</span>
+              <FilledTextField value={meta.name} onInput={(e) => setMeta((m) => ({ ...m, name: (e.target as HTMLInputElement).value ?? "" }))} />
+            </div>
+            <div className="hb-field">
+              <span className="hb-label">作者</span>
+              <FilledTextField value={meta.author} placeholder="可选" onInput={(e) => setMeta((m) => ({ ...m, author: (e.target as HTMLInputElement).value ?? "" }))} />
+            </div>
+            <div className="hb-field">
+              <span className="hb-label">版本</span>
+              <FilledTextField value={meta.version} placeholder="如 1.0.0" onInput={(e) => setMeta((m) => ({ ...m, version: (e.target as HTMLInputElement).value ?? "" }))} />
+            </div>
+          </div>
+          <div className="hb-field">
+            <span className="hb-label">简介</span>
+            <textarea
+              className="hb-textarea"
+              rows={3}
+              value={meta.description}
+              placeholder="一句话说明这个包提供了什么内容、适用于哪些桌游团。"
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMeta((m) => ({ ...m, description: e.target.value }))}
+            />
+          </div>
+          <div className="hb-field">
+            <span className="hb-label">图标</span>
+            <div className="hb-icon-picker" role="radiogroup" aria-label="包图标">
+              {POOL_ICONS.map((ic) => (
+                <button
+                  key={ic}
+                  type="button"
+                  role="radio"
+                  aria-checked={meta.icon === ic}
+                  className={"hb-icon-opt" + (meta.icon === ic ? " active" : "")}
+                  onClick={() => setMeta((m) => ({ ...m, icon: ic }))}
+                >
+                  <span className="material-symbols-outlined">{ic}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="hb-meta-panel-ops">
+            <TextButton onClick={() => setMetaOpen(false)}>取消</TextButton>
+            <FilledButton onClick={saveMeta}>保存资料</FilledButton>
+          </div>
+        </section>
+      ) : (
+        activePool.description && <p className="hb-ws-desc">{activePool.description}</p>
+      )}
 
       <div className="hb-ws-tools">
         <div className="cat-chips hb-ws-cats">
@@ -276,10 +371,36 @@ export default function PackWorkspace({
       {picked.length > 0 && (
         <div className="hb-bulk">
           <span className="hb-bulk-count">已选 {picked.length} 条</span>
-          <TextButton onClick={() => setPicked([])}>取消选择</TextButton>
+          <TextButton onClick={() => { setPicked([]); setMovePick(false); }}>取消选择</TextButton>
           <TextButton onClick={exportPicked}>导出所选</TextButton>
-          <TextButton disabled={otherPools.length === 0} onClick={() => setMoveOpen(true)}>移动到…</TextButton>
-          <TextButton className="hb-del" onClick={() => askRemove(picked)}>删除所选</TextButton>
+          <TextButton disabled={otherPools.length === 0} onClick={() => { setMovePick((v) => !v); setPendingDelete(null); }}>移动到…</TextButton>
+          <TextButton className="hb-del" onClick={() => { setPendingDelete(picked); setMovePick(false); }}>删除所选</TextButton>
+        </div>
+      )}
+
+      {/* 移动目标：内联选择（不弹窗） */}
+      {movePick && picked.length > 0 && (
+        <div className="hb-inline-bar">
+          <span className="hb-label">移动 {picked.length} 条到：</span>
+          {otherPools.map((p) => (
+            <button key={p.id} type="button" className="chip mini" onClick={() => doMove(p.id)}>
+              <span className="material-symbols-outlined">{p.icon || DEFAULT_POOL_ICON}</span>
+              {p.name}
+            </button>
+          ))}
+          <TextButton onClick={() => setMovePick(false)}>取消</TextButton>
+        </div>
+      )}
+
+      {/* 删除确认：内联操作条（不弹窗） */}
+      {pendingDelete && pendingDelete.length > 0 && (
+        <div className="hb-inline-bar danger">
+          <span className="material-symbols-outlined">warning</span>
+          <span className="hb-inline-text">
+            确认删除{pendingDelete.length === 1 ? "「" + deleteNames[0] + "」" : " " + pendingDelete.length + " 条条目"}？删除后不可撤销，建议先导出备份。
+          </span>
+          <TextButton className="hb-del" onClick={confirmDelete}>确认删除</TextButton>
+          <TextButton onClick={() => setPendingDelete(null)}>取消</TextButton>
         </div>
       )}
 
@@ -310,7 +431,7 @@ export default function PackWorkspace({
                 <span className="hb-entry-ops">
                   <IconButton title="编辑" onClick={() => openEdit(e)}><span className="material-symbols-outlined">edit</span></IconButton>
                   <IconButton title="复制一份" onClick={() => doDuplicate(e.id)}><span className="material-symbols-outlined">content_copy</span></IconButton>
-                  <IconButton title="删除" onClick={() => askRemove([e.id])}><span className="material-symbols-outlined">delete</span></IconButton>
+                  <IconButton title="删除" onClick={() => { setPendingDelete([e.id]); setMovePick(false); }}><span className="material-symbols-outlined">delete</span></IconButton>
                 </span>
               </div>
             ))}
@@ -350,7 +471,7 @@ export default function PackWorkspace({
                   编辑此条
                 </FilledButton>
                 <TextButton onClick={() => doDuplicate(detail.id)}>复制</TextButton>
-                <TextButton className="hb-del" onClick={() => askRemove([detail.id])}>删除</TextButton>
+                <TextButton className="hb-del" onClick={() => { setPendingDelete([detail.id]); setMovePick(false); }}>删除</TextButton>
               </div>
               <EntryCard entry={detail} />
             </>
@@ -363,51 +484,6 @@ export default function PackWorkspace({
           )}
         </div>
       </div>
-
-      <HomebrewEditor
-        open={editorOpen}
-        initial={editing}
-        defaultPoolId={activePool.id}
-        defaultCategory={cat === "all" ? undefined : cat}
-        onClose={() => setEditorOpen(false)}
-        onSaved={(saved) => {
-          refresh();
-          setDetailId(saved.id);
-        }}
-      />
-
-      <PackMetaDialog
-        open={metaOpen}
-        mode="edit"
-        initial={metaToValue(activePool)}
-        onClose={() => setMetaOpen(false)}
-        onSubmit={saveMeta}
-      />
-
-      <SheetDialog open={moveOpen} headline="移动到其他资源包" sub={"已选 " + picked.length + " 条"} onClose={() => setMoveOpen(false)}>
-        <div className="hb-move-list">
-          {otherPools.map((p) => (
-            <button key={p.id} type="button" className="hb-move-opt" onClick={() => doMove(p.id)}>
-              <span className="material-symbols-outlined">{p.icon || DEFAULT_POOL_ICON}</span>
-              <span className="hb-move-text">
-                <span className="hb-move-name">{p.name}</span>
-                <span className="hb-label">{p.entries.length} 条{p.author ? " · " + p.author : ""}</span>
-              </span>
-            </button>
-          ))}
-          {otherPools.length === 0 && <p className="hint">没有其他资源包可供移动。</p>}
-        </div>
-      </SheetDialog>
-
-      <ConfirmDialog
-        open={confirmState !== null}
-        headline={confirmState?.headline ?? ""}
-        message={confirmState?.message ?? ""}
-        confirmLabel={confirmState?.label ?? "确认"}
-        danger
-        onConfirm={() => confirmState?.run()}
-        onClose={() => setConfirmState(null)}
-      />
     </div>
   );
 }

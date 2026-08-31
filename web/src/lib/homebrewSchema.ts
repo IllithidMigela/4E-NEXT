@@ -1,8 +1,24 @@
 import type { Entry } from "../data/types";
 import { wikiToHtml } from "./wikirender";
+import { mdToHtml } from "./markdown";
 
 // 私设编辑器：schema 驱动的表单定义。每种分类对应一批可表单化的标量字段。
-// 正文统一走 sourceText（wikitext），保存时用 wikiToHtml 派生 details，使 EntryCard 与预览都能完整渲染。
+// 正文统一走 sourceText，默认 Markdown（bodyFormat="md"）；旧条目的 wikitext 正文（bodyFormat="wiki"）继续按原语法渲染。
+// 保存时派生 details，使 EntryCard 与预览都能完整渲染。
+
+/** 按正文格式渲染 HTML。 */
+export function renderBody(src: string, format: "md" | "wiki", fields: Record<string, string> = {}): string {
+  return format === "wiki" ? wikiToHtml(src, fields) : mdToHtml(src);
+}
+
+const WIKI_MARKS = [/^!{1,4}\s/m, /''[^']+''/, /\/\/[^/\n]+\/\//, /\[\[[^\]]+\]\]/, /\{\{!!/];
+
+/** 判断条目正文格式：优先看标记，其次按旧 wikitext 特征推断。 */
+export function detectBodyFormat(entry: Entry): "md" | "wiki" {
+  if (entry.bodyFormat === "md" || entry.bodyFormat === "wiki") return entry.bodyFormat;
+  const src = entry.sourceText ?? "";
+  return WIKI_MARKS.some((re) => re.test(src)) ? "wiki" : "md";
+}
 
 export type FieldType = "text" | "longtext" | "select" | "tags";
 
@@ -21,7 +37,7 @@ const COMMON: SheetField[] = [
   { key: "category", label: "分类", type: "select", required: true },
   { key: "tags", label: "标签", type: "tags", placeholder: "用逗号分隔" },
   { key: "source", label: "出处", type: "text", placeholder: "默认：私设" },
-  { key: "sourceText", label: "正文（wikitext）", type: "longtext", placeholder: "支持 !!!/!!/! 标题、''加粗''、//斜体//、[[链接]]、{{!!字段}}" },
+  { key: "sourceText", label: "正文", type: "longtext", placeholder: "支持 Markdown 语法使用。" },
 ];
 
 const CATEGORY_FIELDS: Record<string, SheetField[]> = {
@@ -101,6 +117,7 @@ export function buildEntry(form: Record<string, string>, existingId?: string): {
   }
 
   const sourceText = form.sourceText ?? "";
+  const bodyFormat: "md" | "wiki" = form.bodyFormat === "wiki" ? "wiki" : "md";
   const entry: Entry = {
     id: existingId?.trim() || name,
     name,
@@ -110,9 +127,10 @@ export function buildEntry(form: Record<string, string>, existingId?: string): {
     origin: "user",
     source: (form.source ?? "").trim() || "私设",
     sourceText,
+    bodyFormat,
     fields: extras,
     wiki: { transclusions: [], links: [], macros: [], headings: [] },
-    details: sourceText ? wikiToHtml(sourceText, extras) : undefined,
+    details: sourceText ? renderBody(sourceText, bodyFormat, extras) : undefined,
     ...extras,
   };
   return { ok: true, entry };
@@ -126,6 +144,7 @@ export function draftToForm(entry: Entry): Record<string, string> {
     tags: (entry.tags ?? []).join(", "),
     source: entry.source ?? "",
     sourceText: entry.sourceText ?? "",
+    bodyFormat: detectBodyFormat(entry),
   };
   for (const f of CATEGORY_FIELDS[entry.category] ?? []) {
     const v = (entry as Record<string, unknown>)[f.key];

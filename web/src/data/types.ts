@@ -39,6 +39,8 @@ export interface Entry {
   source?: string;
   magazine?: string;
   sourceText: string;
+  // 私设条目正文格式：md=Markdown（默认，新建/编辑后写入）；wiki=旧版 wikitext
+  bodyFormat?: "md" | "wiki";
   fields: Record<string, string>;
   wiki: WikiInfo;
   // 分类特定字段（英文规范键）

@@ -7,7 +7,6 @@ import {
   deletePool,
   importAsPool,
   copyPool,
-  updatePoolMeta,
   type HomebrewPool,
 } from "./lib/userdata";
 import { localStorageBreakdown, type StorageBreakdown } from "./lib/storage";
@@ -30,7 +29,7 @@ import CachePanel from "./homebrew/CachePanel";
 import PackList from "./homebrew/PackList";
 import ResourceSearch from "./homebrew/ResourceSearch";
 import PackWorkspace from "./homebrew/PackWorkspace";
-import PackMetaDialog, { EMPTY_PACK_META, metaToValue, type PackMetaValue } from "./homebrew/PackMetaDialog";
+import PackMetaDialog, { EMPTY_PACK_META, type PackMetaValue } from "./homebrew/PackMetaDialog";
 import ConfirmDialog from "./homebrew/ConfirmDialog";
 import { downloadText } from "./homebrew/util";
 
@@ -54,11 +53,11 @@ export default function HomebrewView({ layout }: { layout: "single" | "double" }
   const [importOpen, setImportOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // 包资料（新建 / 快速编辑外部显示与介绍）
+  // 新建包（唯一保留的填写弹窗；编辑既有包的资料在二级页内联完成）
   const [metaOpen, setMetaOpen] = useState(false);
-  const [metaMode, setMetaMode] = useState<"create" | "edit">("create");
-  const [metaTarget, setMetaTarget] = useState<string | null>(null);
   const [metaInitial, setMetaInitial] = useState<PackMetaValue>(EMPTY_PACK_META);
+  // 进入二级页时是否直接展开「包资料」面板
+  const [openWithMeta, setOpenWithMeta] = useState(false);
 
   const [pendingDelete, setPendingDelete] = useState<HomebrewPool | null>(null);
   const [hit, setHit] = useState<{ entry: Entry; poolId: string } | null>(null);
@@ -121,29 +120,22 @@ export default function HomebrewView({ layout }: { layout: "single" | "double" }
 
   // ===== 包资料 =====
   function openCreate() {
-    setMetaMode("create");
-    setMetaTarget(null);
     setMetaInitial({ ...EMPTY_PACK_META, name: "我的私设包 " + (pools.length + 1) });
     setMetaOpen(true);
   }
 
-  function openEditMeta(id: string) {
-    const p = pools.find((x) => x.id === id);
-    if (!p) return;
-    setMetaMode("edit");
-    setMetaTarget(id);
-    setMetaInitial(metaToValue(p));
-    setMetaOpen(true);
+  /** 打开二级页；withMeta=true 时直接展开包资料面板（替代原来的编辑弹窗） */
+  function openPack(id: string, withMeta = false) {
+    setOpenEntryId(undefined);
+    setOpenWithMeta(withMeta);
+    setOpenId(id);
   }
 
   function submitMeta(v: PackMetaValue) {
-    if (metaMode === "create") {
-      createPool(v.name, { author: v.author, description: v.description, version: v.version, icon: v.icon });
-    } else if (metaTarget) {
-      updatePoolMeta(metaTarget, v);
-    }
+    const p = createPool(v.name, { author: v.author, description: v.description, version: v.version, icon: v.icon });
     setMetaOpen(false);
     refresh();
+    openPack(p.id);
   }
 
   // ===== 导出 =====
@@ -165,8 +157,9 @@ export default function HomebrewView({ layout }: { layout: "single" | "double" }
           key={openPool.id}
           poolId={openPool.id}
           initialEntryId={openEntryId}
+          initialMetaOpen={openWithMeta}
           layout={layout}
-          onBack={() => { setOpenId(null); setOpenEntryId(undefined); refresh(); }}
+          onBack={() => { setOpenId(null); setOpenEntryId(undefined); setOpenWithMeta(false); refresh(); }}
           onChanged={refresh}
         />
       </div>
@@ -181,8 +174,8 @@ export default function HomebrewView({ layout }: { layout: "single" | "double" }
       <div className="hb-home-grid">
         <PackList
           pools={pools}
-          onOpen={(id) => { setOpenEntryId(undefined); setOpenId(id); }}
-          onEditMeta={openEditMeta}
+          onOpen={(id) => openPack(id)}
+          onEditMeta={(id) => openPack(id, true)}
           onExport={exportPool}
           onDuplicate={(id) => { copyPool(id); refresh(); }}
           onDelete={(id) => setPendingDelete(pools.find((p) => p.id === id) ?? null)}
@@ -274,7 +267,7 @@ export default function HomebrewView({ layout }: { layout: "single" | "double" }
         )}
       </SheetDialog>
 
-      <PackMetaDialog open={metaOpen} mode={metaMode} initial={metaInitial} onClose={() => setMetaOpen(false)} onSubmit={submitMeta} />
+      <PackMetaDialog open={metaOpen} mode="create" initial={metaInitial} onClose={() => setMetaOpen(false)} onSubmit={submitMeta} />
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -299,6 +292,7 @@ export default function HomebrewView({ layout }: { layout: "single" | "double" }
           <TextButton
             onClick={() => {
               if (!hit) return;
+              setOpenWithMeta(false);
               setOpenEntryId(hit.entry.id);
               setOpenId(hit.poolId);
               setHit(null);

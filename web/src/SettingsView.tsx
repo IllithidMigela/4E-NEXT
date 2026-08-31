@@ -199,6 +199,9 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
         <p className="hint">
           《龙与地下城》第 4 版《玩家手册》，由 Rob Heinsoo、Andy Collins 和 James Wyatt 撰写；《地下城主指南》，由 James Wyatt 撰写；《怪物图鉴》，由 Mike Mearls、Stephen Schubert 和 James Wyatt 撰写 &copy; 2008 Wizards of the Coast, Inc. 保留所有权利。
         </p>
+        <p className="hint">
+          4E NEXT Logo基于CC-BY-NC4.0协议提供，作者@KitaAkeru
+        </p>
       </section>
       </div>
 

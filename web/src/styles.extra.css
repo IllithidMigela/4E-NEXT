@@ -357,3 +357,130 @@
   .hb-ws-detail { max-height: none; }
   .hb-pager { justify-content: center; }
 }
+
+/* ===== ③ 二级页去弹窗：内联包资料面板 / 内联操作条 ===== */
+.hb-meta-panel {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+  border: 1px solid var(--md-sys-color-primary);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+}
+.hb-meta-panel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hb-meta-panel-head .hint { margin: 0; }
+.hb-meta-panel-ops { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.hb-meta-panel .hb-textarea { min-height: 64px; }
+
+.hb-inline-bar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 14px;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+.hb-inline-bar.danger {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  border-color: var(--md-sys-color-error);
+}
+.hb-inline-bar.danger .material-symbols-outlined { font-size: 20px; }
+.hb-inline-bar.danger md-text-button { --md-text-button-label-text-color: var(--md-sys-color-on-error-container); }
+.hb-inline-bar.danger md-text-button.hb-del { --md-text-button-label-text-color: var(--md-sys-color-error); font-weight: 600; }
+.hb-inline-text { font-size: 13px; margin-right: auto; }
+.hb-inline-bar .chip.mini { display: inline-flex; align-items: center; gap: 4px; }
+.hb-inline-bar .chip.mini .material-symbols-outlined { font-size: 15px; }
+
+/* ===== ④ 三级页面：条目编辑器 ===== */
+.hb-editor { display: flex; flex-direction: column; gap: 12px; }
+.hb-ed-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px;
+  position: sticky; top: 0; z-index: 3;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container);
+}
+.hb-ed-title { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hb-ed-crumb {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant); font-weight: var(--fw-label);
+}
+.hb-ed-crumb .material-symbols-outlined { font-size: 15px; }
+.hb-ed-name { font-size: 17px; font-weight: var(--fw-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-ed-ops { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.hb-ed-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.hb-editor.double .hb-ed-body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+.hb-ed-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.hb-ed-card {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+}
+.hb-ed-card-title { margin: 0; font-size: 14px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary); }
+.hb-ed-card md-filled-text-field { width: 100%; }
+.hb-ed-chips { display: flex; flex-wrap: wrap; gap: 6px; overflow: visible; padding: 0; }
+
+/* 正文：Markdown 工具条 + 文本域 */
+.hb-body-field { gap: 8px; }
+.hb-md-tools {
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 4px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-high);
+}
+.hb-md-tool {
+  width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
+  border: none; border-radius: var(--md-sys-shape-corner-extra-small);
+  background: transparent; color: var(--md-sys-color-on-surface-variant);
+  transition: background var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+.hb-md-tool:hover { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.hb-md-tool .material-symbols-outlined { font-size: 19px; }
+.hb-body-textarea { min-height: 300px; line-height: 1.65; }
+.hb-body-field .hint { line-height: 1.5; }
+
+.hb-legacy {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 14px; font-size: 13px;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container);
+}
+.hb-legacy .material-symbols-outlined { font-size: 20px; }
+.hb-legacy md-text-button { --md-text-button-label-text-color: var(--md-sys-color-on-tertiary-container); }
+
+.hb-ed-preview {
+  display: flex; flex-direction: column; gap: 10px; padding: 14px; min-width: 0;
+  position: sticky; top: 84px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container);
+  max-height: calc(100vh - 120px); overflow: auto;
+}
+.hb-ed-preview-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant);
+}
+.hb-ed-preview-head .material-symbols-outlined { font-size: 17px; color: var(--md-sys-color-primary); }
+
+/* Markdown 正文在条目卡片内的排版（列表 / 引用 / 代码 / 分割线） */
+.pc-details ul, .pc-details ol { margin: 4px 0; padding-left: 20px; }
+.pc-details li { margin: 2px 0; }
+.pc-details blockquote {
+  margin: 6px 0; padding: 2px 10px; font-style: italic;
+  border-left: 3px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.pc-details pre {
+  margin: 6px 0; padding: 8px 10px; overflow: auto;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-highest);
+}
+.pc-details code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.92em; }
+.pc-details hr { border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 8px 0; }
+
+@media (max-width: 1000px) {
+  .hb-editor.double .hb-ed-body { grid-template-columns: minmax(0, 1fr); }
+  .hb-ed-preview { position: static; max-height: none; }
+}
+@media (max-width: 768px) {
+  .hb-ed-head { position: static; }
+  .hb-body-textarea { min-height: 220px; }
+}
+
