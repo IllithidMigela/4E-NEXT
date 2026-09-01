@@ -26,12 +26,13 @@ export function loadCards(): SavedCard[] {
   }
 }
 
-export function saveCards(cards: SavedCard[]): void {
-  try {
-    localStorage.setItem(CARDS_KEY, JSON.stringify(cards));
-  } catch {
-    // 存储不可用时静默忽略
-  }
+/**
+ * 保存人物卡列表。
+ * 返回 false 表示没能写进去（配额写满 / 浏览器禁用存储），同时会广播失败事件，
+ * 由界面提示「没有保存成功」——旧实现是静默吞掉，用户以为存上了，刷新才发现丢了。
+ */
+export function saveCards(cards: SavedCard[]): boolean {
+  return safeSetItem(CARDS_KEY, JSON.stringify(cards));
 }
 
 export function loadActiveId(): string | undefined {
@@ -42,12 +43,9 @@ export function loadActiveId(): string | undefined {
   }
 }
 
-export function saveActiveId(id: string): void {
-  try {
-    localStorage.setItem(ACTIVE_KEY, id);
-  } catch {
-    // 忽略
-  }
+/** 保存「当前打开的卡」；失败返回 false（同样会广播）。 */
+export function saveActiveId(id: string): boolean {
+  return safeSetItem(ACTIVE_KEY, id);
 }
 
 // localStorage 容量估算：按 UTF-16 码元统计（含 key + value），近似各浏览器配额口径。
@@ -146,4 +144,111 @@ export function localStorageBreakdown(): StorageBreakdown {
     keys: totals[key].keys,
   }));
   return { used, total: LS_MAX, percent: Math.min(100, (used / LS_MAX) * 100), keys, groups };
+}
+
+// ===== 写入护栏：localStorage 写满 / 被禁用时不再静默吞掉，改为向订阅者广播 =====
+//
+// 背景：自动保存有 400ms 防抖，配额写满后每次编辑都会失败。旧实现 catch 为空，
+// 界面照常显示新内容，用户直到刷新才发现全丢了。这里把失败显性化：
+// 所有写入统一走 safeSetItem，失败时记录并通知订阅者（见 components/StorageAlert）。
+
+export type StorageFailureReason = "quota" | "unavailable";
+
+export interface StorageFailure {
+  /** 写入失败的键 */
+  key: string;
+  /** 归属分组：与「浏览器缓存占用」面板同一套口径 */
+  scope: StorageGroupKey;
+  /** 分组中文名，如「人物卡存档」 */
+  label: string;
+  /** quota = 空间写满；unavailable = 浏览器不让写（无痕模式 / 站点数据被禁用等） */
+  reason: StorageFailureReason;
+  /** 本次尝试写入的大小（UTF-16 码元，与占用统计同口径） */
+  bytes: number;
+  /** 失败当时的整体占用 */
+  usage: StorageUsage;
+  at: number;
+}
+
+type FailureListener = (f: StorageFailure) => void;
+
+const failureListeners = new Set<FailureListener>();
+let lastFailure: StorageFailure | null = null;
+
+// 占用统计要遍历整个 localStorage；连续失败时短时缓存，避免反复全量扫描
+let usageCache: { at: number; usage: StorageUsage } | null = null;
+const USAGE_CACHE_MS = 2000;
+
+function cachedUsage(): StorageUsage {
+  const now = Date.now();
+  if (usageCache && now - usageCache.at < USAGE_CACHE_MS) return usageCache.usage;
+  const usage = localStorageUsage();
+  usageCache = { at: now, usage };
+  return usage;
+}
+
+/** 识别「配额写满」：各浏览器抛出的形态不一致，逐一比对。 */
+export function isQuotaExceeded(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: string; code?: number };
+  return (
+    e.name === "QuotaExceededError" ||
+    e.name === "NS_ERROR_DOM_QUOTA_REACHED" || // Firefox
+    e.code === 22 ||                            // 通用 DOMException 编码
+    e.code === 1014                             // Firefox
+  );
+}
+
+/**
+ * 写 localStorage 的统一入口。成功返回 true；
+ * 失败不再静默忽略，而是广播 StorageFailure，由界面提示用户。
+ * scope 缺省时按键名推导（与缓存占用面板的分组保持一致）。
+ */
+export function safeSetItem(key: string, value: string, scope?: StorageGroupKey): boolean {
+  try {
+    localStorage.setItem(key, value);
+    usageCache = null; // 写入成功，占用已变化
+    return true;
+  } catch (err) {
+    const g = scope ?? groupOf(key);
+    const failure: StorageFailure = {
+      key,
+      scope: g,
+      label: GROUP_LABELS[g],
+      reason: isQuotaExceeded(err) ? "quota" : "unavailable",
+      bytes: key.length + value.length,
+      usage: cachedUsage(),
+      at: Date.now(),
+    };
+    lastFailure = failure;
+    for (const fn of failureListeners) {
+      try {
+        fn(failure);
+      } catch {
+        // 单个订阅者出错不影响其他订阅者
+      }
+    }
+    return false;
+  }
+}
+
+/** 订阅写入失败；返回取消订阅函数。 */
+export function subscribeStorageFailure(fn: FailureListener): () => void {
+  failureListeners.add(fn);
+  return () => {
+    failureListeners.delete(fn);
+  };
+}
+
+/**
+ * 读取最近一次写入失败。
+ * App 在 useState 初始值里就会写一次存档（早于任何组件挂载），
+ * 提示组件挂载后靠这个补看一眼，避免首屏那次失败被漏报。
+ */
+export function takeLastStorageFailure(): StorageFailure | null {
+  return lastFailure;
+}
+
+export function clearLastStorageFailure(): void {
+  lastFailure = null;
 }

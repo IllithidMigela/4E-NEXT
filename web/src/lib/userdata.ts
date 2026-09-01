@@ -1,5 +1,5 @@
 import type { Entry } from "../data/types";
-import { uid } from "./storage";
+import { safeSetItem, uid } from "./storage";
 
 // 个人资源池存储层：以「包」为存储单元（.d4e 资源包）。
 // 每个包：{ id, name, author, description, version, icon, enabled, createdAt, updatedAt, entries }。
@@ -80,12 +80,13 @@ export function newPool(name: string, entries: Entry[] = [], meta: PoolMeta = {}
   };
 }
 
-function savePools(pools: HomebrewPool[]): void {
-  try {
-    localStorage.setItem(POOLS_KEY, JSON.stringify(pools));
-  } catch {
-    // 存储不可用时静默忽略
-  }
+/**
+ * 保存全部资源包。返回 false 表示没写进去（配额写满 / 存储被禁用），
+ * 失败会由 safeSetItem 广播出去，界面据此提示「没有保存成功」。
+ * 资源包是最容易撑爆 localStorage 的一类数据，这里尤其不能静默失败。
+ */
+function savePools(pools: HomebrewPool[]): boolean {
+  return safeSetItem(POOLS_KEY, JSON.stringify(pools));
 }
 
 function loadLegacy(): HomebrewPool[] {

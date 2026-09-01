@@ -1,6 +1,7 @@
 import type { BgMode, FontMode } from "../ThemeProvider";
 import { NORD_PRESETS, type SeedMode } from "../theme";
 import { dataUrlSizeBytes, compressDataUrlToBudget } from "./image";
+import { safeSetItem } from "./storage";
 
 // 单张图片的存储预算：localStorage 上限约 5MB，需为多张卡片数据留足余量
 export const IMAGE_BUDGET = 450 * 1024;    // 压缩后的单图目标（约 450KB）
@@ -58,13 +59,9 @@ export function loadSettings(): Settings {
   return out;
 }
 
-/** 保存设置。 */
-export function saveSettings(s: Settings): void {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-  } catch {
-    /* 存储不可用时忽略 */
-  }
+/** 保存设置；失败返回 false 并广播（外观丢失虽不致命，但同样不该静默）。 */
+export function saveSettings(s: Settings): boolean {
+  return safeSetItem(SETTINGS_KEY, JSON.stringify(s));
 }
 
 /** 读取背景缓存的路径标记（IndexedDB 缓存键或回退 data URL）。 */
@@ -78,12 +75,15 @@ export function loadBgCacheMarker(): string | null {
 
 /** 保存/清除背景缓存路径标记。 */
 export function saveBgCacheMarker(path: string | null): void {
-  try {
-    if (path === null) localStorage.removeItem(BG_CACHE_MARK_KEY);
-    else localStorage.setItem(BG_CACHE_MARK_KEY, path);
-  } catch {
-    /* 忽略 */
+  if (path === null) {
+    try {
+      localStorage.removeItem(BG_CACHE_MARK_KEY);
+    } catch {
+      /* 删除失败不影响使用 */
+    }
+    return;
   }
+  safeSetItem(BG_CACHE_MARK_KEY, path);
 }
 
 /** 是否触发「图片过大」提醒：文件字节数超过阈值。 */

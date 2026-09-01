@@ -10,10 +10,11 @@ import OverviewView from "./OverviewView";
 import BackgroundView from "./BackgroundView";
 import DrawView from "./DrawView";
 import HomebrewView from "./HomebrewView";
-import { loadCards, saveCards, loadActiveId, saveActiveId, uid, type SavedCard } from "./lib/storage";
+import { loadCards, saveCards, loadActiveId, saveActiveId, safeSetItem, uid, type SavedCard } from "./lib/storage";
 import { defaultCharacter, migrateCharacter, type Character } from "./sheet/character";
 import { FilledButton, OutlinedButton, TextButton } from "./components/md";
 import SheetDialog from "./components/SheetDialog";
+import StorageAlert from "./components/StorageAlert";
 import Logo from "./components/Logo";
 
 type View = "sheet" | "background" | "reserve" | "overview" | "draw" | "search" | "learn" | "homebrew" | "settings";
@@ -141,11 +142,10 @@ function Shell() {
   }
 
   function toggleLayout() {
-    setLayoutRaw((p) => {
-      const next = p === "single" ? "double" : "single";
-      localStorage.setItem("kcc-layout", next);
-      return next;
-    });
+    const next: Layout = layoutRaw === "single" ? "double" : "single";
+    setLayoutRaw(next);
+    // 走统一写入口：存储被禁用时（无痕模式）原来这里会直接抛错，把整个点击处理打断
+    safeSetItem("kcc-layout", next);
   }
 
   function switchCard(id: string) {
@@ -444,6 +444,8 @@ function Shell() {
           </div>
         </SheetDialog>
       )}
+      {/* 存储写满 / 被禁用时提示「没有保存成功」，并给出止损动作 */}
+      <StorageAlert onBackup={exportSave} onInspect={() => setView("homebrew")} />
     </div>
   );
 }

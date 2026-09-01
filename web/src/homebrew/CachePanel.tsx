@@ -79,7 +79,7 @@ export default function CachePanel({ usage, pools }: { usage: StorageBreakdown; 
       </div>
 
       <p className="hint hb-cache-foot">
-        共 {usage.keys} 个存储项，浏览器 localStorage 上限约 5 MB。
+        共 {usage.keys} 个存储项，浏览器缓存上限约 5 MB。
         {level === "ok"
           ? "资源包会随浏览器缓存保存，清理站点数据前请先导出备份。"
           : level === "warn"
