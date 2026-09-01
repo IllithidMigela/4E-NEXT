@@ -1,8 +1,10 @@
 /* ============================================================================
-   增补样式（在 0.1.4A 发行版 styles.css 之外新增的部分）
+   增补样式（主 styles.css 之外新增的部分）
    —— 独立文件：由 main.tsx 在 styles.css 之后导入。
    这样即便有人用旧版整份覆盖 styles.css，这里的新增样式也不会一起丢失。
    内容：① 存档弹窗的「导出」分组  ② 私设页 v2（总览 + 二级包编辑页）
+         ③ 二级页去弹窗：内联包资料面板  ④ 三级页面：条目编辑器
+         ⑤ 存储写入失败提示  ⑥ MD3 分段按钮  ⑦ 攻击/伤害面板的「名称」列
    取色一律走 MD3 语义色（--md-sys-color-*），字重走全局 --fw-*。
    ============================================================================ */
 
@@ -484,7 +486,7 @@
   .hb-body-textarea { min-height: 220px; }
 }
 
-/* ===== ③ 存储写入失败提示（localStorage 写满 / 被浏览器禁用） =====
+/* ===== ⑤ 存储写入失败提示（localStorage 写满 / 被浏览器禁用） =====
    两种 MD3 形态：首次失败用对话框（SheetDialog，error-container 卡头），
    之后降级为 MD3 Snackbar（inverse-surface 三件套）。
    颜色全部走 MD3 语义色令牌，随动态取色 / 深色模式自动适配，无任何写死色值。 */
@@ -599,4 +601,52 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
   .kcc-store-gauge-fill { transition: none; }
 }
 
+/* ===== ⑥ MD3 分段按钮（segmented button） =====
+   @material/web 2.5 尚未提供该组件，按官方规格自绘：连体描边 + on-color 状态层，
+   选中段用 secondary-container 并带勾选图标。速览页（掷骰/指令、快捷加减）与
+   设置页（全局字体、动态取色种子）共用同一套类，保证整站切换控件语言一致。 */
+.md3-seg {
+  display: inline-flex; align-items: stretch; height: 34px; box-sizing: border-box;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-full);
+  overflow: hidden;
+  background: transparent; /* 未选中段透出所在表面的底色，跟随全局取色 */
+}
+.md3-seg-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 100%; min-width: 56px; padding: 0 14px; border: none; cursor: pointer;
+  background: transparent; color: var(--md-sys-color-on-surface);
+  font: inherit; font-size: 13px; font-weight: var(--fw-body); white-space: nowrap;
+  transition: background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+}
+.md3-seg-btn + .md3-seg-btn { border-left: 1px solid var(--md-sys-color-outline); }
+.md3-seg-btn:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
+.md3-seg-btn:active { background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent); }
+.md3-seg-btn.on { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.md3-seg-btn.on:hover { background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container)); }
+.md3-seg-btn.on:active { background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 12%, var(--md-sys-color-secondary-container)); }
+.md3-seg-btn:disabled { opacity: .38; cursor: default; }
+.md3-seg-check { font-size: 16px; }
 
+/* ===== ⑦ 攻击/伤害面板：新增「名称」列（成对命名） =====
+   攻击与伤害现在成对增减，第一列放这一对的自定义名称；
+   列模板在此覆盖 styles.css 中的原定义（本文件在其后导入）。 */
+.combat-table.attack .ct-head,
+.combat-table.attack .ct-row { grid-template-columns: 1.5fr 1.6fr repeat(5, 1fr) 1.6fr 1fr; }
+.combat-table.damage .ct-head,
+.combat-table.damage .ct-row { grid-template-columns: 1.5fr 1.6fr 1fr 1fr 1fr 1.6fr 1fr 1fr; }
+.ct-label-cell { padding: 2px 4px; }
+.ct-label-input {
+  width: 100%; padding: 2px 4px; border: none; background: transparent;
+  color: var(--md-sys-color-on-surface); font: inherit; font-size: 12.5px; text-align: center;
+}
+.ct-label-input::placeholder { color: var(--md-sys-color-on-surface-variant); opacity: .7; }
+.ct-label-input:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; border-radius: var(--md-sys-shape-corner-extra-small); }
+.ct-label-text { font-size: 12.5px; font-weight: var(--fw-body); text-align: center; }
+@media (max-width: 960px) {
+  .combat-table.attack .ct-head,
+  .combat-table.attack .ct-row { min-width: 680px; }
+  .combat-table.damage .ct-head,
+  .combat-table.damage .ct-row { min-width: 620px; }
+}

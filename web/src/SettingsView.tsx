@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { HexColorPicker } from "react-colorful";
 import { useTheme, type BgMode } from "./ThemeProvider";
-import { FilledSelect, SelectOption, Switch, FilledButton, Slider } from "./components/md";
+import { Switch, FilledButton, Slider } from "./components/md";
 import { readFileAsDataUrl } from "./lib/image";
 import { NORD_PRESETS, type SeedMode } from "./theme";
 import { shouldWarnOversize, prepareImageForStore, IMAGE_SIZE_HINT } from "./lib/settings";
@@ -45,27 +45,27 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
         </div>
         <div className="settings-row">
           <span className="field-label">全局字体</span>
-          <span className="flat-chips" role="radiogroup" aria-label="全局字体">
-            <button type="button" role="radio" aria-checked={fontMode === "serif"} className={"flat-chip" + (fontMode === "serif" ? " active" : "")} onClick={() => setFontMode("serif")}>
-              {fontMode === "serif" && <span className="material-symbols-outlined flat-chip-check">check</span>}
+          <div className="md3-seg" role="radiogroup" aria-label="全局字体">
+            <button type="button" role="radio" aria-checked={fontMode === "serif"} className={"md3-seg-btn" + (fontMode === "serif" ? " on" : "")} onClick={() => setFontMode("serif")}>
+              {fontMode === "serif" && <span className="material-symbols-outlined md3-seg-check">check</span>}
               衬线体
             </button>
-            <button type="button" role="radio" aria-checked={fontMode === "sans"} className={"flat-chip" + (fontMode === "sans" ? " active" : "")} onClick={() => setFontMode("sans")}>
-              {fontMode === "sans" && <span className="material-symbols-outlined flat-chip-check">check</span>}
+            <button type="button" role="radio" aria-checked={fontMode === "sans"} className={"md3-seg-btn" + (fontMode === "sans" ? " on" : "")} onClick={() => setFontMode("sans")}>
+              {fontMode === "sans" && <span className="material-symbols-outlined md3-seg-check">check</span>}
               无衬线体
             </button>
-          </span>
+          </div>
         </div>
         <div className="settings-row">
           <span className="field-label">动态取色种子</span>
-          <span className="flat-chips" role="radiogroup" aria-label="动态取色种子">
+          <div className="md3-seg" role="radiogroup" aria-label="动态取色种子">
             {(["preset", "picker", "portrait", "background"] as SeedMode[]).map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={seedMode === m} className={"flat-chip" + (seedMode === m ? " active" : "")} onClick={() => setSeedMode(m)}>
-                {seedMode === m && <span className="material-symbols-outlined flat-chip-check">check</span>}
+              <button key={m} type="button" role="radio" aria-checked={seedMode === m} className={"md3-seg-btn" + (seedMode === m ? " on" : "")} onClick={() => setSeedMode(m)}>
+                {seedMode === m && <span className="material-symbols-outlined md3-seg-check">check</span>}
                 {({ preset: "预设", picker: "自选", portrait: "跟随立绘", background: "跟随背景" } as Record<SeedMode, string>)[m]}
               </button>
             ))}
-          </span>
+          </div>
         </div>
         {seedMode === "preset" && (
           <div className="settings-row">
@@ -116,10 +116,14 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
           <>
             <div className="settings-row">
               <span className="field-label">背景来源</span>
-              <FilledSelect value={bgMode} onChange={(e) => setBgMode((e.target as any).value as BgMode)}>
-                <SelectOption value="portrait">与立绘同步</SelectOption>
-                <SelectOption value="custom">自行上传</SelectOption>
-              </FilledSelect>
+              <div className="md3-seg" role="radiogroup" aria-label="背景来源">
+                {([["portrait", "与立绘同步"], ["custom", "自行上传"]] as [BgMode, string][]).map(([m, label]) => (
+                  <button key={m} type="button" role="radio" aria-checked={bgMode === m} className={"md3-seg-btn" + (bgMode === m ? " on" : "")} onClick={() => setBgMode(m)}>
+                    {bgMode === m && <span className="material-symbols-outlined md3-seg-check">check</span>}
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             {bgMode === "portrait" && <p className="hint">与立绘同步：使用车卡页上传的立绘原图（非裁切版本）作为背景。</p>}
             {bgMode === "custom" && (

@@ -115,10 +115,13 @@ export function migrateCharacter(c: Partial<Character>): Character {
       const damages = trimBlankRows((c.damages ?? []).map(normDamage), isBlankDamage);
       // 存档中数组为空时，补回各一行的默认计算单元格（否则面板只有表头、无可计算单元格）；默认属性取角色最高属性
       const fallback = emptyCombatMods(highestAbilityKey(base.abilities ?? {}));
-      return {
-        attacks: attacks.length > 0 ? attacks : fallback.attacks,
-        damages: damages.length > 0 ? damages : fallback.damages,
-      };
+      const atk = attacks.length > 0 ? attacks : fallback.attacks;
+      const dmg = damages.length > 0 ? damages : fallback.damages;
+      // 攻击与伤害现在成对增减：旧存档两边行数可能不等，按较多的一边补齐，保证 index 一一对应
+      const pairs = Math.max(atk.length, dmg.length);
+      while (atk.length < pairs) atk.push({ ...fallback.attacks[0] });
+      while (dmg.length < pairs) dmg.push({ ...fallback.damages[0] });
+      return { attacks: atk, damages: dmg };
     })(),
     baseItems: (base as { baseItems?: Record<number, string> }).baseItems ?? {},
     powerSlots: {
@@ -177,8 +180,11 @@ export function migrateCharacter(c: Partial<Character>): Character {
     backpack: base.backpack ?? [],
     powerUsed: base.powerUsed ?? {},
     equipmentUsed: base.equipmentUsed ?? {},
+    featUsed: base.featUsed ?? {},
     milestones: base.milestones ?? 0,
     powerPoints: base.powerPoints ?? 0,
+    // 旧存档没有 glance / 字段结构变过（defTemp 由数字改为四防对象）：统一走归一化
+    glance: normGlance(base.glance),
   };
 }
 
@@ -259,8 +265,11 @@ export interface Character {
   // 使用标记：斜线遮罩（键 = "atWill-0" / "e-5" / "o-1" / "c-2"）
   powerUsed: Record<string, boolean>;
   equipmentUsed: Record<string, boolean>;
+  // 专长使用标记（速览页，键 = 专长槽位下标 / 职业赠送专长 "g-<id>"）
+  featUsed: Record<string, boolean>;
   milestones: number; // 里程碑记录
   powerPoints: number; // 灵能点
+  glance: GlanceState; // 速览页临时追踪状态
 }
 
 // 人物创建：四个 Markdown 栏位
@@ -277,6 +286,33 @@ export const CREATION_FIELDS: { key: keyof CharacterCreation; label: string; pla
   { key: "background", label: "背景/主体奖励", placeholder: "背景奖励、主题奖励、专长奖励……（支持 Markdown）" },
   { key: "notes", label: "冒险笔记", placeholder: "记录冒险历程、战役进度……（支持 Markdown）" },
 ];
+
+// —— 速览页：一场游戏内的临时追踪状态（随人物卡存档，长休归零） ——
+export interface GlanceState {
+  atkTemp: number;       // 攻击临时加值（祝福/援护等，短时效果）
+  dmgTemp: number;       // 伤害临时加值
+  defTemp: Record<DefenseKey, number>; // 各防御的临时加值（掩蔽只加 AC/反射、回气加全部，需分别记）
+  surgeTemp: number;     // 临时回复值加值（每次花回复力额外回复的生命值）
+  itemDailyUsed: number; // 本日已使用的魔法物品每日威能次数
+  secondWind: boolean;   // 本次遭遇是否已用过回气（Second Wind）
+  deathFails: number;    // 死亡豁免失败次数（0-3）
+}
+
+export function emptyGlance(): GlanceState {
+  return { atkTemp: 0, dmgTemp: 0, defTemp: { ac: 0, fort: 0, ref: 0, will: 0 }, surgeTemp: 0, itemDailyUsed: 0, secondWind: false, deathFails: 0 };
+}
+
+/** 归一化速览状态：旧存档的 defTemp 曾是单个「全防御」数字，这里摊到四防上，避免读出非对象值。 */
+export function normGlance(raw: Partial<GlanceState> | undefined): GlanceState {
+  const base = emptyGlance();
+  if (!raw) return base;
+  const dt: unknown = (raw as { defTemp?: unknown }).defTemp;
+  const defTemp =
+    typeof dt === "number"
+      ? { ac: dt, fort: dt, ref: dt, will: dt }
+      : { ...base.defTemp, ...((dt as Partial<Record<DefenseKey, number>>) ?? {}) };
+  return { ...base, ...raw, defTemp };
+}
 
 export function defaultCharacter(): Character {
   // 购点法起始数组 10 10 10 10 10 8：8 落在随机一项属性上（每张新卡不同）
@@ -338,8 +374,10 @@ export function defaultCharacter(): Character {
     backpack: [],
     powerUsed: {},
     equipmentUsed: {},
+    featUsed: {},
     milestones: 0,
     powerPoints: 0,
+    glance: emptyGlance(),
   };
 }
 
@@ -646,6 +684,7 @@ export function emptyInitMods(): InitMods {
 // —— 攻击/伤害面板 ——
 // 攻击行：½等级与属性调整值自动计算（属性由 ability 指定），其余为手动加值
 export interface AttackRowData {
+  label?: string;          // 该「攻击 + 伤害」对的自定义名称（如「长剑·主手」），两张表与速览页共用
   ability: AbilityKey;     // 关联属性（用于自动填充属性调整值）
   classBonus: number;      // 职业加值
   profBonus: number;       // 熟练加值（兼容旧存档的纯手动值，新版本由 profSlot 自动计算）

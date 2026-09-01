@@ -18,7 +18,7 @@ import { collectProficiencyTokens, collectProficiencySources, isProficient, feat
 import { SmartHover } from "./SmartHover";
 import { collectClassSources, collectFeatSources } from "./combat-source";
 import { stripWiki } from "../lib/text";
-import { hybridTalentGroups, resolveHybridOption, isHybridTalentFeat, hybridTalentProfTokens, mergedClassTraitText, originalFeatureInfo, type HybridTalentGroup } from "../lib/hybrid";
+import { hybridTalentGroups, resolveHybridOption, isHybridTalentFeat, mergedClassTraitText, originalFeatureInfo, type HybridTalentGroup } from "../lib/hybrid";
 import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitClassLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, parseReplacementPairs, tokenizeWikiBody, parseRaceTraitLines, type FeatureSection } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, BASE_SHIELDS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
 import { priceForLevel, itemLevels } from "../lib/levelprices";
@@ -27,6 +27,10 @@ import PickerModal from "./PickerModal";
 import ClassPickerModal from "./ClassPickerModal";
 import SheetDialog from "../components/SheetDialog";
 import RitualPicker, { ritualMarketPrice } from "./RitualPicker";
+// 灵能点推导：与速览页共用（速览页长休需按同一规则恢复灵能点）
+import { psionicPowerPoints, hybridPowerPoints } from "./powerpoints";
+// 防御推导（装备/职业特性自动加值、AC 属性替换）：与速览页共用同一实现
+import { deriveDefenses, hybridTalentProf, resolvePrimalAspect, runicArtistry } from "./defense";
 
 const ABILITIES: AbilityKey[] = ["str", "con", "dex", "int", "wis", "cha"];
 
@@ -112,46 +116,6 @@ function anyCountOfCn(token: string | undefined): number {
   if (token === "三") return 3;
   if (token === "四") return 4;
   return 1;
-}
-
-// 灵能职业（每日灵能点来源）：炽念使/战魂/心灵术士共用同一阶梯表；武僧不消耗灵能点，故排除。
-const PSIONIC_PP_CLASSES = new Set(["炽念使 Ardent", "战魂 Battlemind", "心灵术士 Psion"]);
-// 按当前等级返回该灵能职业的每日灵能点，非灵能职业返回 undefined
-function psionicPowerPoints(classId: string | undefined, level: number): number | undefined {
-  if (!classId || !PSIONIC_PP_CLASSES.has(classId)) return undefined;
-  if (level <= 2) return 2;
-  if (level <= 6) return 4;
-  if (level <= 12) return 6;
-  if (level <= 16) return 7;
-  if (level <= 20) return 9;
-  if (level <= 22) return 11;
-  if (level <= 26) return 13;
-  return 15;
-}
-
-// 混职灵能点选项：当角色职业能力面板中存在「灵能强化（混职）」特性（即某个混职职业为灵能职业）时启用。
-// 灵能点 = Σ(每门「可强化」(keywords 含该词) 的随意攻击威能按等级折算：≤10→2，≤20→4，否则→6)。
-function entryGrantsPsionicAugmentation(entry: Entry | undefined): boolean {
-  return !!entry && /^!!\s*灵能强化/m.test(entry.sourceText || "");
-}
-function hybridPowerPoints(
-  clazz: { classId?: string; classId2?: string; powerSlots: PowerSlots },
-  resolveClass: (id: string) => Entry | undefined,
-  resolvePower: (id: string) => Entry | undefined
-): number | undefined {
-  if (!clazz.classId2) return undefined; // 非混职
-  const e1 = clazz.classId ? resolveClass(clazz.classId) : undefined;
-  const e2 = clazz.classId2 ? resolveClass(clazz.classId2) : undefined;
-  if (!entryGrantsPsionicAugmentation(e1) && !entryGrantsPsionicAugmentation(e2)) return undefined;
-  let sum = 0;
-  for (const id of clazz.powerSlots.atWill) {
-    if (!id) continue;
-    const pw = resolvePower(id);
-    if (!pw || !(pw.keywords || "").split(/[,，]/).map((s) => s.trim()).includes("可强化")) continue;
-    const lv = parseInt(String(pw.level ?? ""), 10);
-    sum += Number.isNaN(lv) ? 2 : lv <= 10 ? 2 : lv <= 20 ? 4 : 6;
-  }
-  return sum;
 }
 
 // 22 购点常用预设（数值数组按 ABILITIES 顺序，均恰好 22 点；应用时按玩家拖动的属性顺序分配）
@@ -1073,24 +1037,6 @@ function enBreak(html: string): string {
 const FEAT_POWER_HINT: Record<string, string> = { "自然生长 Nature's Growth": "获得自然生长威能" };
 function featPowerHint(title: string): string | undefined {
   return FEAT_POWER_HINT[title.trim()];
-}
-
-// 解析当前生效的德鲁伊原力姿态：优先「原力姿态」直接选择（德鲁伊），其次「召唤自然盟友」手动覆盖，
-// 最后「德鲁伊集会」派生（保护者：恢复集会→原力守护者、庇护集会→原力掠食者）
-function resolvePrimalAspect(choices: Record<string, string | string[]>, entries: (Entry | undefined)[]): string {
-  for (const e of entries) {
-    if (!e) continue;
-    const direct = choices[e.id + "::原力姿态 Primal Aspect"];
-    if (typeof direct === "string" && direct) return direct;
-    const override = choices[e.id + "::召唤自然盟友 Summon Natural Ally::aspect"];
-    if (typeof override === "string" && override) return override;
-    const circle = choices[e.id + "::德鲁伊集会 Druid Circle"];
-    if (typeof circle === "string" && circle) {
-      if (circle.startsWith("恢复集会")) return "原力守护者 Primal Guardian";
-      if (circle.startsWith("庇护集会")) return "原力掠食者 Primal Predator";
-    }
-  }
-  return "";
 }
 
 // 精华职业（4E Essentials 系列）：职业特性按等级折叠，达到前提等级才自动展开
@@ -3960,49 +3906,6 @@ function ModInputs(props: {
   );
 }
 
-// 判断副手槽(1)或臂部槽(7)是否装备了盾牌基础物品（臂部也可选盾牌，见 EQUIP_GROUPS）
-function findShieldBase(c: Character): ReturnType<typeof findBaseItem> | undefined {
-  for (const idx of [1, 7]) {
-    const b = c.baseItems?.[idx] ? findBaseItem(c.baseItems[idx]) : undefined;
-    if (b?.kind === "shield") return b;
-  }
-  return undefined;
-}
-function hasShieldBase(c: Character): boolean {
-  return !!findShieldBase(c);
-}
-
-// 装备自动防御加值：穿着防具/盾牌时，其 AC 加值（及防具对强韧/反射/意志的特殊加值）
-// 自动填入对应防御来源单元格，无需手动录入。
-function autoDefenseBonuses(c: Character): Record<DefenseKey, Partial<Record<DefenseBonusSource, number>>> {
-  const out: Record<DefenseKey, Partial<Record<DefenseBonusSource, number>>> = { ac: {}, fort: {}, ref: {}, will: {} };
-  const armor = c.baseItems?.[5] ? findBaseItem(c.baseItems[5]) : undefined;
-  const shield = findShieldBase(c);
-  if (armor?.kind === "armor" && armor.armor) {
-    out.ac.armor = armor.armor.ac ?? 0;
-    const m = /([+-]\d+)\s*(强韧|反射|意志)/.exec(armor.armor.special || "");
-    if (m) {
-      const key = m[2] === "强韧" ? "fort" : m[2] === "反射" ? "ref" : "will";
-      out[key].armor = parseInt(m[1], 10);
-    }
-  }
-  if (shield?.kind === "shield" && shield.shield) {
-    out.ac.shield = shield.shield.ac ?? 0;
-  }
-  return out;
-}
-
-// 合并手动加值与装备自动加值：防具/盾牌来源以装备为准（装备决定），其余保留手动录入值
-function mergeDefenseMods(_k: DefenseKey, manual: Record<DefenseBonusSource, number>, auto: Partial<Record<DefenseBonusSource, number>>): Record<DefenseBonusSource, number> {
-  return {
-    feat: manual.feat ?? 0,
-    enhance: manual.enhance ?? 0,
-    armor: auto.armor ?? manual.armor ?? 0,
-    shield: auto.shield ?? manual.shield ?? 0,
-    other: manual.other ?? 0,
-  };
-}
-
 function DefenseCell(props: {
   label: string;
   value: number;
@@ -4804,231 +4707,29 @@ export default function CharacterSheet({
   const bonus = useMemo(() => racialBonus(raceEntry, char.raceAbility2Choice), [raceEntry, char.raceAbility2Choice]);
   const effectiveAbilities = useMemo(() => applyAbilityBonus(char.abilities, bonus), [char.abilities, bonus]);
   const raceDefs = useMemo(() => parseRaceDefenses(raceEntry?.sourceText ?? ""), [raceEntry]);
-  // 守望者「守护者之力」：选中后 AC 属性改用体质（大地之力/风暴之心）或感知（野性之血/生命之灵），未穿重甲时生效
-  const guardianChoice = classEntry
-    ? (typeof char.classFeatureChoices[classEntry.id + "::守护者之力 Guardian Might"] === "string"
-      ? char.classFeatureChoices[classEntry.id + "::守护者之力 Guardian Might"] as string
-      : "")
-    : "";
-  const guardianAcKey = (() => {
-    if (!guardianChoice) return undefined;
-    const armorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    if (armorBase?.kind === "armor" && armorBase.armor?.category === "重甲") return undefined;
-    if (guardianChoice.startsWith("大地之力") || guardianChoice.startsWith("风暴之心")) return "con" as const;
-    if (guardianChoice.startsWith("野性之血") || guardianChoice.startsWith("生命之灵")) return "wis" as const;
-    return undefined;
-  })();
-  // 术士「法术本源」：选中巨龙魔法（龙裔活力）或宇宙魔法（宇宙长存）时，
-  // 未穿重甲可用力量调整值取代敏捷/智力计算 AC。
-  const sorcererSource = classEntry
-    ? (typeof char.classFeatureChoices[classEntry.id + "::法术本源 Spell Source"] === "string"
-      ? char.classFeatureChoices[classEntry.id + "::法术本源 Spell Source"] as string
-      : "")
-    : "";
-  const sorcererAcKey = (() => {
-    if (!sorcererSource) return undefined;
-    const armorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    if (armorBase?.kind === "armor" && armorBase.armor?.category === "重甲") return undefined;
-    if (sorcererSource.startsWith("巨龙魔法") || sorcererSource.startsWith("宇宙魔法")) return "str" as const;
-    return undefined;
-  })();
-  // 德鲁伊「原力姿态」：读取选择值（主职或混职任一职业），并判断是否未穿重甲。
-  // 原力守护者 Primal Guardian：可用体质调整值代替敏捷/智力计算 AC；
-  // 原力掠食者 Primal Predator：未穿重甲时速度自动 +1（仅展示计算，不写入单元格）。
-  // 保护者（德鲁伊（保护者））无独立「原力姿态」特性，其姿态由「德鲁伊集会」派生
-  // （恢复集会→原力守护者、庇护集会→原力掠食者），并可在「召唤自然盟友」中手动覆盖。
-  const primalAspectChoice = resolvePrimalAspect(char.classFeatureChoices, [classEntry, classEntry2]);
-  const noHeavyArmor = (() => {
-    const armorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    return !(armorBase?.kind === "armor" && armorBase.armor?.category === "重甲");
-  })();
-  // 哨兵（德鲁伊（哨兵））的「原力守护者 Primal Guardian」是固定特性，无选择键，需按职业正文静态判定
-  const sentinelGuardian = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (e && /^!!\s*[^\n]*原力守护者 Primal Guardian/m.test(e.sourceText)) return true;
-    }
-    return false;
-  })();
-  // 原力守护者（德鲁伊选择型 或 哨兵固定型）：未穿重甲时 AC 用体质调整值代替敏捷/智力
-  const druidAcKey = (primalAspectChoice.startsWith("原力守护者") || sentinelGuardian) && noHeavyArmor ? ("con" as const) : undefined;
-  const primalPredatorSpeed = primalAspectChoice.startsWith("原力掠食者") && noHeavyArmor ? 1 : 0;
-  // 巡者「巡者束约 Seeker's Bond」之「灵魂束约 Spiritbond」：未穿重甲时 AC 用力量调整值替代敏捷/智力
-  const seekerBondChoice = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::巡者束约 Seeker's Bond"];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  })();
-  const seekerSpiritbondAcKey = seekerBondChoice.startsWith("灵魂束约") && noHeavyArmor ? ("str" as const) : undefined;
-  // 符文牧师「符文艺术 Runic Artistry」：愤怒之锤→军用锤/军用硬头锤擅长；平静之刃→军用重刃擅长 + 未穿重甲 AC 用感知
-  const runicArtistryChoice = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::符文艺术 Runic Artistry"];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  })();
-  const runeWrathful = runicArtistryChoice.startsWith("愤怒之锤");
-  const runeSerene = runicArtistryChoice.startsWith("平静之刃");
-  const runepriestAcKey = runeSerene && noHeavyArmor ? ("wis" as const) : undefined;
   const featMap = useMemo(() => new Map(feats.map((f) => [f.id, f])), [feats]);
-  // —— 混职天赋 Hybrid Talent：已选选项 + 效果 ——
-  // 汇总两个混职职业的选项组引用（每组含来源职业名与选项，供定位所选选项用）
-  const hybridGroups = useMemo(() => hybridTalentGroups([classEntry, classEntry2], classes), [classEntry, classEntry2, classes]);
-  // 已选混职天赋选项及其正文（遍历专长槽位，仅统计是「混职天赋」且已选择的槽位）
-  const selectedHybridOptions = useMemo(() => {
-    const out: string[] = [];
-    char.featSlots.forEach((id, idx) => {
-      if (!id) return;
-      const f = featMap.get(id);
-      if (!f || !isHybridTalentFeat(f)) return;
-      const choice = char.featChoices?.[idx];
-      if (choice) out.push(String(choice));
-    });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [char.featSlots, char.featChoices, featMap, classEntry, classEntry2]);
-  // 已选选项授予的擅长 token（防具/盾牌/武器），合并进防具/盾牌/武器擅长判定
-  const hybridProf = useMemo(() => {
-    const armor: string[] = [];
-    const shield: string[] = [];
-    const weapon: string[] = [];
-    for (const title of selectedHybridOptions) {
-      const r = resolveHybridOption(hybridGroups, title);
-      if (!r) continue;
-      const t = hybridTalentProfTokens(r.body);
-      for (const a of t.armor) if (!armor.includes(a)) armor.push(a);
-      for (const s of t.shield) if (!shield.includes(s)) shield.push(s);
-      for (const w of t.weapon) if (!weapon.includes(w)) weapon.push(w);
-    }
-    return { armor, shield, weapon };
-  }, [selectedHybridOptions, hybridGroups]);
-  // 混职天赋选项的 AC 属性覆盖：正文「当你未穿着重甲时，你可用体质调整值代替敏捷或智力调整值来决定AC」
-  // （如混职哨兵的「原力守护者 Primal Guardian」）→ 未穿重甲时 AC 用体质调整值。
-  const hybridAcKey = selectedHybridOptions.some((title) => {
-    const r = resolveHybridOption(hybridGroups, title);
-    return !!r && /当你未穿着重甲时.*体质调整值代替敏捷或智力.*AC/.test(r.body);
-  }) && noHeavyArmor ? ("con" as const) : undefined;
-  // 神罚使「信仰甲胄 Armor of Faith」：穿着布甲或不穿甲且未使用盾牌时，AC 自动 +3。
-  // 判定：职业（含混职）正文含该特性标题；护甲槽(5)为空或为布甲类；副手槽(1)/臂部槽(7)非盾牌。
-  const armorOfFaithActive = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*信仰甲[胄冑]/m.test(e.sourceText));
-    if (!has) return false;
-    const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    const clothOrNone = !armor || (armor.kind === "armor" && (armor.armor?.name ?? "").includes("布甲"));
-    return clothOrNone && !hasShieldBase(char);
-  }, [classEntry, classEntry2, char.baseItems]);
-  const armorOfFaithBonus = armorOfFaithActive ? 3 : 0;
-  // 野蛮人「蛮族机敏 Barbarian Agility」：未穿重甲时 AC 与反射自动 +1（11级+2，21级+3）
-  const barbarianAgility = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*蛮族机敏/m.test(e.sourceText));
-    if (!has) return 0;
-    const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    if (armor?.kind === "armor" && armor.armor?.category === "重甲") return 0;
-    return char.level >= 21 ? 3 : char.level >= 11 ? 2 : 1;
-  }, [classEntry, classEntry2, char.baseItems, char.level]);
-  // 武僧「无甲防御 Unarmored Defense」：穿着布甲或不穿甲且未使用盾牌时 AC 自动 +2
-  const unarmoredDefenseActive = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*无甲防御 Unarmored Defense/m.test(e.sourceText));
-    if (!has) return false;
-    const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-    const clothOrNone = !armor || (armor.kind === "armor" && (armor.armor?.name ?? "").includes("布甲"));
-    return clothOrNone && !hasShieldBase(char);
-  }, [classEntry, classEntry2, char.baseItems]);
-  const unarmoredDefenseBonus = unarmoredDefenseActive ? 2 : 0;
-  // 剑术剑士「剑法防卫 Swordmage Warding」：持用重刃/轻刃时 AC +1；单手持剑刃且另一手空 → +3
-  const swordmageWarding = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*剑法防卫 Swordmage Warding/m.test(e.sourceText));
-    if (!has) return 0;
-    const main = char.baseItems?.[0] ? findBaseItem(char.baseItems[0]) : undefined;
-    if (!main || main.kind !== "weapon" || !main.weapon) return 0;
-    const groups = main.weapon.group.split(/[，,]/);
-    if (!groups.some((g) => g === "重刃" || g === "轻刃")) return 0;
-    const offHand = char.baseItems?.[1] ? findBaseItem(char.baseItems[1]) : undefined;
-    if (!offHand && main.weapon.category.includes("·单手")) return 3;
-    return 1;
-  }, [classEntry, classEntry2, char.baseItems]);
-  // 武僧「修士宗派 Monastic Tradition」：凝息→强韧+1/2/3；石拳→意志+1/2/3（11级+2、21级+3）
-  const monkTradition = (() => {
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::修士宗派 Monastic Tradition"];
-      if (typeof v === "string" && v) return v;
-    }
-    return "";
-  })();
-  const monkTraditionBonus = char.level >= 21 ? 3 : char.level >= 11 ? 2 : 1;
-  const monkFortExtra = monkTradition.startsWith("凝息") ? monkTraditionBonus : 0;
-  const monkWillExtra = monkTradition.startsWith("石拳") ? monkTraditionBonus : 0;
-  // 狂战士「故土 Heartland」：按所选地形自动应用防御加值。
-  // 干燥沙漠=穿布甲/无甲且未用盾牌时 AC+3、反射+2；冰川冻土=强韧/意志+1；温带平原无防御加值
-  const heartlandDefs = useMemo(() => {
-    const has = [classEntry, classEntry2].some((e) => !!e && /^!!\s*故土 Heartland/m.test(e.sourceText));
-    if (!has) return { ac: 0, fort: 0, ref: 0, will: 0, source: "" };
-    let terrain = "";
-    for (const e of [classEntry, classEntry2]) {
-      if (!e) continue;
-      const v = char.classFeatureChoices[e.id + "::故土 Heartland"];
-      if (typeof v === "string" && v) { terrain = v; break; }
-    }
-    if (terrain.startsWith("干燥沙漠")) {
-      const armor = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
-      const clothOrNone = !armor || (armor.kind === "armor" && (armor.armor?.name ?? "").includes("布甲"));
-      const cond = clothOrNone && !hasShieldBase(char);
-      return { ac: cond ? 3 : 0, fort: 0, ref: cond ? 2 : 0, will: 0, source: `故土（${terrain}）` };
-    }
-    if (terrain.startsWith("冰川冻土")) return { ac: 0, fort: 1, ref: 0, will: 1, source: `故土（${terrain}）` };
-    return { ac: 0, fort: 0, ref: 0, will: 0, source: "" };
-  }, [classEntry, classEntry2, char.classFeatureChoices, char.baseItems]);
-  // 职业特性自动防御加值来源列表（用于「查看详情」逐项标注来源，不混入「其他」手动单元格）
-  const classDefSources = useMemo(() => {
-    const heart = heartlandDefs;
-    return {
-      ac: [
-        { value: armorOfFaithBonus, source: "信仰甲胄" },
-        { value: barbarianAgility, source: "蛮族机敏" },
-        { value: unarmoredDefenseBonus, source: "无甲防御" },
-        { value: swordmageWarding, source: "剑法防卫" },
-        { value: heart.ac, source: heart.source },
-      ].filter((s) => s.value !== 0),
-      fort: [
-        { value: monkFortExtra, source: "修士宗派（凝息）" },
-        { value: heart.fort, source: heart.source },
-      ].filter((s) => s.value !== 0),
-      ref: [
-        { value: barbarianAgility, source: "蛮族机敏" },
-        { value: heart.ref, source: heart.source },
-      ].filter((s) => s.value !== 0),
-      will: [
-        { value: monkWillExtra, source: "修士宗派（石拳）" },
-        { value: heart.will, source: heart.source },
-      ].filter((s) => s.value !== 0),
-    };
-  }, [armorOfFaithBonus, barbarianAgility, unarmoredDefenseBonus, swordmageWarding, monkFortExtra, monkWillExtra, heartlandDefs]);
-  const classDefTotal = (def: DefenseKey) => (classDefSources[def] ?? []).reduce((s, x) => s + x.value, 0);
-  // 装备自动防御加值（防具/盾牌）合并进各防御来源单元格；「其他」只保留手动录入值，职业特性加值仅参与统计与详情展示
-  const autoDef = autoDefenseBonuses(char);
-  const acMods = { ...mergeDefenseMods("ac", char.defenseMods.ac, autoDef.ac), other: char.defenseMods.ac.other ?? 0 };
-  const fortMods = { ...mergeDefenseMods("fort", char.defenseMods.fort, autoDef.fort), other: char.defenseMods.fort.other ?? 0 };
-  const refMods = { ...mergeDefenseMods("ref", char.defenseMods.ref, autoDef.ref), other: char.defenseMods.ref.other ?? 0 };
-  const willMods = { ...mergeDefenseMods("will", char.defenseMods.will, autoDef.will), other: char.defenseMods.will.other ?? 0 };
-  // 用于最终属性计算的防御加值（在手动值基础上叠加职业特性自动加值）
-  const statDefenseMods = {
-    ac: { ...acMods, other: acMods.other + classDefTotal("ac") },
-    fort: { ...fortMods, other: fortMods.other + classDefTotal("fort") },
-    ref: { ...refMods, other: refMods.other + classDefTotal("ref") },
-    will: { ...willMods, other: willMods.other + classDefTotal("will") },
-  };
+  // —— 混职天赋 Hybrid Talent：已选选项授予的擅长 ——
+  // 混职天赋已选选项授予的擅长 token（防具/盾牌/武器），合并进防具/盾牌/武器擅长判定
+  const hybridProf = useMemo(
+    () => hybridTalentProf(char, { classEntry, classEntry2, classes, featMap }),
+    [char, classEntry, classEntry2, classes, featMap]
+  );
+  // 符文牧师「符文艺术」：愤怒之锤→军用锤/军用硬头锤擅长；平静之刃→军用重刃擅长（AC 改用感知在 defense 内判定）
+  const { wrathful: runeWrathful, serene: runeSerene } = runicArtistry(char, [classEntry, classEntry2]);
+  // 防御推导（装备自动加值 + 职业特性自动加值 + AC 属性替换 + 原力掠食者速度）：
+  // 与速览页共用 defense.ts 的同一份实现，保证两页防御数字始终一致
+  const defense = useMemo(
+    () => deriveDefenses(char, { classEntry, classEntry2, classes, featMap }),
+    [char, classEntry, classEntry2, classes, featMap]
+  );
+  const { acMods, fortMods, refMods, willMods, classDefSources, statDefenseMods, primalPredatorSpeed } = defense;
+  // 实际生效的 AC 属性键（供防御详情展示「AC 属性调整」用的是哪个属性）
+  const activeAcKey = defense.acKey;
   const stats = deriveStats({
     ...char,
     abilities: effectiveAbilities,
     defenseMods: statDefenseMods,
-  }, cls, raceDefs, guardianAcKey ?? hybridAcKey ?? druidAcKey ?? sorcererAcKey ?? seekerSpiritbondAcKey ?? runepriestAcKey);
-  // 实际生效的 AC 属性键（供防御详情展示「AC 属性调整」用的是哪个属性）
-  const activeAcKey = guardianAcKey ?? hybridAcKey ?? druidAcKey ?? sorcererAcKey ?? seekerSpiritbondAcKey ?? runepriestAcKey;
+  }, cls, raceDefs, activeAcKey);
   // —— 生命板块：额外加值合计 + 当前值编辑 ——
   const hpBonus = char.hpBonus ?? 0;
   const surgeBonus = char.surgeBonus ?? 0;
@@ -5037,10 +4738,6 @@ export default function CharacterSheet({
   const bloodiedTotal = Math.floor(maxHpTotal / 2);
   const surgeValueTotal = Math.floor(maxHpTotal / 4) + surgeValueBonus;
   const surgesTotal = stats.surges + surgeBonus;
-  const setHpNow = (k: "max" | "bloodied" | "surgeValue" | "surges", raw: string) => {
-    const n = raw.trim() === "" ? undefined : Math.max(0, Math.floor(Number(raw) || 0));
-    setChar((p) => ({ ...p, hpNow: { ...(p.hpNow ?? {}), [k]: n } }));
-  };
   const speedTotal = char.speedMods.power + char.speedMods.feat - char.speedMods.armor + char.speedMods.item + char.speedMods.other + primalPredatorSpeed;
   const speedNum = parseInt(raceEntry?.speed ?? "", 10);
   const speedDisplay = Number.isNaN(speedNum) ? (raceEntry?.speed ?? "—") : speedNum + speedTotal + " 格";
@@ -6166,39 +5863,17 @@ export default function CharacterSheet({
               <span className="mb-label">生命</span>
               <button type="button" className="def-detail-btn" onClick={() => setLifeDetailOpen(true)} title="查看生命值、重伤值、回复值、回复力的构成">查看详情</button>
             </div>
+            {/* 当前剩余值与临时生命值统一由速览页管理，这里只呈现推导出的上限与派生值 */}
             <div className="health-list">
               <div className="health-main">
                 <div className="health-main-row">
                   <span className="hl-label">生命值</span>
-                  <span className="hl-now">
-                    <input className="hp-now-input" type="number" placeholder={String(maxHpTotal)} value={(char.hpNow?.max === undefined ? "" : String(char.hpNow.max))} onChange={(e) => setHpNow("max", e.target.value)} />
-                    <span className="hl-slash">/</span>
-                    <span className="hl-value">{maxHpTotal}</span>
-                  </span>
-                </div>
-                <div className="health-main-row temp">
-                  <span className="hl-label">临时生命值</span>
-                  <input className="hp-now-input temp-input" type="number" min={0} value={char.tempHp ?? 0} onChange={(e) => setChar((p) => ({ ...p, tempHp: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))} />
+                  <span className="hl-now"><span className="hl-value">{maxHpTotal}</span></span>
                 </div>
               </div>
-              <div className="health-row"><span>重伤值</span>
-                <span className="hl-now small">
-                  <input className="hp-now-input" type="number" placeholder={String(bloodiedTotal)} value={(char.hpNow?.bloodied === undefined ? "" : String(char.hpNow.bloodied))} onChange={(e) => setHpNow("bloodied", e.target.value)} />
-                  <span className="hl-slash">/</span><span>{bloodiedTotal}</span>
-                </span>
-              </div>
-              <div className="health-row"><span>回复值</span>
-                <span className="hl-now small">
-                  <input className="hp-now-input" type="number" placeholder={String(surgeValueTotal)} value={(char.hpNow?.surgeValue === undefined ? "" : String(char.hpNow.surgeValue))} onChange={(e) => setHpNow("surgeValue", e.target.value)} />
-                  <span className="hl-slash">/</span><span>{surgeValueTotal}</span>
-                </span>
-              </div>
-              <div className="health-row"><span>回复力</span>
-                <span className="hl-now small">
-                  <input className="hp-now-input" type="number" placeholder={String(surgesTotal)} value={(char.hpNow?.surges === undefined ? "" : String(char.hpNow.surges))} onChange={(e) => setHpNow("surges", e.target.value)} />
-                  <span className="hl-slash">/</span><span>{surgesTotal}</span>
-                </span>
-              </div>
+              <div className="health-row"><span>重伤值</span><span className="hl-now small">{bloodiedTotal}</span></div>
+              <div className="health-row"><span>回复值</span><span className="hl-now small">{surgeValueTotal}</span></div>
+              <div className="health-row"><span>回复力</span><span className="hl-now small">{surgesTotal}</span></div>
             </div>
             <div className="hp-extra">
               <div className="hp-extra-row"><span>额外生命值</span><input type="number" value={hpBonus} onChange={(e) => setChar((p) => ({ ...p, hpBonus: Math.floor(Number(e.target.value) || 0) }))} /></div>

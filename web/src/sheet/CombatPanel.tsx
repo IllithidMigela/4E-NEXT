@@ -25,9 +25,9 @@ function parseNum(v: string, min = -20, max = 50): number {
 }
 
 // 攻击面板列头（与 CombatMods.attacks 一一对应）
-const ATTACK_HEAD = ["总加值", "½等级", "属性调整值", "职业加值", "熟练加值", "专长加值", "增强加值", "其他"] as const;
+const ATTACK_HEAD = ["名称", "总加值", "½等级", "属性调整值", "职业加值", "熟练加值", "专长加值", "增强加值", "其他"] as const;
 // 伤害面板列头（与 CombatMods.damages 一一对应）
-const DAMAGE_HEAD = ["总加值", "伤害骰", "属性调整值", "专长加值", "增强加值", "其他1", "其他2"] as const;
+const DAMAGE_HEAD = ["名称", "总加值", "伤害骰", "属性调整值", "专长加值", "增强加值", "其他1", "其他2"] as const;
 
 export default function CombatPanels(props: {
   char: Character;
@@ -100,34 +100,53 @@ export default function CombatPanels(props: {
       return { ...p, combatMods: { ...c, damages: rows } };
     });
   }
-  function addAttack() {
+  // 攻击与伤害成对增减：一次操作同时改两张表，保证「第 N 行攻击」永远对应「第 N 行伤害」
+  function addPair() {
     setChar((p) => {
       const c = p.combatMods;
       if (c.attacks.length >= MAX_ROWS) return p;
-      return { ...p, combatMods: { ...c, attacks: [...c.attacks, { ...emptyCombatMods().attacks[0] }] } };
+      const blank = emptyCombatMods();
+      return {
+        ...p,
+        combatMods: {
+          attacks: [...c.attacks, { ...blank.attacks[0] }],
+          damages: [...c.damages, { ...blank.damages[0] }],
+        },
+      };
     });
   }
-  function removeAttack() {
+  function removePair() {
     setChar((p) => {
       const c = p.combatMods;
       if (c.attacks.length <= 1) return p;
-      return { ...p, combatMods: { ...c, attacks: c.attacks.slice(0, -1) } };
+      return { ...p, combatMods: { attacks: c.attacks.slice(0, -1), damages: c.damages.slice(0, -1) } };
     });
   }
-  function addDamage() {
+  // 名称按对存储（写在攻击行上），两张表任意一边编辑都改同一份
+  function setPairLabel(i: number, label: string) {
     setChar((p) => {
       const c = p.combatMods;
-      if (c.damages.length >= MAX_ROWS) return p;
-      return { ...p, combatMods: { ...c, damages: [...c.damages, { ...emptyCombatMods().damages[0] }] } };
+      return { ...p, combatMods: { ...c, attacks: c.attacks.map((r, idx) => (idx === i ? { ...r, label } : r)) } };
     });
   }
-  function removeDamage() {
-    setChar((p) => {
-      const c = p.combatMods;
-      if (c.damages.length <= 1) return p;
-      return { ...p, combatMods: { ...c, damages: c.damages.slice(0, -1) } };
-    });
-  }
+  const labelCell = (i: number, key: string) => {
+    const label = attacks[i]?.label ?? "";
+    if (mode === "render") {
+      return <div className="ct-cell ct-label-cell" key={key}><span className="ct-label-text">{label || "攻击 " + (i + 1)}</span></div>;
+    }
+    return (
+      <div className="ct-cell ct-label-cell" key={key}>
+        <input
+          className="ct-label-input"
+          value={label}
+          placeholder={"攻击 " + (i + 1)}
+          maxLength={12}
+          title="给这一对攻击/伤害起个名字，便于分辨它服务于哪件武器或哪个威能"
+          onChange={(e) => setPairLabel(i, e.target.value)}
+        />
+      </div>
+    );
+  };
 
   // 属性调整值单元格：单框内显示属性名 + 自动数值，点击单元格弹出 Material 菜单（选项为"中文 + 对应调整值"）
   const abilityCell = (ability: AbilityKey, onChange: (k: AbilityKey) => void, uid: string) => {
@@ -271,8 +290,8 @@ export default function CombatPanels(props: {
           <span className="mb-label">攻击</span>
           {mode === "edit" && (
             <span className="combat-actions">
-              <button type="button" className="sg-step" title="移除最后一行" disabled={attacks.length <= 1} onClick={removeAttack}>−</button>
-              <button type="button" className="sg-step" title="新增一行" disabled={attacks.length >= MAX_ROWS} onClick={addAttack}>+</button>
+              <button type="button" className="sg-step" title="移除最后一对（攻击与伤害同时减少）" disabled={attacks.length <= 1} onClick={removePair}>−</button>
+              <button type="button" className="sg-step" title="新增一对（攻击与伤害同时增加）" disabled={attacks.length >= MAX_ROWS} onClick={addPair}>+</button>
             </span>
           )}
           <button type="button" className={"mode-chip" + (showDiceAtk ? " active" : "")} onClick={() => setShowDiceAtk((v) => !v)} title="在每个栏位下方显示可复制的骰子指令">
@@ -289,6 +308,7 @@ export default function CombatPanels(props: {
             return (
               <Fragment key={i}>
                 <div className="ct-row">
+                  {labelCell(i, "label")}
                   <div className="ct-cell ct-total-cell" key="total"><span className="ct-total">{fmtMod(total)}</span></div>
                   <div className="ct-cell" key="half"><span className="ct-auto">{halfLevel}</span></div>
                   {abilityCell(row.ability, (k) => setAttack(i, { ability: k }), `ct-ab-a-${i}`)}
@@ -300,7 +320,7 @@ export default function CombatPanels(props: {
                 </div>
                 {showDiceAtk && (
                   <div className="ct-dice-row" onClick={() => copyText(`.r d20${fmtMod(total)}`)} title="点击复制指令">
-                    <span>命中指令：</span>
+                    <span>{(attacks[i]?.label || "攻击 " + (i + 1)) + " 命中指令："}</span>
                     <code>{`.r d20${fmtMod(total)}`}</code>
                   </div>
                 )}
@@ -315,8 +335,8 @@ export default function CombatPanels(props: {
           <span className="mb-label">伤害</span>
           {mode === "edit" && (
             <span className="combat-actions">
-              <button type="button" className="sg-step" title="移除最后一行" disabled={damages.length <= 1} onClick={removeDamage}>−</button>
-              <button type="button" className="sg-step" title="新增一行" disabled={damages.length >= MAX_ROWS} onClick={addDamage}>+</button>
+              <button type="button" className="sg-step" title="移除最后一对（攻击与伤害同时减少）" disabled={damages.length <= 1} onClick={removePair}>−</button>
+              <button type="button" className="sg-step" title="新增一对（攻击与伤害同时增加）" disabled={damages.length >= MAX_ROWS} onClick={addPair}>+</button>
             </span>
           )}
           <button type="button" className={"mode-chip" + (showDiceDmg ? " active" : "")} onClick={() => setShowDiceDmg((v) => !v)} title="在每个栏位下方显示可复制的骰子指令">
@@ -333,6 +353,7 @@ export default function CombatPanels(props: {
             return (
               <Fragment key={i}>
                 <div className="ct-row">
+                  {labelCell(i, "label")}
                   <div className="ct-cell ct-total-cell" key="total"><span className="ct-total">{fmtMod(total)}</span></div>
                   {diceCell(row.enhanceSlot, "dice")}
                   {abilityCell(row.ability, (k) => setDamage(i, { ability: k }), `ct-ab-d-${i}`)}
@@ -343,7 +364,7 @@ export default function CombatPanels(props: {
                 </div>
                 {showDiceDmg && (
                   <div className="ct-dice-row" onClick={() => copyText(`.r ${dice || "?"}${fmtMod(total)}`)} title="点击复制指令">
-                    <span>伤害指令：</span>
+                    <span>{(attacks[i]?.label || "攻击 " + (i + 1)) + " 伤害指令："}</span>
                     <code>{`.r ${dice || "?"}${fmtMod(total)}`}</code>
                   </div>
                 )}

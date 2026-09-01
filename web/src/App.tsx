@@ -328,7 +328,7 @@ function Shell() {
       <nav className="side-bar">
         <div className="app-brand">
           <div className="app-logo" title="4E NEXT"><Logo /></div>
-          <div className="rail-version">v{__APP_VERSION__}A</div>
+          <div className="rail-version">v{__APP_VERSION__}B</div>
         </div>
         <div className="side-sep" />
         <button type="button" className={view === "sheet" ? "side-btn active" : "side-btn"} title="人物" onClick={() => setView("sheet")}><span className="material-symbols-outlined">person</span><span className="sb-label">人物</span></button>
@@ -357,7 +357,7 @@ function Shell() {
           {view === "reserve" && <ReserveView layout={layout} char={char} setChar={setChar} />}
           {view === "background" && <BackgroundView mode={mode} char={char} setChar={setChar} />}
           {view === "draw" && <DrawView char={char} setChar={setChar} onExit={() => setView("sheet")} onFinish={finishDraw} />}
-          {view === "overview" && <OverviewView />}
+          {view === "overview" && <OverviewView layout={layout} char={char} setChar={setChar} />}
           {view === "search" && <SearchView />}
           {view === "learn" && <LearnView />}
           {view === "homebrew" && <HomebrewView layout={layout} />}
