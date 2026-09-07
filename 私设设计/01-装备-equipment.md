@@ -118,13 +118,13 @@ interface ItemPowerSection {
 
 ## 六、实现清单
 
-- [ ] `homebrewSchema.ts`：`ITEM_FREQUENCIES`（含消耗）、`itemSuitable` 字段 + 候选、`ItemPowerSection` 模型、`parseItemPowerSections` / `serializeItemPowerSections`
-- [ ] `EntryEditor.tsx`：威能段编辑器组件（段头行 + PowerBlockEditor 复用 + 段预设条 + 二次确认）
-- [ ] `CATEGORY_SECTIONS`：物品威能面板标 `core: true`
-- [ ] `draftToForm`：官方装备 details 逆解析回填（增强/重击/适合/威能段）
+- [x] `homebrewSchema.ts`：`ITEM_FREQUENCIES`（含消耗）、`itemSuitable` 字段 + 候选、`ItemPowerSection` 模型、`parseItemPowerSections` / `serializeItemPowerSections`
+- [x] `EntryEditor.tsx`：威能段编辑器组件（段头行 + PowerBlockEditor 复用 + 段预设条 + 二次确认）
+- [x] `CATEGORY_SECTIONS`：物品威能面板标 `core: true`
+- [x] `draftToForm`：官方装备 details 逆解析回填（增强/重击/适合/威能段）
 - [ ] 分类组按 itemCategory 过滤（GROUPS 分组化）
 - [ ] `ItemCard`：itemSuitable 渲染（卡头 meta 或详情首行）
-- [ ] 清理临时脚本 `_tmp_equip_analysis.mjs`
+- [x] 清理临时脚本 `_tmp_equip_analysis.mjs`
 
 ## 七、开放问题
 

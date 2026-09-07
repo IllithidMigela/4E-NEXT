@@ -30,10 +30,10 @@ GenericCard 纯文本卡片：头部（名称）+ 正文（整篇词条文本，
 
 ## 五、实现清单
 
-- [ ] `homebrewSchema.ts`：dictionary 字段区改为 terms 列表（SheetField 新 type `pairs` 或专用组件）
-- [ ] `EntryEditor.tsx`：词条对编辑器组件（批量粘贴支持）
-- [ ] `buildEntry` / `draftToForm`：terms 双向序列化
-- [ ] `CATEGORY_SECTIONS.dictionary`：基本信息 + 词条列表 core；标记 `WITHOUT_BODY`
+- [x] `homebrewSchema.ts`：dictionary 字段区改为 terms 列表（SheetField 新 type `pairs` 或专用组件）
+- [x] `EntryEditor.tsx`：词条对编辑器组件（批量粘贴支持）
+- [x] `buildEntry` / `draftToForm`：terms 双向序列化
+- [x] `CATEGORY_SECTIONS.dictionary`：基本信息 + 词条列表 core；标记 `WITHOUT_BODY`
 
 ## 六、开放问题
 

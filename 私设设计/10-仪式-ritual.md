@@ -42,10 +42,10 @@ GenericCard 纯文本卡片：头部（名称/仪式等级·类别·关键技能
 
 ## 五、实现清单
 
-- [ ] homebrewSchema：新增 time/cost/marketPrice 字段 + 仪式信息面板
-- [ ] `parseRitualInfo` / `serializeRitualInfo`
-- [ ] `draftToForm` 仪式分支：官方头部逆解析回填
-- [ ] 等级 → 价格联动提示
+- [x] homebrewSchema：新增 time/cost/marketPrice 字段 + 仪式信息面板
+- [x] `parseRitualInfo` / `serializeRitualInfo`
+- [x] `draftToForm` 仪式分支：官方头部逆解析回填
+- [x] 等级 → 价格联动提示
 
 ## 六、开放问题
 
