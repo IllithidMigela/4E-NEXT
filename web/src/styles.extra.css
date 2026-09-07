@@ -938,3 +938,48 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
 .hb-feattable-rows, .hb-terms-rows { display: flex; flex-direction: column; gap: 8px; }
 .hb-feattable-row, .hb-terms-row { display: flex; align-items: end; gap: 8px; }
 .hb-feattable-row > * { flex: 1; }
+
+/* —— 生物·数据块编辑器（分段：头部 / 加工标签 / 数据行 / 行动段）—— */
+.hb-creature { display: flex; flex-direction: column; gap: 12px; }
+.hb-creature-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px;
+}
+.hb-creature-head > * { flex: 1 1 auto; min-width: 140px; }
+.hb-creature-sub {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px;
+}
+.hb-creature-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hb-creature-rows, .hb-creature-acts {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px;
+}
+.hb-creature-row {
+  display: flex; align-items: end; gap: 8px; flex-wrap: wrap;
+}
+.hb-creature-row > * { flex: 1 1 120px; }
+.hb-creature-row md-filled-icon-button { flex: 0 0 auto; }
+.hb-creature-act {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px dashed var(--md-sys-color-outline, #888);
+  border-radius: var(--md-sys-shape-corner-small);
+  padding: 10px;
+}
+.hb-creature-act .hb-pblock-head { justify-content: flex-start; }
+.hb-creature-act-freq {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.hb-creature-act-freq md-filled-text-field { flex: 1 1 160px; }

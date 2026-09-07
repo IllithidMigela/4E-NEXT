@@ -279,7 +279,7 @@ function GenericCard({ entry, frame, jump }: { entry: Entry; frame?: boolean; ju
         <div className="gc-flavor">{entry.flavorText}</div>
       ) : null}
       {entry.details ? (
-        <div className="pc-details" dangerouslySetInnerHTML={{ __html: entry.details }} />
+        <div className={"pc-details" + (entry.category === "creature" ? " gen-creature-card" : "")} dangerouslySetInnerHTML={{ __html: entry.details }} />
       ) : entry.sourceText ? (
         // sourceText 含不少原生 HTML（如生物 <div class=creature>…），需经 wikiToHtml 渲染，
         // 直接 stripWiki 会把 HTML 标签当成可见代码显示出来。

@@ -1125,6 +1125,200 @@ export function serializeLevelSections(sections: LevelFeatureSection[]): string 
     .join("\n\n");
 }
 
+// —— 生物数据块（creature）——
+// 官方生物条目在正文内嵌 `<div class=creature>`：头部（名称+角色 / 体型 源界 类别标签）、
+// 双栏数据行（生命值/回复力/防御/速度/…）、以及「行动/特质/灵气」段（bg-power 段头 + description 描述）。
+// 此处结构化为独立字段，序列化保持官方 HTML 格式（gen-creature-card 渲染不变）。
+export interface CreatureBlock {
+  /** 名称（头部主标题） */
+  name: string;
+  /** 角色（如 召唤生物 / 标准 / 精英 / 独一 / 下属） */
+  role: string;
+  /** 排除名称/角色的第二行加工标签（如 中型 妖精界 类人生物（不死）） */
+  subtitleLabel: string;
+  /** 双栏数据行：每行 = 左标签 + 左值 + 右标签 + 右值（左右可空） */
+  rows: { leftLabel: string; leftValue: string; rightLabel: string; rightValue: string }[];
+  /** 行动/特质/灵气段 */
+  actions: { name: string; freq: string; action: string; description: string }[];
+}
+// 生物「角色」常见取值（官方 205 条统计常见）
+export const CREATURE_ROLES = ["标准", "精英", "独一", "下属", "召唤生物"];
+// 生物「体型」「源界」常见取值（用于第二行加工标签的便捷 chip）
+export const CREATURE_SIZES = ["微型", "小型", "中型", "大型", "超大型", "巨型"];
+export const CREATURE_ORIGINS = ["妖精界", "元素界", "天然界", "阴影界", "暗影界", "虚空界", "未知", "原体"];
+// 生物动作段头的动作类别（官方图标 {{$:/dnd/images/xxx}} 按动作映射；灵气/特制无动作图标类）
+export const CREATURE_ACTIONS = ["标准动作", "移动动作", "次要动作", "自由动作", "借机动作", "即时中断", "即时反应", "灵气", "特制"];
+// 生物常见频率（“灵气N”形如 ◈灵气2）
+export const CREATURE_FREQUENCIES = ["随意", "遭遇", "每日", "灵气2", "灵气5"];
+// 常用双栏数据行标签预设（点选即加行）
+export const CREATURE_ROW_PRESETS = ["生命值", "回复力", "防御", "速度", "技能", "豁免", "行动点", "免疫", "状态免疫", "感官", "感知", "语言", "装备", "擅用"];
+
+// 官方图标 → 动作类别
+function creatureActionFromIcon(iconKey: string): string {
+  const map: Record<string, string> = {
+    melee: "标准动作", aura: "灵气", glance: "借机动作", stance: "特制", summon: "特制",
+    ranged: "标准动作", move: "移动动作", minor: "次要动作", free: "自由动作", weapon: "标准动作",
+  };
+  return map[iconKey] ?? "";
+}
+/** 把官方「行动/特质/灵气」段的段头 HTML 解析为 { name, freq, action }。
+ *  段头变体：{{icon}}闪光姿态✦灵气2 / {{icon}}标准动作（光耀）✦随意 / 次要动作✦随意（每轮一次） */
+function parseCreatureActionHead(head: string): { name: string; freq: string; action: string } {
+  const star = head.indexOf("✦");
+  // 频率：✦ 之后取 灵气N / 随意 / 遭遇 / 每日 / 每轮一次
+  const tail = star >= 0 ? head.slice(star + 1).trim() : "";
+  const freqM = tail.match(/(灵气\s*\d+|每日|遭遇|随意|每轮一次)/);
+  const freq = (freqM && freqM[1]) ? freqM[1] : "";
+  // 名称/动作段：✦ 之前去掉图标与括号关键词
+  let namePart = (star >= 0 ? head.slice(0, star) : head).trim();
+  namePart = namePart.replace(/\{\{\$:\/dnd\/images\/(\w+)\}\}/g, "");
+  const iconM = head.match(/\{\{\$:\/dnd\/images\/(\w+)\}\}/);
+  let action = iconM?.[1] ? creatureActionFromIcon(iconM[1]) : "";
+  namePart = namePart.trim();
+  // 无图标时动作直接以「标准动作（光耀）」领头
+  const naked = CREATURE_ACTIONS.find((a) => namePart.startsWith(a));
+  if (naked) {
+    action = naked;
+    namePart = namePart.slice(naked.length);
+  }
+  // 残留的（关键词）归入 name（如 光耀/传送），以便回填
+  namePart = namePart
+    .replace(/^[（(]\s*([^）)]*)\s*[）)]/, "$1")
+    .replace(/[\s：:]+$/, "")
+    .trim();
+  return { name: namePart, freq, action };
+}
+/** 提取 <div class=creature>…</div> 的内层 HTML：按 <div>/</div> 配对计数定位闭合标签，
+ *  避免遇到首个内部 </div>（如头部 bg-title 行）就截断。找不到返回 null。 */
+function extractCreatureInner(html: string): string | null {
+  const open = html.search(/<div class="?creature"?>/i);
+  if (open < 0) return null;
+  let depth = 0;
+  const re = /<\/?div\b[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  re.lastIndex = open;
+  while ((m = re.exec(html))) {
+    if (m[0][1] === "/") depth--;
+    else depth++;
+    if (depth === 0) return html.slice(open, m.index);
+  }
+  return null;
+}
+/** 把官方生物数据块 HTML 逆解析为 CreatureBlock（找不到数据块返回 null） */
+export function parseCreatureBlock(html?: string): CreatureBlock | null {
+  if (!html) return null;
+  const inner = extractCreatureInner(html);
+  if (inner === null) return null;
+  const block: CreatureBlock = { name: "", role: "", subtitleLabel: "", rows: [], actions: [] };
+  // 头部行：名称 + 角色
+  const head = inner.match(/<div class="?bold font-size-h4 bg-title"?>([\s\S]*?)<\/div>/i);
+  if (head && head[1]) {
+    const spans = head[1].match(/<span>([\s\S]*?)<\/span>/g) ?? [];
+    if (spans[0]) block.name = htmlToPlain(spans[0].replace(/<\/?span>/g, ""));
+    if (spans[1]) block.role = htmlToPlain(spans[1].replace(/<\/?span>/g, ""));
+  }
+  // 第二行辅助标签（体型 源界 类别）
+  const sub = inner.match(/<div class="?bg-title"?>([\s\S]*?)<\/div>/i);
+  if (sub && sub[1]) {
+    const spans = sub[1].match(/<span>([\s\S]*?)<\/span>/g) ?? [];
+    if (spans[0]) block.subtitleLabel = htmlToPlain(spans[0].replace(/<\/?span>/g, ""));
+  }
+  // 双栏数据行：''标签'' 值 两列（无 class 的裸 <div>）
+  const rowRe = /<div>([\s\S]*?)<\/div>/gi;
+  let rm: RegExpExecArray | null;
+  while ((rm = rowRe.exec(inner))) {
+    const rowHtml = (rm && rm[1]) ? rm[1] : "";
+    if (!rowHtml || /class\s*=/.test(rowHtml)) continue;
+    const spans = rowHtml.match(/<span>([\s\S]*?)<\/span>/g) ?? [];
+    if (spans.length === 0) continue;
+    const col = (s: string) => {
+      const t = htmlToPlain(s.replace(/<\/?span>/g, "")).replace(/'+/g, "").trim();
+      const mm = t.match(/^(.+?)\s+(.*)$/s);
+      return mm && mm[1] !== undefined
+        ? { label: mm[1].trim().replace(/^''|''$/g, ""), value: (mm[2] ?? "").trim() }
+        : { label: "", value: t };
+    };
+    const l = col(spans[0] ?? "");
+    const r = spans[1] ? col(spans[1]) : { label: "", value: "" };
+    block.rows.push({ leftLabel: l.label, leftValue: l.value, rightLabel: r.label, rightValue: r.value });
+  }
+  // 行动/特质段（bg-power 段头 + description 描述）
+  const segRe = /<div class="?bold bg-power"?>([\s\S]*?)<\/div>\s*<div class="?description"?>([\s\S]*?)<\/div>/gi;
+  let seg: RegExpExecArray | null;
+  while ((seg = segRe.exec(inner))) {
+    if (!seg[1]) continue;
+    const head2 = htmlToPlain(seg[1]).trim();
+    const desc = htmlToPlain(seg[2] ?? "").replace(/<br\s*\/?>/gi, "\n").trim();
+    block.actions.push({ ...parseCreatureActionHead(head2), description: desc });
+  }
+  const valid = block.name || block.role || block.rows.length || block.actions.length;
+  return valid ? block : null;
+}
+/** 把编辑表单里的 JSON 字符串还原为 CreatureBlock（容错：空/非法返回 null） */
+export function parseCreatureBlockJson(json?: string): CreatureBlock | null {
+  if (!json || !json.trim()) return null;
+  try {
+    const b = JSON.parse(json);
+    if (!b || typeof b !== "object") return null;
+    return {
+      name: String(b.name ?? ""),
+      role: String(b.role ?? ""),
+      subtitleLabel: String(b.subtitleLabel ?? ""),
+      rows: Array.isArray(b.rows)
+        ? b.rows.map((r: Record<string, unknown>) => ({
+            leftLabel: String(r?.leftLabel ?? ""), leftValue: String(r?.leftValue ?? ""),
+            rightLabel: String(r?.rightLabel ?? ""), rightValue: String(r?.rightValue ?? ""),
+          }))
+        : [],
+      actions: Array.isArray(b.actions)
+        ? b.actions.map((a: Record<string, unknown>) => ({
+            name: String(a?.name ?? ""), freq: String(a?.freq ?? ""),
+            action: String(a?.action ?? ""), description: String(a?.description ?? ""),
+          }))
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+/** 序列化 CreatureBlock → 官方 div.creature HTML 数据块 */
+export function serializeCreatureBlock(b: CreatureBlock): string {
+  const esc = (s: string) => escapeHtml(s ?? "");
+  const nameRow = b.role
+    ? `<div class="bold font-size-h4 bg-title"><span>${esc(b.name)}</span><span>${esc(b.role)}</span></div>`
+    : `<div class="bold font-size-h4 bg-title"><span>${esc(b.name)}</span></div>`;
+  const subRow = b.subtitleLabel
+    ? `<div class=bg-title><span>${esc(b.subtitleLabel)}</span><span></span></div>` : "";
+  const rows = b.rows
+    .filter((r) => r.leftLabel || r.leftValue || r.rightLabel || r.rightValue)
+    .map((r) => {
+      const l = r.leftLabel ? `''${esc(r.leftLabel)}'' ${esc(r.leftValue)}` : esc(r.leftValue);
+      const rcol = r.rightLabel ? `''${esc(r.rightLabel)}'' ${esc(r.rightValue)}` : esc(r.rightValue);
+      return `<div><span>${l.trim()}</span><span>${rcol.trim()}</span></div>`;
+    });
+  const actions = b.actions
+    .filter((a) => a.name || a.action || a.freq || a.description)
+    .map((a) => {
+      // 灵气/特制：{{icon}}名称✦频率；其余：{{icon}}动作（名称）✦频率
+      const isAuraLike = a.action === "灵气" || a.action === "特制";
+      const icon = a.action ? `{{$:/dnd/images/${iconForAction(a.action)}}}` : "";
+      const inner = isAuraLike
+        ? [a.name, a.freq ? `✦${a.freq}` : ""].filter(Boolean).join("")
+        : [(a.action || a.name ? `${a.action || ""}${a.name ? `（${a.name}）` : ""}` : ""), a.freq ? `✦${a.freq}` : ""].filter(Boolean).join("");
+      const desc = a.description.replace(/\n+/g, "<br>");
+      return `<div class="bold bg-power">${icon}${esc(inner)}</div><div class=description>${desc}</div>`;
+    });
+  const inner = [nameRow, subRow, ...rows, ...actions].filter(Boolean).join("\n");
+  return inner ? `<div class=creature>\n${inner}\n</div>` : "";
+}
+function iconForAction(action: string): string {
+  const map: Record<string, string> = {
+    "标准动作": "melee", "移动动作": "move", "次要动作": "minor", "自由动作": "free",
+    "借机动作": "glance", "即时中断": "glance", "即时反应": "glance", "灵气": "aura", "特制": "stance", "召唤": "summon",
+  };
+  return map[action] ?? "melee";
+}
+
 // —— 专长预设与前提候选（统计驱动）——
 export const FEAT_PRESETS: PowerPreset[] = [
   {
@@ -1264,6 +1458,9 @@ export const CATEGORY_FIELDS: Record<string, SheetField[]> = {
   ],
   dictionary: [
     { key: "termsPairs", label: "词条对", type: "longtext", placeholder: "英文: 中文（每行一对）" },
+  ],
+  creature: [
+    { key: "creatureBlock", label: "生物数据块", type: "longtext" },
   ],
 };
 
@@ -1408,7 +1605,12 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
   // 以下类型保持纯正文 + lore
   vice: genericSections("败德"),
   virtue: genericSections("美德"),
-  creature: genericSections("生物"),
+  creature: [
+    { title: "基本信息 · 生物", keys: ["name", "nameEn", "source"], core: true },
+    { title: "生物数据块", keys: ["creatureBlock"], core: true, hint: "数据块 = 头部（名称/角色/体型·源界·类别）+ 双栏数据行 + 行动/特质/灵气段。序列化保持官方 div.creature 格式。" },
+    { title: "外观", keys: ["cardColor", "cardIcon"] },
+    TAGS_SECTION,
+  ],
   reference: genericSections("术语"),
 };
 
@@ -1433,12 +1635,12 @@ function genericSections(label: string): HomebrewSection[] {
 
 /** 在编辑表单中「不显示正文(sourceText)区」的分类：只在卡片真正渲染 details/sourceText 的类型出现正文区。
  *  feat：卡片不渲染 details；power：详情完全由「标签块」派生，不再提供自由 Markdown 正文。 */
-// 这几类正文完全由「等级特性小节」结构化派生（levelSections），不再提供自由 Markdown 正文区。
+// 这两类正文完全由结构化编辑器派生（power：标签块；dictionary：词条对），不再提供自由 Markdown 正文区。
 export const POWER_REF_CATEGORIES: ReadonlySet<string> = new Set([
   "magic-school", "pact", "bloodline", "theme", "domain",
   "epic-destiny", "paragon-path", "class", "race",
 ]);
-export const WITHOUT_BODY: ReadonlySet<string> = new Set(["feat", "power", "dictionary", ...POWER_REF_CATEGORIES]);
+export const WITHOUT_BODY: ReadonlySet<string> = new Set(["feat", "power", "dictionary"]);
 
 export function fieldsFor(cat: string): SheetField[] {
   return [...COMMON, ...(CATEGORY_FIELDS[cat] ?? []), ...APPEARANCE_FIELDS];
@@ -1468,7 +1670,7 @@ export function buildEntry(
 
   const extras: Record<string, string> = {};
   // 结构化编辑的 JSON form 键（存编辑态，不落库为标量；由下方分类分支派生成 entry 字段）
-  const STRUCTURED_KEYS = new Set(["powerSections", "featRows", "setBonuses", "termsPairs", "levelSections"]);
+  const STRUCTURED_KEYS = new Set(["powerSections", "featRows", "setBonuses", "termsPairs", "levelSections", "creatureBlock"]);
   for (const f of fieldsFor(cat)) {
     const v = (form[f.key] ?? "").trim();
     if (f.type === "tags" || f.key === "name" || f.key === "nameEn" || f.key === "category" || f.key === "source" || f.key === "sourceText" || f.key === "powerBlocks" || STRUCTURED_KEYS.has(f.key) || !v) continue;
@@ -1511,15 +1713,18 @@ export function buildEntry(
     sourceText = serializeTerms(pairs);
     if (pairs.length) extras.terms = pairs.map(([e, z]) => `${e}: ${z}`).join("\n");
   }
-  // 威能引用类（等级特性小节）：结构化 → 正文 wikitext；前提模板 ({{!!prerequisite}}) 注入 prerequisite
+  // 威能引用类：提供「等级特性小节」结构化编辑，但**不隐藏正文**——lore 类正文（如 主题扮演/创建、种族外貌）
+  // 仍需 textarea 承载。仅当用户填写了 levelSections 时才用结构化结果覆盖 sourceText，否则保留手写正文。
   if (POWER_REF_CATEGORIES.has(cat)) {
     const secs = parseLevelSections(form.levelSections, { allowPlain: true });
-    let body = serializeLevelSections(secs);
-    // 典范之道/传奇天命：正文以「前提条件：{{!!prerequisite}}」模板开头
-    if ((cat === "paragon-path" || cat === "epic-destiny") && body) {
-      body = `前提条件：{{!!prerequisite}}\n${body}`;
+    if (secs.length) {
+      let body = serializeLevelSections(secs);
+      // 典范之道/传奇天命：正文以「前提条件：{{!!prerequisite}}」模板开头
+      if ((cat === "paragon-path" || cat === "epic-destiny") && body) {
+        body = `前提条件：{{!!prerequisite}}\n${body}`;
+      }
+      sourceText = body;
     }
-    sourceText = body;
   }
 
   const bodyFormat: "md" | "wiki" = form.bodyFormat === "wiki" ? "wiki" : "md";
@@ -1542,6 +1747,13 @@ export function buildEntry(
     });
     const effect = sourceText ? renderBody(sourceText, bodyFormat, extras) : "";
     details = header || effect ? (header ? header + (effect ? "\n" + effect : "") : effect) : undefined;
+  } else if (cat === "creature") {
+    // 生物：数据块(structured) 追加到 lore 正文之后（details 优先于 sourceText 被卡片渲染）。
+    // 数据块之外保留 sourceText 的 lore 文本区（设计开放问题①：保留非数据块自由正文）。
+    const lore = sourceText ? renderBody(sourceText, bodyFormat, extras) : "";
+    const blk = parseCreatureBlockJson(form.creatureBlock);
+    const blockHtml = blk ? serializeCreatureBlock(blk) : "";
+    details = lore || blockHtml ? [lore, blockHtml].filter(Boolean).join("\n") : undefined;
   } else if (!WITHOUT_BODY.has(cat)) {
     if (powerBlocks && powerBlocks.length) {
       details = serializePowerBlocks(powerBlocks);
@@ -1616,6 +1828,15 @@ export function draftToForm(entry: Entry): Record<string, string> {
       if (h.cost) form.cost = h.cost;
       if (h.marketPrice) form.marketPrice = h.marketPrice;
     }
+  }
+  // 生物：details/sourceText 中的 div.creature 数据块 → creatureBlock（结构化）；并从 sourceText 剥离数据块，
+  // 使 lore 文本区只保留数据块之外的自由正文（新建条目的 sourceText 本就是 lore-only，不受影响）。
+  if (entry.category === "creature") {
+    const full = ((entry as Record<string, unknown>).details as string) || entry.sourceText || "";
+    const blk = parseCreatureBlock(full);
+    if (blk) form.creatureBlock = JSON.stringify(blk);
+    const lore = (form.sourceText ?? "").replace(/<div class="?creature"?>[\s\S]*?<\/div>/i, "").replace(/\n{3,}/g, "\n\n").trim();
+    form.sourceText = lore;
   }
   // 威能引用类：正文（或 details 兜底）→ 等级特性小节；剥离「前提条件：{{!!prerequisite}}」首行
   if (POWER_REF_CATEGORIES.has(entry.category)) {

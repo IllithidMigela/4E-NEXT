@@ -48,11 +48,11 @@ GenericCard（`gen-creature-card`）渲染 `<div class=creature>` 数据块。�
 
 ## 五、实现清单
 
-- [ ] `parseCreatureBlock` / `serializeCreatureBlock`（homebrewSchema.ts 或独立 creature.ts）
-- [ ] 数据块编辑器组件（头部枚举 + 双栏数据行 + 段列表）
-- [ ] 动作段预设 + 图标自动映射
-- [ ] `draftToForm` 生物分支：官方数据块逆解析回填
-- [ ] `buildEntry` 生物分支：数据块序列化
+- [x] `parseCreatureBlock` / `serializeCreatureBlock`（homebrewSchema.ts 或独立 creature.ts）
+- [x] 数据块编辑器组件（头部枚举 + 双栏数据行 + 段列表）
+- [x] 动作段预设 + 图标自动映射
+- [x] `draftToForm` 生物分支：官方数据块逆解析回填
+- [x] `buildEntry` 生物分支：数据块序列化
 
 ## 六、开放问题
 

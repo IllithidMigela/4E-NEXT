@@ -4,7 +4,7 @@ import type { Entry, PowerBlock } from "../data/types";
 import { CATEGORY_LABELS } from "../data/labels";
 import { FilledButton, FilledTextField, IconButton, OutlinedButton, TextButton } from "../components/md";
 import EntryCard from "../sheet/EntryCard";
-import { buildEntry, draftToForm, fieldsFor, CATEGORY_FIELDS, CATEGORY_LIST, CATEGORY_SECTIONS, WITHOUT_BODY, POWER_FREQUENCIES, POWER_TYPES, RANGE_TEMPLATES, composeRange, parseRange, parsePowerBlocks, POWER_BLOCK_LABELS, POWER_TEMPLATE_SECONDARY, POWER_PRESETS, PRESET_GROUPS, ITEM_FREQUENCIES, ITEM_POWER_KEYWORDS, ACTION_TYPES, parseItemPowerSections, parseFeatTable, parseSetBonuses, parseTerms, serializeTerms, FEAT_PRESETS, FEAT_PREREQ_CANDIDATES, parseLevelSections, type LevelFeatureSection, type SheetField, type RangeTemplateItem, type PowerPreset, type HomebrewSection, type ItemPowerSection, type FeatRow, type SetBonusBlock } from "../lib/homebrewSchema";
+import { buildEntry, draftToForm, fieldsFor, CATEGORY_FIELDS, CATEGORY_LIST, CATEGORY_SECTIONS, WITHOUT_BODY, POWER_FREQUENCIES, POWER_TYPES, RANGE_TEMPLATES, composeRange, parseRange, parsePowerBlocks, POWER_BLOCK_LABELS, POWER_TEMPLATE_SECONDARY, POWER_PRESETS, PRESET_GROUPS, ITEM_FREQUENCIES, ITEM_POWER_KEYWORDS, ACTION_TYPES, parseItemPowerSections, parseFeatTable, parseSetBonuses, parseTerms, serializeTerms, FEAT_PRESETS, FEAT_PREREQ_CANDIDATES, parseLevelSections, parseCreatureBlockJson, CREATURE_ROLES, CREATURE_SIZES, CREATURE_ORIGINS, CREATURE_ACTIONS, CREATURE_FREQUENCIES, CREATURE_ROW_PRESETS, type LevelFeatureSection, type SheetField, type RangeTemplateItem, type PowerPreset, type HomebrewSection, type ItemPowerSection, type FeatRow, type SetBonusBlock, type CreatureBlock } from "../lib/homebrewSchema";
 import { wikiToMarkdown } from "../lib/markdown";
 import { itemLevels, enhancementBonusForLevel, priceForLevel } from "../lib/levelprices";
 import { loadCategory } from "../data/loaders";
@@ -480,6 +480,131 @@ function LevelSectionsEditor({ value, onChange, titleLabel }: { value: string; o
   );
 }
 
+// —— 生物·数据块编辑器 ——
+// 三段：头部（名称 / 角色）/ 第二行加工标签（体型·源界·类别）+ 双栏数据行 + 行动/特质/灵气段。
+// 数据存 CreatureBlock，序列化为官方 div.creature 格式（gen-creature-card 渲染）。
+const CREATURE_ACTION_PRESETS: { label: string; action: string; freq: string; description: string }[] = [
+  { label: "标准动作 · 随意", action: "标准动作", freq: "随意", description: "攻击：近战1（一个生物）；… vs. 防御\n命中：…伤害，且…" },
+  { label: "标准动作 · 遭遇", action: "标准动作", freq: "遭遇", description: "攻击：…\n命中：…" },
+  { label: "次要动作 · 随意", action: "次要动作", freq: "随意", description: "效果：…" },
+  { label: "移动动作 · 随意", action: "移动动作", freq: "随意", description: "效果：…" },
+  { label: "借机动作 · 随意", action: "借机动作", freq: "随意", description: "触发：…\n效果：…" },
+  { label: "灵气 · 灵气2", action: "灵气", freq: "灵气2", description: "灵气：邻近… 的生物…" },
+  { label: "特制", action: "特制", freq: "", description: "…" },
+];
+function CreatureBlockEditor({ value, onChange }: { value: CreatureBlock; onChange: (b: CreatureBlock) => void }) {
+  const up = (patch: Partial<CreatureBlock>) => onChange({ ...value, ...patch });
+  const upRow = (i: number, patch: Partial<CreatureBlock["rows"][number]>) =>
+    up({ rows: value.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+  const upAct = (i: number, patch: Partial<CreatureBlock["actions"][number]>) =>
+    up({ actions: value.actions.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
+  // 第二行加工标签便捷：点体型/源界 chip 即插入或移除该词元（保持空格分隔）
+  const toggleToken = (token: string) => {
+    const parts = value.subtitleLabel.split(/\s+/).filter(Boolean);
+    if (parts.includes(token)) up({ subtitleLabel: parts.filter((p) => p !== token).join(" ") });
+    else up({ subtitleLabel: [...parts, token].join(" ") });
+  };
+  const addRowPreset = (label: string) =>
+    up({ rows: [...value.rows, { leftLabel: label, leftValue: "", rightLabel: "", rightValue: "" }] });
+  const addActionPreset = (p: (typeof CREATURE_ACTION_PRESETS)[number]) =>
+    up({ actions: [...value.actions, { name: p.action === "灵气" && p.freq.startsWith("灵气") ? "（未命名）" : "", action: p.action, freq: p.freq, description: p.description }] });
+  const blankRow = () => up({ rows: [...value.rows, { leftLabel: "", leftValue: "", rightLabel: "", rightValue: "" }] });
+  const blankAction = () => up({ actions: [...value.actions, { name: "", action: "标准动作", freq: "随意", description: "" }] });
+  return (
+    <div className="hb-creature" data-ed-field="creatureBlock">
+      {/* 头部：名称 + 角色 */}
+      <div className="hb-creature-head">
+        <FilledTextField label="名称" value={value.name} placeholder="如：哀悼侍女" onInput={(e) => up({ name: (e.target as HTMLInputElement).value })} />
+        <div className="hb-label-sm" style={{ alignSelf: "center" }}>角色</div>
+        <div className="hb-ed-chips">
+          {CREATURE_ROLES.map((r) => (
+            <button key={r} type="button" className={"chip mini" + (value.role === r ? " active" : "")}
+              onClick={() => up({ role: value.role === r ? "" : r })}>{r}</button>
+          ))}
+        </div>
+      </div>
+      {/* 第二行加工标签：体型 · 源界 · 类别（合并为 subtitleLabel） */}
+      <div className="hb-creature-sub">
+        <FilledTextField label="体型 · 源界 · 类别" value={value.subtitleLabel} placeholder="如：中型 妖精界 类人生物（不死）"
+          onInput={(e) => up({ subtitleLabel: (e.target as HTMLInputElement).value })} />
+        <div className="hb-creature-chips">
+          <span className="hb-label-sm">体型</span>
+          {CREATURE_SIZES.map((s) => (
+            <button key={s} type="button" className={"chip mini" + (value.subtitleLabel.split(/\s+/).includes(s) ? " active" : "")}
+              onClick={() => toggleToken(s)}>{s}</button>
+          ))}
+        </div>
+        <div className="hb-creature-chips">
+          <span className="hb-label-sm">源界</span>
+          {CREATURE_ORIGINS.map((s) => (
+            <button key={s} type="button" className={"chip mini" + (value.subtitleLabel.split(/\s+/).includes(s) ? " active" : "")}
+              onClick={() => toggleToken(s)}>{s}</button>
+          ))}
+        </div>
+      </div>
+      {/* 双栏数据行 */}
+      <div className="hb-creature-rows">
+        <div className="hb-label-sm" style={{ fontWeight: 600 }}>数据行（双栏：左标签+值 / 右标签+值）</div>
+        {value.rows.map((r, i) => (
+          <div key={i} className="hb-creature-row">
+            <FilledTextField label="标签" value={r.leftLabel} onInput={(e) => upRow(i, { leftLabel: (e.target as HTMLInputElement).value })} />
+            <FilledTextField label="值" value={r.leftValue} onInput={(e) => upRow(i, { leftValue: (e.target as HTMLInputElement).value })} />
+            <FilledTextField label="标签" value={r.rightLabel} onInput={(e) => upRow(i, { rightLabel: (e.target as HTMLInputElement).value })} />
+            <FilledTextField label="值" value={r.rightValue} onInput={(e) => upRow(i, { rightValue: (e.target as HTMLInputElement).value })} />
+            <IconButton title="删除此行" onClick={() => up({ rows: value.rows.filter((_, j) => j !== i) })}><span className="material-symbols-outlined">close</span></IconButton>
+          </div>
+        ))}
+        <div className="hb-pblock-actions">
+          <OutlinedButton onClick={blankRow}>＋ 添加数据行</OutlinedButton>
+          <span className="hb-label-sm">预设：</span>
+          {CREATURE_ROW_PRESETS.map((p) => (
+            <button key={p} type="button" className="chip mini" onClick={() => addRowPreset(p)}>{p}</button>
+          ))}
+        </div>
+      </div>
+      {/* 行动/特质/灵气段 */}
+      <div className="hb-creature-acts">
+        <div className="hb-label-sm" style={{ fontWeight: 600 }}>行动 / 特质 / 灵气段（动作图标按动作类型自动映射）</div>
+        {value.actions.map((a, i) => (
+          <div key={i} className="hb-creature-act">
+            <div className="hb-pblock-head">
+              <FilledTextField label="名称" value={a.name} placeholder="段名称（灵气/特制显示，其余可为动作关键词）"
+                onInput={(e) => upAct(i, { name: (e.target as HTMLInputElement).value })} />
+              <div className="hb-ed-chips">
+                {CREATURE_ACTIONS.map((act) => (
+                  <button key={act} type="button" className={"chip mini" + (a.action === act ? " active" : "")}
+                    onClick={() => upAct(i, { action: a.action === act ? "" : act })}>{act}</button>
+                ))}
+              </div>
+              <IconButton title="删除此段" onClick={() => up({ actions: value.actions.filter((_, j) => j !== i) })}><span className="material-symbols-outlined">close</span></IconButton>
+            </div>
+            <div className="hb-creature-act-freq">
+              <div className="hb-label-sm" style={{ alignSelf: "center" }}>频率</div>
+              <div className="hb-ed-chips">
+                {CREATURE_FREQUENCIES.map((f) => (
+                  <button key={f} type="button" className={"chip mini" + (a.freq === f ? " active" : "")}
+                    onClick={() => upAct(i, { freq: a.freq === f ? "" : f })}>{f}</button>
+                ))}
+              </div>
+              <FilledTextField label="自定义频率" value={CREATURE_FREQUENCIES.includes(a.freq) ? "" : a.freq}
+                placeholder="如：灵气3" onInput={(e) => upAct(i, { freq: (e.target as HTMLInputElement).value })} />
+            </div>
+            <textarea className="hb-textarea" rows={3} value={a.description} placeholder="段描述（可换行，保存时转为 <br>）"
+              onChange={(e) => upAct(i, { description: e.target.value })} />
+          </div>
+        ))}
+        <div className="hb-pblock-actions">
+          <OutlinedButton onClick={blankAction}>＋ 添加段</OutlinedButton>
+          <span className="hb-label-sm">预设：</span>
+          {CREATURE_ACTION_PRESETS.map((p) => (
+            <button key={p.label} type="button" className="chip mini" onClick={() => addActionPreset(p)}>{p.label}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 预览「威能引用」懒加载缓存：首次需要时加载一次官方威能表，供 [[威能]] 悬浮解析
 let powerIndexPromise: Promise<Entry[]> | undefined;
 
@@ -872,6 +997,16 @@ export default function EntryEditor({
         <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
           <span className="hb-label">{f.label}</span>
           <LevelSectionsEditor value={val} onChange={(j) => set("levelSections", j)} titleLabel={labelFor} />
+        </div>
+      );
+    }
+    // 生物「数据块」：结构化编辑（始于 form.creatureBlock 的 JSON）
+    if (f.key === "creatureBlock") {
+      const blk = parseCreatureBlockJson(form.creatureBlock) ?? { name: "", role: "", subtitleLabel: "", rows: [], actions: [] };
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <CreatureBlockEditor value={blk} onChange={(b) => set("creatureBlock", JSON.stringify(b))} />
         </div>
       );
     }
