@@ -1017,6 +1017,114 @@ function sectionBetweenWiki(src: string, startTitle: string, endTitle?: string):
   return body.trim();
 }
 
+// —— 通用「等级特性小节」（power-ref 类型共用）——
+// 服务于 magic-school / pact / bloodline / domain / theme / epic-destiny / paragon-path / class / race。
+// 每小节 = 等级前缀 + 标题 + 类型（特性/威能）+ 正文 + 威能引用；正文 wikitext 以「!! N级：标题」分节。
+// 引用语法：{{威能名}}（威能）或 [[链接名]]（链接），解析时提取为 refs，序列化时回写。
+export interface LevelFeatureSection {
+  /** 等级前缀（含「级」，可空）。如 "1级"、"11级"。 */
+  level: string;
+  /** 小节标题（不含「N级」前缀）。如 "幻术学徒"。 */
+  title: string;
+  /** 类型标注：特性 vs 威能。 */
+  kind: "feature" | "power";
+  /** 本小节描述正文（不含威能引用行）。 */
+  body: string;
+  /** 威能引用名（正文中 {{名}}/[[名]] 提取，序列化时回写为 {{名}} 行）。 */
+  refs: string[];
+}
+/** 从正文提取 {{名}} / [[名]] 引用名（去重，保序） */
+export function extractPowerRefs(body: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of body.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)) {
+    const ref = m[1].trim();
+    if (ref && !seen.has(ref)) { seen.add(ref); out.push(ref); }
+  }
+  for (const m of body.matchAll(/\[\[([^[|\]]+?)\]\]/g)) {
+    const ref = m[1].trim();
+    if (ref && !seen.has(ref)) { seen.add(ref); out.push(ref); }
+  }
+  return out;
+}
+/** 判定小节标题是否属于「威能」类型（特性 vs 威能），用于初始 kind 标注 */
+function kindOfTitle(title: string): "feature" | "power" {
+  const t = title || "";
+  return /威能|遭遇|每日|随意|辅助|攻击|行动/.test(t) ? "power" : "feature";
+}
+/**
+ * 把正文 wikitext 解析为「等级特性小节」数组。
+ * 分节依据：行首「!! N级：标题」或「!! N级 标题」（含数字级）。未以等级开头的小节
+ * （如 不朽/实践天命/引言段）并入前一个 feature 小节或以 level 空 + 标题入列，避免丢失。
+ */
+export function parseLevelSections(src?: string, opts?: { /** 允许无等级前缀的小节入列（如 不朽/实践天命），默认 false */ allowPlain?: boolean }): LevelFeatureSection[] {
+  if (!src) return [];
+  const out: LevelFeatureSection[] = [];
+  let cur: LevelFeatureSection | null = null;
+  const lines = src.split(/\r?\n/);
+  const pushRefs = () => {
+    if (!cur) return;
+    cur.refs = extractPowerRefs(cur.body);
+    // 剥掉正文中已提取的引用标记，避免正文重复显示 {{名}}
+    cur.body = cur.body.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, "").replace(/\[\[([^[|\]]+?)\]\]/g, "$1").replace(/^\s*\n/gm, "").trimEnd();
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    const m = /^!!\s+([0-9]+)\s*级\s*[:：]?\s*(.*)$/.exec(line);
+    if (m) {
+      if (cur) pushRefs();
+      const title = m[2].trim();
+      cur = {
+        level: m[1] + "级",
+        title,
+        kind: kindOfTitle(title),
+        body: "",
+        refs: [],
+      };
+      out.push(cur);
+      continue;
+    }
+    // 无等级前缀的「!! 标题」小节目录（如 不朽 Immortality / 实践天命）
+    if (/^!!\s+(.*)$/.test(line)) {
+      const plainTitle = /^!!\s+(.*)$/.exec(line)![1].trim();
+      if (cur) pushRefs();
+      if (opts?.allowPlain) {
+        cur = { level: "", title: plainTitle, kind: kindOfTitle(plainTitle), body: "", refs: [] };
+        out.push(cur);
+      } else {
+        cur = { level: "", title: plainTitle, kind: kindOfTitle(plainTitle), body: line, refs: [] };
+        out.push(cur);
+      }
+      continue;
+    }
+    if (cur) cur.body += raw + "\n";
+    else {
+      // 分节前引言段：并入一个「引言」feature 小节，保持内容不丢
+      if (raw.trim()) {
+        cur = { level: "", title: "", kind: "feature", body: raw + "\n", refs: [] };
+        out.push(cur);
+      }
+    }
+  }
+  if (cur) pushRefs();
+  return out.filter((s) => s.level || s.title || s.body.trim() || s.refs.length);
+}
+/** 小节数组 → 正文 wikitext：!! N级：标题 + 正文 + {{引用}} 行 */
+export function serializeLevelSections(sections: LevelFeatureSection[]): string {
+  return sections
+    .filter((s) => s.level || s.title || s.body.trim() || s.refs.length)
+    .map((s) => {
+      const head = s.level ? `!! ${s.level}${s.title ? `：${s.title}` : ""}` : s.title ? `!! ${s.title}` : `!! ${s.title}`;
+      const body = s.body.trim();
+      const refs = s.refs.filter(Boolean).map((r) => `{{${r.trim()}}}`);
+      const parts = [head];
+      if (body) parts.push(body);
+      parts.push(...refs);
+      return parts.join("\n");
+    })
+    .join("\n\n");
+}
+
 // —— 专长预设与前提候选（统计驱动）——
 export const FEAT_PRESETS: PowerPreset[] = [
   {
@@ -1117,20 +1225,29 @@ export const CATEGORY_FIELDS: Record<string, SheetField[]> = {
     { key: "abilityOne", label: "出生奖励属性1", type: "select", options: SIX_ABILITIES },
     { key: "abilityTwo", label: "出生奖励属性2", type: "select", options: SIX_ABILITIES },
     { key: "skill", label: "技能", type: "multichips", options: SKILLS },
+    { key: "levelSections", label: "种族特性/威能", type: "longtext" },
   ],
   class: [
     { key: "role", label: "职责", type: "select", options: ROLES },
     { key: "powerSource", label: "威能来源", type: "multichips", options: POWER_SOURCES },
     { key: "keySkill", label: "关键技能", type: "multichips", options: SKILLS },
+    { key: "levelSections", label: "等级特性/威能", type: "longtext" },
   ],
   "paragon-path": [
     { key: "level", label: "等级", type: "text" },
     { key: "prerequisite", label: "前提", type: "longtext" },
+    { key: "levelSections", label: "等级特性小节", type: "longtext" },
   ],
   "epic-destiny": [
     { key: "tierZh", label: "层级", type: "select", options: ["英雄", "典范", "天命", "史诗"] },
     { key: "prerequisite", label: "前提", type: "longtext" },
+    { key: "levelSections", label: "等级特性小节", type: "longtext" },
   ],
+  "magic-school": [{ key: "levelSections", label: "等级特性小节", type: "longtext" }],
+  pact: [{ key: "levelSections", label: "等级特性小节", type: "longtext" }],
+  bloodline: [{ key: "levelSections", label: "等级特性小节", type: "longtext" }],
+  theme: [{ key: "levelSections", label: "等级特性小节", type: "longtext" }],
+  domain: [{ key: "levelSections", label: "等级特性小节", type: "longtext" }],
   "item-set": [
     { key: "tier", label: "层级", type: "select", options: TIERS },
     { key: "setKnowledge", label: "知识（背景 lore）", type: "longtext", placeholder: "套装背景故事/传说段落（可折叠显示）" },
@@ -1236,24 +1353,28 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
   race: [
     { title: "基本信息 · 种族", keys: ["name", "nameEn", "source"], core: true },
     { title: "种族数据", keys: ["size", "speed", "vision", "abilityOne", "abilityTwo", "skill"], core: true },
+    { title: "种族特性/威能", keys: ["levelSections"], core: true },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
   class: [
     { title: "基本信息 · 职业", keys: ["name", "nameEn", "source"], core: true },
     { title: "职业数据", keys: ["role", "powerSource", "keySkill"], core: true },
+    { title: "等级特性/威能表", keys: ["levelSections"], core: true },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
   "paragon-path": [
     { title: "基本信息 · 典范之道", keys: ["name", "nameEn", "source"], core: true },
     { title: "典范条件", keys: ["level", "prerequisite"], core: true },
+    { title: "等级特性小节", keys: ["levelSections"], core: true },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
   "epic-destiny": [
     { title: "基本信息 · 传奇天命", keys: ["name", "nameEn", "source"], core: true },
     { title: "天命条件", keys: ["tierZh", "prerequisite"], core: true },
+    { title: "等级特性小节", keys: ["levelSections"], core: true },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
@@ -1278,17 +1399,28 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
-  // —— 纯通用型：无专属标量，只保留必填归属字段 + 外观，正文独立成区 ——
-  theme: genericSections("主题"),
-  domain: genericSections("领域"),
-  "magic-school": genericSections("魔法学派"),
-  pact: genericSections("契约"),
+  // —— 纯通用型：正文为「等级特性小节」结构化的类型，加 levelSections core 区 ——
+  theme: powerRefSections("主题"),
+  domain: powerRefSections("领域"),
+  "magic-school": powerRefSections("魔法学派"),
+  pact: powerRefSections("契约"),
+  bloodline: powerRefSections("血统"),
+  // 以下类型保持纯正文 + lore
   vice: genericSections("败德"),
   virtue: genericSections("美德"),
-  bloodline: genericSections("血统"),
   creature: genericSections("生物"),
   reference: genericSections("术语"),
 };
+
+// 威能引用类：基本信息 core + 等级特性小节（威能引用编辑器）core + 外观/标签 附加设置。
+function powerRefSections(label: string): HomebrewSection[] {
+  return [
+    { title: `基本信息 · ${label}`, keys: ["name", "nameEn", "source"], core: true },
+    { title: "等级特性小节", keys: ["levelSections"], core: true, hint: "每个小节 = 等级 + 标题 + 类型（特性/威能）+ 正文 + 威能引用。保存时拼装为「!! N级：标题」分节正文。" },
+    { title: "外观", keys: ["cardColor", "cardIcon"] },
+    TAGS_SECTION,
+  ];
+}
 
 // 纯通用类型的分区：仅「基本信息 + 外观 + 标签」，正文独立成区（无专属标量字段）。
 function genericSections(label: string): HomebrewSection[] {
@@ -1301,7 +1433,12 @@ function genericSections(label: string): HomebrewSection[] {
 
 /** 在编辑表单中「不显示正文(sourceText)区」的分类：只在卡片真正渲染 details/sourceText 的类型出现正文区。
  *  feat：卡片不渲染 details；power：详情完全由「标签块」派生，不再提供自由 Markdown 正文。 */
-export const WITHOUT_BODY: ReadonlySet<string> = new Set(["feat", "power", "dictionary"]);
+// 这几类正文完全由「等级特性小节」结构化派生（levelSections），不再提供自由 Markdown 正文区。
+export const POWER_REF_CATEGORIES: ReadonlySet<string> = new Set([
+  "magic-school", "pact", "bloodline", "theme", "domain",
+  "epic-destiny", "paragon-path", "class", "race",
+]);
+export const WITHOUT_BODY: ReadonlySet<string> = new Set(["feat", "power", "dictionary", ...POWER_REF_CATEGORIES]);
 
 export function fieldsFor(cat: string): SheetField[] {
   return [...COMMON, ...(CATEGORY_FIELDS[cat] ?? []), ...APPEARANCE_FIELDS];
@@ -1331,7 +1468,7 @@ export function buildEntry(
 
   const extras: Record<string, string> = {};
   // 结构化编辑的 JSON form 键（存编辑态，不落库为标量；由下方分类分支派生成 entry 字段）
-  const STRUCTURED_KEYS = new Set(["powerSections", "featRows", "setBonuses", "termsPairs"]);
+  const STRUCTURED_KEYS = new Set(["powerSections", "featRows", "setBonuses", "termsPairs", "levelSections"]);
   for (const f of fieldsFor(cat)) {
     const v = (form[f.key] ?? "").trim();
     if (f.type === "tags" || f.key === "name" || f.key === "nameEn" || f.key === "category" || f.key === "source" || f.key === "sourceText" || f.key === "powerBlocks" || STRUCTURED_KEYS.has(f.key) || !v) continue;
@@ -1373,6 +1510,16 @@ export function buildEntry(
     const pairs = parseTerms(form.termsPairs ?? "");
     sourceText = serializeTerms(pairs);
     if (pairs.length) extras.terms = pairs.map(([e, z]) => `${e}: ${z}`).join("\n");
+  }
+  // 威能引用类（等级特性小节）：结构化 → 正文 wikitext；前提模板 ({{!!prerequisite}}) 注入 prerequisite
+  if (POWER_REF_CATEGORIES.has(cat)) {
+    const secs = parseLevelSections(form.levelSections, { allowPlain: true });
+    let body = serializeLevelSections(secs);
+    // 典范之道/传奇天命：正文以「前提条件：{{!!prerequisite}}」模板开头
+    if ((cat === "paragon-path" || cat === "epic-destiny") && body) {
+      body = `前提条件：{{!!prerequisite}}\n${body}`;
+    }
+    sourceText = body;
   }
 
   const bodyFormat: "md" | "wiki" = form.bodyFormat === "wiki" ? "wiki" : "md";
@@ -1469,6 +1616,16 @@ export function draftToForm(entry: Entry): Record<string, string> {
       if (h.cost) form.cost = h.cost;
       if (h.marketPrice) form.marketPrice = h.marketPrice;
     }
+  }
+  // 威能引用类：正文（或 details 兜底）→ 等级特性小节；剥离「前提条件：{{!!prerequisite}}」首行
+  if (POWER_REF_CATEGORIES.has(entry.category)) {
+    let src = entry.sourceText || "";
+    if ((entry.category === "paragon-path" || entry.category === "epic-destiny") && !src) {
+      src = (entry as Record<string, unknown>).details as string || "";
+    }
+    const stripped = src.replace(/^前提条件：\{\{!!prerequisite\}\}(\r?\n)?/, "");
+    const secs = parseLevelSections(stripped, { allowPlain: true });
+    if (secs.length) form.levelSections = JSON.stringify(secs);
   }
   // 威能「标签块」回填：以数组形式存入表单（编辑器按 PowerBlock[] 使用）
   if (entry.category === "power" && Array.isArray(entry.powerBlocks) && entry.powerBlocks.length) {

@@ -906,3 +906,35 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
   .combat-table.damage .ct-head,
   .combat-table.damage .ct-row { min-width: 620px; }
 }
+
+/* ===== 私设结构化编辑器通用壳 =====
+   服务于 装备威能段 / 套装增益 / 专长等级表 / 词条对 / 等级特性小节。
+   与威能「次攻击组」同语言：色条 + 分组底 + 行内输入并排。 */
+.hb-itempower, .hb-setbonus, .hb-feattable, .hb-terms, .hb-levelsections {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.hb-itempower-sec, .hb-setbonus-block, .hb-levelsection {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.hb-itempower-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.hb-itempower-headlabel {
+  font-size: 13.5px; font-weight: var(--fw-heading, 600); color: var(--md-sys-color-on-surface);
+}
+.hb-itempower-preview { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.hb-itempower-kwrow, .hb-itempower-freqrow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.hb-levelsection-rows {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end; gap: 8px;
+}
+.hb-levelsection-refs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hb-levelsection-ref { display: inline-flex; align-items: end; gap: 6px; min-width: 260px; flex: 1 1 auto; }
+.hb-feattable-rows, .hb-terms-rows { display: flex; flex-direction: column; gap: 8px; }
+.hb-feattable-row, .hb-terms-row { display: flex; align-items: end; gap: 8px; }
+.hb-feattable-row > * { flex: 1; }

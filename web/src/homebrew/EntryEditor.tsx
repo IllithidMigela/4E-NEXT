@@ -4,7 +4,7 @@ import type { Entry, PowerBlock } from "../data/types";
 import { CATEGORY_LABELS } from "../data/labels";
 import { FilledButton, FilledTextField, IconButton, OutlinedButton, TextButton } from "../components/md";
 import EntryCard from "../sheet/EntryCard";
-import { buildEntry, draftToForm, fieldsFor, CATEGORY_FIELDS, CATEGORY_LIST, CATEGORY_SECTIONS, WITHOUT_BODY, POWER_FREQUENCIES, POWER_TYPES, RANGE_TEMPLATES, composeRange, parseRange, parsePowerBlocks, POWER_BLOCK_LABELS, POWER_TEMPLATE_SECONDARY, POWER_PRESETS, PRESET_GROUPS, ITEM_FREQUENCIES, ITEM_POWER_KEYWORDS, ACTION_TYPES, parseItemPowerSections, parseFeatTable, parseSetBonuses, parseTerms, serializeTerms, FEAT_PRESETS, FEAT_PREREQ_CANDIDATES, type SheetField, type RangeTemplateItem, type PowerPreset, type HomebrewSection, type ItemPowerSection, type FeatRow, type SetBonusBlock } from "../lib/homebrewSchema";
+import { buildEntry, draftToForm, fieldsFor, CATEGORY_FIELDS, CATEGORY_LIST, CATEGORY_SECTIONS, WITHOUT_BODY, POWER_FREQUENCIES, POWER_TYPES, RANGE_TEMPLATES, composeRange, parseRange, parsePowerBlocks, POWER_BLOCK_LABELS, POWER_TEMPLATE_SECONDARY, POWER_PRESETS, PRESET_GROUPS, ITEM_FREQUENCIES, ITEM_POWER_KEYWORDS, ACTION_TYPES, parseItemPowerSections, parseFeatTable, parseSetBonuses, parseTerms, serializeTerms, FEAT_PRESETS, FEAT_PREREQ_CANDIDATES, parseLevelSections, type LevelFeatureSection, type SheetField, type RangeTemplateItem, type PowerPreset, type HomebrewSection, type ItemPowerSection, type FeatRow, type SetBonusBlock } from "../lib/homebrewSchema";
 import { wikiToMarkdown } from "../lib/markdown";
 import { itemLevels, enhancementBonusForLevel, priceForLevel } from "../lib/levelprices";
 import { loadCategory } from "../data/loaders";
@@ -425,6 +425,61 @@ function ItemPowerSectionsEditor({ value, onChange }: { value: ItemPowerSection[
   );
 }
 
+// —— 通用「等级特性小节」编辑器（power-ref 类型：魔法学派/契约/血统/主题/领域/典范/天命/职业/种族）——
+// 每小节 = 等级 + 标题 + 类型（特性/威能）+ 正文 + 威能引用列表。
+// value 为 JSON 字符串（form.levelSections），onChange 写回 JSON。
+function LevelSectionsEditor({ value, onChange, titleLabel }: { value: string; onChange: (json: string) => void; titleLabel?: (s: LevelFeatureSection) => string }) {
+  const sections = parseLevelSections(value, { allowPlain: true });
+  const setSections = (s: LevelFeatureSection[]) => onChange(JSON.stringify(s));
+  const upd = (i: number, u: Partial<LevelFeatureSection>) => setSections(sections.map((s, j) => (j === i ? { ...s, ...u } : s)));
+  const kindCandidates: ("feature" | "power")[] = ["feature", "power"];
+  const label = (i: number) => (titleLabel ? titleLabel(sections[i]) : sections[i].level || sections[i].title || `小节 ${i + 1}`);
+  return (
+    <div className="hb-levelsections" data-ed-field="levelSections">
+      <p className="hint" style={{ margin: "0 0 8px" }}>
+        每小节 = 等级 + 标题 + 类型（特性/威能）+ 正文 + 威能引用。保存时拼装为「!! N级：标题」分节正文，威能引用回写为「&#123;&#123;威能名&#125;&#125;」行。
+      </p>
+      {sections.map((s, i) => (
+        <div key={i} className="hb-levelsection" data-ed-field={`levelSections[${i}]`}>
+          <div className="hb-itempower-head">
+            <span className="hb-itempower-headlabel">{label(i)}</span>
+            <IconButton title="删除此小节" onClick={() => setSections(sections.filter((_, j) => j !== i))}><span className="material-symbols-outlined">delete</span></IconButton>
+          </div>
+          <div className="hb-levelsection-rows">
+            <FilledTextField label="等级" value={s.level} placeholder="如：1级 / 11级（可空）" onInput={(e) => upd(i, { level: (e.target as HTMLInputElement).value })} />
+            <FilledTextField label="标题" value={s.title} placeholder="如：幻术学徒 / 遭遇威能" onInput={(e) => upd(i, { title: (e.target as HTMLInputElement).value })} />
+            <div className="hb-label-sm" style={{ alignSelf: "center" }}>类型</div>
+            <div className="hb-ed-chips" style={{ alignSelf: "center" }}>
+              {kindCandidates.map((k) => (
+                <button key={k} type="button" className={"chip mini" + (s.kind === k ? " active" : "")} onClick={() => upd(i, { kind: s.kind === k ? "feature" : k })}>{k === "feature" ? "特性" : "威能"}</button>
+              ))}
+            </div>
+          </div>
+          <textarea
+            className="hb-textarea"
+            rows={3}
+            placeholder="本小节的描述正文（特性说明 / 威能效果简介）"
+            value={s.body}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => upd(i, { body: e.target.value })}
+          />
+          <div className="hb-levelsection-refs">
+            {s.refs.map((r, ri) => (
+              <div key={ri} className="hb-levelsection-ref">
+                <FilledTextField label="威能引用" value={r} placeholder="威能名（保存时回写为 {{威能名}}）" onInput={(e) => upd(i, { refs: s.refs.map((x, xj) => (xj === ri ? (e.target as HTMLInputElement).value : x)) })} />
+                <IconButton title="删除引用" onClick={() => upd(i, { refs: s.refs.filter((_, xj) => xj !== ri) })}><span className="material-symbols-outlined">close</span></IconButton>
+              </div>
+            ))}
+            <OutlinedButton onClick={() => upd(i, { refs: [...s.refs, ""] })}>＋ 威能引用</OutlinedButton>
+          </div>
+        </div>
+      ))}
+      <div className="hb-pblock-actions">
+        <OutlinedButton onClick={() => setSections([...sections, { level: "", title: "", kind: "feature", body: "", refs: [] }])}>＋ 添加小节</OutlinedButton>
+      </div>
+    </div>
+  );
+}
+
 // 预览「威能引用」懒加载缓存：首次需要时加载一次官方威能表，供 [[威能]] 悬浮解析
 let powerIndexPromise: Promise<Entry[]> | undefined;
 
@@ -806,6 +861,17 @@ export default function EntryEditor({
         <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
           <span className="hb-label">{f.label}</span>
           <TermsPairsEditor value={pairs} onChange={(p) => set("termsPairs", serializeTerms(p))} />
+        </div>
+      );
+    }
+    // 威能引用类「等级特性小节」：结构化编辑（始于 form.levelSections 的 JSON）
+    if (f.key === "levelSections") {
+      const labelFor = (s: LevelFeatureSection) =>
+        [s.level, s.title].filter(Boolean).join("：") || "（无标题小节）";
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <LevelSectionsEditor value={val} onChange={(j) => set("levelSections", j)} titleLabel={labelFor} />
         </div>
       );
     }
