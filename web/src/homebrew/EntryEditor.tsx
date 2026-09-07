@@ -4,7 +4,7 @@ import type { Entry, PowerBlock } from "../data/types";
 import { CATEGORY_LABELS } from "../data/labels";
 import { FilledButton, FilledTextField, IconButton, OutlinedButton, TextButton } from "../components/md";
 import EntryCard from "../sheet/EntryCard";
-import { buildEntry, draftToForm, fieldsFor, CATEGORY_FIELDS, CATEGORY_LIST, CATEGORY_SECTIONS, WITHOUT_BODY, POWER_FREQUENCIES, POWER_TYPES, RANGE_TEMPLATES, composeRange, parseRange, parsePowerBlocks, POWER_BLOCK_LABELS, POWER_TEMPLATE_SECONDARY, POWER_PRESETS, PRESET_GROUPS, type SheetField, type RangeTemplateItem, type PowerPreset, type HomebrewSection } from "../lib/homebrewSchema";
+import { buildEntry, draftToForm, fieldsFor, CATEGORY_FIELDS, CATEGORY_LIST, CATEGORY_SECTIONS, WITHOUT_BODY, POWER_FREQUENCIES, POWER_TYPES, RANGE_TEMPLATES, composeRange, parseRange, parsePowerBlocks, POWER_BLOCK_LABELS, POWER_TEMPLATE_SECONDARY, POWER_PRESETS, PRESET_GROUPS, ITEM_FREQUENCIES, ITEM_POWER_KEYWORDS, ACTION_TYPES, parseItemPowerSections, parseFeatTable, parseSetBonuses, parseTerms, serializeTerms, FEAT_PRESETS, FEAT_PREREQ_CANDIDATES, type SheetField, type RangeTemplateItem, type PowerPreset, type HomebrewSection, type ItemPowerSection, type FeatRow, type SetBonusBlock } from "../lib/homebrewSchema";
 import { wikiToMarkdown } from "../lib/markdown";
 import { itemLevels, enhancementBonusForLevel, priceForLevel } from "../lib/levelprices";
 import { loadCategory } from "../data/loaders";
@@ -230,6 +230,197 @@ function PowerBlockEditor({ value, onChange }: { value: PowerBlock[]; onChange: 
         <OutlinedButton onClick={() => onChange([...value, ...POWER_TEMPLATE_SECONDARY])}>＋ 追加次攻击组</OutlinedButton>
         <OutlinedButton onClick={() => onChange([...value, { label: "效果", text: "" }])}>＋ 追加标签块</OutlinedButton>
       </div>
+    </div>
+  );
+}
+
+// —— 专长关联威能等级表编辑器（流派专长固定结构：等级 × 关联威能）——
+function FeatTableEditor({ value, onChange }: { value: FeatRow[]; onChange: (rows: FeatRow[]) => void }) {
+  const updateAt = (i: number, upd: Partial<FeatRow>) =>
+    onChange(value.map((r, j) => (j === i ? { ...r, ...upd } : r)));
+  return (
+    <div className="hb-feattable" data-ed-field="featRows">
+      <p className="hint" style={{ margin: "0 0 8px" }}>流派专长在「增益」末尾附等级×关联威能表。逐行填写等级与威能名，保存时拼装为官方 <code>&lt;table&gt;</code>。</p>
+      <div className="hb-feattable-rows">
+        {value.map((r, i) => (
+          <div key={i} className="hb-feattable-row">
+            <FilledTextField type="number" label="等级" value={r.level} onInput={(e) => updateAt(i, { level: (e.target as HTMLInputElement).value })} />
+            <FilledTextField label="关联威能" value={r.power} placeholder="威能名（如 骑士冲锋）" onInput={(e) => updateAt(i, { power: (e.target as HTMLInputElement).value })} />
+            <IconButton title="删除此行" onClick={() => onChange(value.filter((_, j) => j !== i))}><span className="material-symbols-outlined">close</span></IconButton>
+          </div>
+        ))}
+      </div>
+      <div className="hb-pblock-actions">
+        <OutlinedButton onClick={() => onChange([...value, { level: (value.length ? value.length + 1 + "" : "1"), power: "" }])}>＋ 添加等级行</OutlinedButton>
+        <OutlinedButton onClick={() => onChange(value.filter((r) => r.level.trim() || r.power.trim()).slice())}>清理空行</OutlinedButton>
+      </div>
+    </div>
+  );
+}
+
+// —— 套装件数增益块编辑器（2件套/3件套/… + 增益文本）——
+function SetBonusEditor({ value, onChange }: { value: SetBonusBlock[]; onChange: (blocks: SetBonusBlock[]) => void }) {
+  const piecesSuggest = ["2件套", "3件套", "4件套", "5件套"];
+  return (
+    <div className="hb-setbonus" data-ed-field="setBonuses">
+      <p className="hint" style={{ margin: "0 0 8px" }}>每个增益块 = 件数（如「2件套」）+ 增益描述。保存时生成「!! 套装增益」小节。</p>
+      {value.map((b, i) => (
+        <div key={i} className="hb-setbonus-block">
+          <div className="hb-pblock-head">
+            <FilledTextField label="件数" value={b.pieces} placeholder="如：2件套" onInput={(e) => onChange(value.map((x, j) => j === i ? { ...x, pieces: (e.target as HTMLInputElement).value } : x))} />
+            <div className="hb-ed-chips">
+              {piecesSuggest.map((p) => (
+                <button key={p} type="button" className={"chip mini" + (b.pieces === p ? " active" : "")} onClick={() => onChange(value.map((x, j) => j === i ? { ...x, pieces: x.pieces === p ? "" : p } : x))}>{p}</button>
+              ))}
+            </div>
+            <IconButton title="删除此增益块" onClick={() => onChange(value.filter((_, j) => j !== i))}><span className="material-symbols-outlined">close</span></IconButton>
+          </div>
+          <textarea
+            className="hb-textarea"
+            rows={3}
+            value={b.text}
+            placeholder="增益描述（可含 [[威能]] 链接）"
+            onChange={(e) => onChange(value.map((x, j) => j === i ? { ...x, text: e.target.value } : x))}
+          />
+        </div>
+      ))}
+      <div className="hb-pblock-actions">
+        <OutlinedButton onClick={() => onChange([...value, { pieces: (value.length + 2) + "件套", text: "" }])}>＋ 添加增益块</OutlinedButton>
+      </div>
+    </div>
+  );
+}
+
+// —— 译名字典：词条对编辑（英 / 中 每行一对，支持批量粘贴）——
+function TermsPairsEditor({ value, onChange }: { value: [string, string][]; onChange: (pairs: [string, string][]) => void }) {
+  const [batch, setBatch] = useState("");
+  const importBatch = () => {
+    const pairs = parseTerms(batch);
+    if (pairs.length) onChange(pairs.filter(([e, z]) => e.trim() || z.trim()));
+    setBatch("");
+  };
+  const updateAt = (i: number, upd: [string, string]) =>
+    onChange(value.map((p, j) => (j === i ? upd : p)));
+  return (
+    <div className="hb-terms" data-ed-field="termsPairs">
+      <p className="hint" style={{ margin: "0 0 8px" }}>每个词条对 = 英文 + 中文。可在下方批量粘贴「英: 中」多行后自动拆分。</p>
+      {value.map(([en, zh], i) => (
+        <div key={i} className="hb-terms-row">
+          <FilledTextField label="英文" value={en} onInput={(e) => updateAt(i, [(e.target as HTMLInputElement).value, zh])} />
+          <FilledTextField label="中文" value={zh} onInput={(e) => updateAt(i, [en, (e.target as HTMLInputElement).value])} />
+          <IconButton title="删除此词条" onClick={() => onChange(value.filter((_, j) => j !== i))}><span className="material-symbols-outlined">close</span></IconButton>
+        </div>
+      ))}
+      <div className="hb-pblock-actions">
+        <OutlinedButton onClick={() => onChange([...value, ["", ""]])}>＋ 添加词条对</OutlinedButton>
+      </div>
+      <details className="hb-terms-batch">
+        <summary>批量粘贴（每行一对「英文: 中文」）</summary>
+        <textarea className="hb-textarea" rows={5} value={batch} placeholder={"Achra: 阿克拉\nBane: 班恩"} onChange={(e) => setBatch(e.target.value)} />
+        <OutlinedButton onClick={importBatch}>拆分并填入</OutlinedButton>
+      </details>
+    </div>
+  );
+}
+
+// —— 装备·物品威能段编辑器 ——
+// 官方装备威能 = 若干「段头（关键词✦频率（动作））+ 正文标签块」；每段正文复用 PowerBlockEditor。
+const ITEM_POWER_PRESETS: { name: string; desc: string; freq: string; action: string; keywords: string }[] = [
+  { name: "每日 · 自由动作 · 触发", desc: "每日（自由动作），正文 触发/效果", freq: "每日", action: "自由动作", keywords: "" },
+  { name: "每日 · 次要动作 · 效果", desc: "每日（次要动作），正文 效果", freq: "每日", action: "次要动作", keywords: "" },
+  { name: "遭遇 · 标准动作 · 攻击", desc: "遭遇（标准动作），正文 目标/攻击/命中", freq: "遭遇", action: "标准动作", keywords: "" },
+  { name: "随意 · 标准动作 · 攻击", desc: "随意（标准动作），正文 攻击块", freq: "随意", action: "标准动作", keywords: "" },
+  { name: "消耗 · 自由动作", desc: "消耗（自由动作），消耗品专属", freq: "消耗", action: "自由动作", keywords: "" },
+  { name: "医疗 · 每日", desc: "关键词预填「医疗」", freq: "每日", action: "标准动作", keywords: "医疗" },
+  { name: "传送 · 每日", desc: "关键词预填「传送」", freq: "每日", action: "标准动作", keywords: "传送" },
+];
+function ItemPowerSectionsEditor({ value, onChange }: { value: ItemPowerSection[]; onChange: (sections: ItemPowerSection[]) => void }) {
+  const [armPreset, setArmPreset] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armPreset) return;
+    const t = window.setTimeout(() => setArmPreset(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [armPreset]);
+  const applyPreset = (p: (typeof ITEM_POWER_PRESETS)[number]) => {
+    if (value.length === 0) {
+      onChange([{ freq: p.freq as ItemPowerSection["freq"], action: p.action, keywords: p.keywords, blocks: [] }]);
+      return;
+    }
+    if (armPreset === p.name) {
+      onChange([...value, { freq: p.freq as ItemPowerSection["freq"], action: p.action, keywords: p.keywords, blocks: [] }]);
+      setArmPreset(null);
+    } else {
+      setArmPreset(p.name);
+    }
+  };
+  const updSection = (i: number, upd: Partial<ItemPowerSection>) =>
+    onChange(value.map((s, j) => (j === i ? { ...s, ...upd } : s)));
+  const chooseFreq = (i: number, f: string) => updSection(i, { freq: value[i].freq === f ? "" : (f as ItemPowerSection["freq"]) });
+  const chooseAction = (i: number, a: string) => updSection(i, { action: value[i].action === a ? "" : a });
+  const toggleKw = (i: number, kw: string) => {
+    const cur = value[i].keywords ?? "";
+    const tags = cur.split(/[，,、]/).map((s) => s.trim()).filter(Boolean);
+    const next = tags.includes(kw) ? tags.filter((t) => t !== kw) : [...tags, kw];
+    updSection(i, { keywords: next.join("，") });
+  };
+  return (
+    <div className="hb-itempower" data-ed-field="powerSections">
+      <div className="hb-pblock-presets">
+        <span className="hb-pblock-presets-label">
+          {value.length === 0 ? "物品威能段预设 · 点击填入段头" : "物品威能段预设 · 点击一次再点确认可追加一段"}
+        </span>
+        {ITEM_POWER_PRESETS.map((p) => (
+          <button key={p.name} type="button" className={"chip mini" + (armPreset === p.name ? " armed" : "")} title={p.desc} onClick={() => applyPreset(p)}>
+            {armPreset === p.name ? "确认追加？" : p.name}
+          </button>
+        ))}
+      </div>
+      <p className="hint" style={{ margin: "0 0 8px" }}>
+        官方格式：<code>威能（关键词）✦每日（自由动作）</code> 段头 + <code>div.text</code> 正文标签块。段正文可复用下方标签块编辑器的全部标签与次攻击组。
+      </p>
+      {value.length === 0 && (
+        <div className="hb-pblock-actions">
+          <OutlinedButton onClick={() => onChange([{ freq: "每日", action: "标准动作", keywords: "", blocks: [] }])}>＋ 添加一个威能段</OutlinedButton>
+        </div>
+      )}
+      {value.map((s, i) => (
+        <div key={i} className="hb-itempower-sec">
+          <div className="hb-itempower-head">
+            <span className="hb-itempower-headlabel">威能段 {i + 1}</span>
+            <span className="hb-itempower-preview">预览：{s.freq ? <>✦ {s.freq}{s.action ? `（${s.action}）` : ""}</> : "（未设频率）"}</span>
+            <IconButton title="删除此段" onClick={() => onChange(value.filter((_, j) => j !== i))}><span className="material-symbols-outlined">delete</span></IconButton>
+          </div>
+          <div className="hb-itempower-kwrow">
+            <span className="hb-label-sm">关键词</span>
+            <FilledTextField value={s.keywords ?? ""} placeholder="威能（关键词），可空" onInput={(e) => updSection(i, { keywords: (e.target as HTMLInputElement).value })} />
+            <div className="hb-ed-chips">
+              {[...new Set([...(s.keywords ?? "").split(/[，,、]/).map((t) => t.trim()).filter(Boolean), ...ITEM_POWER_KEYWORDS])].slice(0, 14).map((kw) => (
+                <button key={kw} type="button" className={"chip mini" + ((s.keywords ?? "").split(/[，,、]/).includes(kw) ? " active" : "")} onClick={() => toggleKw(i, kw)}>{kw}</button>
+              ))}
+            </div>
+          </div>
+          <div className="hb-itempower-freqrow">
+            <span className="hb-label-sm">频率</span>
+            <div className="hb-ed-chips">
+              {[...ITEM_FREQUENCIES].map((fr) => (
+                <button key={fr} type="button" className={"chip mini" + (s.freq === fr ? " active" : "")} onClick={() => chooseFreq(i, fr)}>{fr}</button>
+              ))}
+            </div>
+            <span className="hb-label-sm">动作</span>
+            <div className="hb-ed-chips">
+              {ACTION_TYPES.map((a) => (
+                <button key={a} type="button" className={"chip mini" + (s.action === a ? " active" : "")} onClick={() => chooseAction(i, a)}>{a}</button>
+              ))}
+            </div>
+          </div>
+          <PowerBlockEditor value={s.blocks} onChange={(blocks) => updSection(i, { blocks })} />
+        </div>
+      ))}
+      {value.length > 0 && (
+        <div className="hb-pblock-actions">
+          <OutlinedButton onClick={() => onChange([...value, { freq: "每日", action: "标准动作", keywords: "", blocks: [] }])}>＋ 再添加一个威能段</OutlinedButton>
+        </div>
+      )}
     </div>
   );
 }
@@ -574,6 +765,81 @@ export default function EntryEditor({
               </button>
             ))}
           </div>
+        </div>
+      );
+    }
+    // —— 各类型结构化编辑器 ——
+    // 装备「物品威能段」
+    if (f.key === "powerSections") {
+      const secs = parseItemPowerSections(form.powerSections);
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <ItemPowerSectionsEditor value={secs} onChange={(s) => set("powerSections", JSON.stringify(s))} />
+        </div>
+      );
+    }
+    // 专长「关联威能等级表」
+    if (f.key === "featRows") {
+      const rows = parseFeatTable(form.featRows) ?? [];
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <FeatTableEditor value={rows} onChange={(r) => set("featRows", JSON.stringify(r))} />
+        </div>
+      );
+    }
+    // 套装「件数增益块」
+    if (f.key === "setBonuses") {
+      const blocks = parseSetBonuses(form.setBonuses).setBonus;
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <SetBonusEditor value={blocks} onChange={(b) => set("setBonuses", JSON.stringify(b))} />
+        </div>
+      );
+    }
+    // 词典「词条对」
+    if (f.key === "termsPairs") {
+      const pairs = parseTerms(form.termsPairs);
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <TermsPairsEditor value={pairs} onChange={(p) => set("termsPairs", serializeTerms(p))} />
+        </div>
+      );
+    }
+    // 专长「前提」：text + 前提句式候选
+    if (f.key === "prerequisite" && form.category === "feat") {
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <div className="hb-ed-chips">
+            {FEAT_PREREQ_CANDIDATES.map((c) => (
+              <button key={c} type="button" className={"chip mini" + (val === c ? " active" : "")} onClick={() => set(f.key, val === c ? "" : c)}>{c}</button>
+            ))}
+          </div>
+          <textarea className="hb-textarea" value={val} rows={3} placeholder={f.placeholder ?? "如：职业：战士"} onChange={(e) => set(f.key, e.target.value)} />
+          <span className="hint">官方前提以 职业式 / 等级式 / 受训式 为主；点选候选或自由输入。</span>
+        </div>
+      );
+    }
+    // 专长「增益」：预设条 + 自由文本
+    if (f.key === "benefit" && form.category === "feat") {
+      const insertPreset = (t: string) => {
+        const cur = (form.benefit ?? "").trim();
+        set("benefit", cur + (cur ? "\n" : "") + t);
+      };
+      return (
+        <div key={f.key} className="hb-field hb-field-full" data-ed-field={f.key}>
+          <span className="hb-label">{f.label}</span>
+          <div className="hb-pblock-presets">
+            <span className="hb-pblock-presets-label">专长预设 · 点击在增益末尾追加模板</span>
+            {FEAT_PRESETS.map((p) => (
+              <button key={p.name} type="button" className="chip mini" title={p.desc} onClick={() => insertPreset(p.blocks.map((b) => b.text).join(""))}>{p.name}</button>
+            ))}
+          </div>
+          <textarea className="hb-textarea" value={val} rows={5} placeholder={f.placeholder ?? "该专长带来的效果"} onChange={(e) => set(f.key, e.target.value)} />
         </div>
       );
     }

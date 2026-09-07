@@ -678,6 +678,397 @@ export function parsePowerDetails(html: string): PowerBlock[] | null {
   return blocks.length ? blocks : null;
 }
 
+// ====================================================================
+// —— 各类型结构化编辑模型 + 双向序列化（对齐官方 wiki 格式）——
+// ====================================================================
+
+// —— 通用「威能引用节」模型 ——
+// 主题/领域/血统/契约/魔法学派/典范之道/传奇天命 的正文都由「N级:标题 + 威能引用」小节构成，
+// 编辑端把它结构化为一组 { level, title, refs }，保存时拼装回 wiki 层级标题 + {{威能}} 语法。
+export interface LevelTitleRefs {
+  /** 等级前缀（如「11」），可为空 */
+  level: string;
+  /** 小节标题（不含等级前缀），如「血统特性」 */
+  title: string;
+  /** 威能引用名列表 */
+  refs: string[];
+}
+
+/** 从「标题行」解析 等级 + 标题（如「!! 11级：XX特性」→ 11 / XX特性；「!! 2级辅助威能」→ 2 / 辅助威能） */
+export function parseLevelTitle(line: string): { level: string; title: string } {
+  const s = line.trim().replace(/^!{2,}\s+/, "");
+  const m = s.match(/^(\d+)级\s*[:：]\s*(.*)$/);
+  if (m) return { level: m[1], title: m[2].trim() };
+  const m2 = s.match(/^(\d+)级\s*(.+)$/);
+  if (m2) return { level: m2[1], title: m2[2].trim() };
+  return { level: "", title: s };
+}
+
+/** 拼装标题行：有等级时输出「N级：标题」 */
+export function levelTitleLine(level: string, title: string): string {
+  const l = level.trim();
+  const t = title.trim();
+  if (!l) return t;
+  return `${l}级：${t}`;
+}
+
+/** 收集正文中的 `{{名称}}` 引用名（去重，保持出现顺序） */
+export function extractRefs(body: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of body.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)) {
+    const ref = m[1].trim();
+    if (ref && !seen.has(ref)) { seen.add(ref); out.push(ref); }
+  }
+  return out;
+}
+
+/** 收集正文链接 `[[name]]` / `[[name|alias]]` 的目标名 */
+export function extractLinks(body: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of body.matchAll(/\[\[([^[|\]]+?)(?:\|[^\]]+)?\]\]/g)) {
+    const ref = m[1].trim();
+    if (ref && !seen.has(ref)) { seen.add(ref); out.push(ref); }
+  }
+  return out;
+}
+
+/**
+ * 把正文按「!! / !!! 层级标题」切为「威能引用节」数组：
+ * 每个标题下收集 {{威能}} 引用；无标题引言段不参与。
+ */
+export function parseLevelRefSections(src: string): LevelTitleRefs[] {
+  const out: LevelTitleRefs[] = [];
+  if (!src) return out;
+  // 先按 !!（及更高）切主节，再在节内收集 {{引用}}
+  const parts = src.split(/^!{2,}\s+/m).filter((s) => s.trim());
+  for (const part of parts) {
+    const lines = part.trim().split("\n");
+    const titleLine = lines[0].trim();
+    const body = lines.slice(1).join("\n");
+    const { level, title } = parseLevelTitle(titleLine);
+    const refs = extractRefs(body);
+    out.push({ level, title, refs });
+  }
+  return out;
+}
+
+/** 把「威能引用节」数组拼装回 wiki 正文（`!! N级：标题` + `{{威能}}` 列表） */
+export function serializeLevelRefSections(sections: LevelTitleRefs[]): string {
+  return sections
+    .map((s) => {
+      const head = "!! " + levelTitleLine(s.level, s.title);
+      const refs = s.refs.filter((r) => r.trim()).map((r) => "{{" + r + "}}");
+      return [head, ...refs].join("\n");
+    })
+    .join("\n\n");
+}
+
+// —— 装备·物品威能段 ——
+// 官方装备威能正文（details 内）形如：<div class="bold bg-item">威能（关键词）✦每日（自由动作）</div>
+// + <div class=text>触发/效果…</div>。这里把它结构化为 段头（关键词/频率/动作）+ 标签块正文。
+export const ITEM_FREQUENCIES = ["每日", "遭遇", "随意", "消耗"] as const;
+export type ItemFreq = (typeof ITEM_FREQUENCIES)[number];
+
+export interface ItemPowerSection {
+  /** 段头「威能（关键词）」中的关键词（可缺省） */
+  keywords?: string;
+  /** 段头「✦频率」 */
+  freq: ItemFreq | "";
+  /** 段头「（动作）」 */
+  action: string;
+  /** 正文：复用 20 标签集 + 自由文本的标签块 */
+  blocks: PowerBlock[];
+}
+/** 物品威能段头关键词候选（官方 2603 条装备威能段高频词排序） */
+export const ITEM_POWER_KEYWORDS = [
+  "医疗", "传送", "毒素", "可强化", "幻术", "火焰", "咒法", "区域",
+  "魅惑", "光耀", "恐惧", "心灵", "寒冷", "暗蚀", "闪电", "雷电",
+  "精神", "反射", "甜蜜", "失真", "迅捷", "安抚", "重创", "瓦解",
+];
+/** 装备「适合」候选（官方 2603 条装备统计高频，可自由输入） */
+export const ITEM_SUITABLE = [
+  "法杖", "权杖", "圣徽", "任意", "法珠", "盾牌", "近战", "魔杖", "护腕",
+  "基地物品", "斧", "链枷", "弓", "矛", "匕首", "锤", "重剑", "投掷",
+];
+
+/** parsePowerBlockJSON 别名：物品威能段列表以 JSON 字符串存于 form.itemPowerSections */
+export function parseItemPowerSections(json?: string): ItemPowerSection[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    if (!Array.isArray(v)) return [];
+    return v
+      .map((s): ItemPowerSection => ({
+        keywords: typeof s?.keywords === "string" ? s.keywords : "",
+        freq: (ITEM_FREQUENCIES as readonly string[]).includes(s?.freq) ? (s.freq as ItemFreq) : "",
+        action: typeof s?.action === "string" ? s.action : "",
+        blocks: Array.isArray(s?.blocks)
+          ? s.blocks
+              .map((b: PowerBlock) => ({
+                label: typeof b?.label === "string" ? b.label : "",
+                text: typeof b?.text === "string" ? b.text : "",
+                indent: typeof b?.indent === "number" ? b.indent : 0,
+              }))
+              .filter((b: PowerBlock) => b.label.trim() || b.text.trim())
+          : ([] as PowerBlock[]),
+      }))
+      .filter((s) => s.freq || s.action || s.keywords || s.blocks.length);
+  } catch {
+    return [];
+  }
+}
+
+/** 物品威能段 → 官方 `<div class="bold bg-item">` 段头 + `<div class=text>` 正文 */
+export function serializeItemPowerSection(s: ItemPowerSection): string {
+  const kw = s.keywords?.trim();
+  const freq = s.freq?.trim();
+  const action = s.action?.trim();
+  const head = "威能" + (kw ? "（" + kw + "）" : "") + "✦" + freq + (action ? "（" + action + "）" : "");
+  const bodyText = serializePowerBlocks(s.blocks) || "";
+  const textDiv = bodyText ? `<div class=text>${bodyText}</div>` : "";
+  return `<div class="bold bg-item">${head}</div>` + textDiv;
+}
+
+export function serializeItemPowerSections(sections: ItemPowerSection[]): string {
+  return sections.filter((s) => s.freq || s.action || s.keywords || s.blocks.length).map(serializeItemPowerSection).join("");
+}
+
+/**
+ * 反向解析官方装备威能 HTML（details 内的 bg-item 段头 + text 正文行）为 ItemPowerSection[]。
+ * 段头文本格式：`威能（关键词）✦频率（动作）`；正文行提取内联 `<b>标签：</b>` 与纯文本。
+ */
+export function parseItemPowerSectionsHtml(html: string): ItemPowerSection[] {
+  if (!html) return [];
+  const out: ItemPowerSection[] = [];
+  const tokenRe =
+    /<div\b[^>]*\bclass=["']?bold bg-item["']?[^>]*>([\s\S]*?)<\/div>(?:\s*<div\b[^>]*\bclass=["']?text["']?[^>]*>([\s\S]*?)<\/div>)?/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(html))) {
+    const head = htmlToPlain(m[1] ?? "").replace(/^威能\s*✦?/, "").replace(/^✦/, "");
+    // 段头如「（关键词）✦每日（自由动作）」：先剥「（...）」键词，再剥 频率/动作
+    let rest = head.trim();
+    let keywords = "";
+    const km = rest.match(/^（([^）]+)）\s*✦\s*(.*)$/);
+    if (km) { keywords = km[1].trim(); rest = km[2].trim(); }
+    // rest 余下应为「频率（动作）」或仅「频率」
+    let freq: ItemFreq | "" = "";
+    let action = "";
+    const fam = rest.match(/^(每日|遭遇|随意|消耗)\s*（([^）]+)）?\s*$/);
+    if (fam) { freq = fam[1] as ItemFreq; action = fam[2] ?? ""; }
+    // 正文行：解析 <b>标签：</b> 或纯文本
+    const body = m[2] !== undefined ? m[2] : "";
+    const blocks: PowerBlock[] = [];
+    const lineRe = /<b>([^<]*?)：?<\/b>\s*([\s\S]*?)(?=<b>|$)/gi;
+    let lm: RegExpExecArray | null;
+    const pure = body.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
+    if (/<b>/i.test(body)) {
+      while ((lm = lineRe.exec(body))) {
+        const label = htmlToPlain(lm[1]).replace(/[：:]\s*$/, "");
+        const text = htmlToPlain(lm[2] ?? "");
+        if (label || text) blocks.push({ label, text });
+      }
+    } else if (pure.trim()) {
+      blocks.push({ label: "", text: pure.trim() });
+    }
+    if (freq || action || keywords || blocks.length) {
+      out.push({ keywords, freq, action, blocks });
+    }
+  }
+  return out;
+}
+
+// —— 仪式头部 ——
+// 官方仪式卡 <div class=ritualinfo> 固定 header 六行：等级/类别/时间/材料花费/市场价格/关键技能。
+export interface RitualHeader {
+  ritualLevel: string;
+  ritualCategory: string;
+  time: string;
+  cost: string;
+  marketPrice: string;
+  keySkill: string;
+}
+const RITUAL_LABEL_MAP: [string, keyof RitualHeader][] = [
+  ["等级", "ritualLevel"], ["类别", "ritualCategory"], ["时间", "time"],
+  ["材料花费", "cost"], ["市场价格", "marketPrice"], ["关键技能", "keySkill"],
+];
+
+/** 官方 ritualinfo HTML → 头部字段（缺失的保留原值） */
+export function parseRitualInfo(html: string, fallback: RitualHeader): RitualHeader {
+  const out: RitualHeader = { ...fallback };
+  if (!html) return out;
+  const re = /<span class=bold>(等级|类别|时间|材料花费|市场价格|关键技能)：<\/span>\s*([^<]*(?:<br\s*\/?>[^<]*)*)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const label = m[1];
+    const pair = RITUAL_LABEL_MAP.find(([l]) => l === label);
+    if (!pair) continue;
+    const text = m[2].replace(/<br\s*\/?>/gi, " ").trim();
+    out[pair[1]] = text;
+  }
+  // 兜底：跨 <span> 的简单捕获
+  for (const [lbl, key] of RITUAL_LABEL_MAP) {
+    if (out[key]) continue;
+    const mm = html.match(new RegExp(lbl + "：([^<\\n]*?)<"));
+    if (mm) out[key] = mm[1].trim();
+  }
+  return out;
+}
+
+/** 头部字段 → 官方 ritualinfo HTML */
+export function serializeRitualInfo(h: RitualHeader): string {
+  const row = (label: string, val: string) =>
+    !val.trim() ? "" : `<div><span class=bold>${label}：</span>${escapeHtml(val.trim())}</div>`;
+  return `<div class="ritualinfo">${RITUAL_LABEL_MAP.map(([lbl, k]) => row(lbl, h[k])).filter(Boolean).join("")}</div>`;
+}
+
+// —— 译名字典 terms 词条对 ——
+/** terms 字符串 ↔ 键值对数组（按 `英: 中` 切分，: / ： 均可，空行过滤） */
+export function parseTerms(text?: string): [string, string][] {
+  if (!text) return [];
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const i = l.search(/[:：]/);
+      if (i < 0) return [l, ""];
+      return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+    });
+}
+export function serializeTerms(pairs: [string, string][]): string {
+  return pairs
+    .filter(([en, zh]) => en.trim() || zh.trim())
+    .map(([en, zh]) => (en.trim() ? `${en}: ${zh.trim()}` : zh.trim()))
+    .join("\n");
+}
+
+// —— 专长关联威能等级表 ——
+// 流派专长 benefit 末尾常内嵌 <table>（等级 × 关联威能）。结构化为行数组 [level, power]。
+export interface FeatRow {
+  level: string;
+  power: string;
+}
+export function parseFeatTable(benefit?: string): FeatRow[] | null {
+  if (!benefit) return null;
+  const tm = benefit.match(/<table[^>]*>[\s\S]*?<\/table>/i);
+  if (!tm) return null;
+  const rows = tm[0].match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) ?? [];
+  const out: FeatRow[] = [];
+  for (const r of rows) {
+    const cells = r.match(/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi) ?? [];
+    const vals = cells.map(htmlToPlain);
+    if (vals.length >= 2 && /^\d+/.test(vals[0])) out.push({ level: vals[0], power: vals[1] });
+  }
+  return out.length ? out : null;
+}
+export function serializeFeatTable(rows: FeatRow[]): string {
+  const valid = rows.filter((r) => r.power.trim());
+  if (!valid.length) return "";
+  const trs = valid
+    .map((r) => `<tr><th>${r.level.trim()}</th><td>${escapeHtml(r.power.trim())}</td></tr>`)
+    .join("");
+  return `<table class="details"><tbody><tr><th>等级</th><th>关联威能</th></tr>${trs}</tbody></table>`;
+}
+
+// —— 物品套装（item-set）—— 知识(折叠) / 套装组成 / 套装增益
+export interface SetBonusBlock {
+  pieces: string;  // 件数，如「2件套」
+  text: string;
+}
+export function parseSetBonuses(src: string): { knowledge: string; setBonus: SetBonusBlock[] } {
+  const knowledge = sectionBetweenWiki(src, "知识", "套装组成");
+  const bonusSec = sectionBetweenWiki(src, "套装增益");
+  const blocks: SetBonusBlock[] = [];
+  if (bonusSec) {
+    const parts = bonusSec.split(/^!!!\s+/m).filter((s) => s.trim());
+    for (const part of parts) {
+      const lines = part.trim().split("\n");
+      const pieces = lines[0].trim();
+      blocks.push({ pieces, text: lines.slice(1).join("\n").trim() });
+    }
+  }
+  return { knowledge, setBonus: blocks };
+}
+/** 拼装套装正文：知识(!!) + 套装组成(!! [[物品]] 列表) + 套装增益(!! + !!! 件数) */
+export function serializeItemSet(knowledge: string, components: string[], bonuses: SetBonusBlock[]): string {
+  const sec: string[] = [];
+  if (knowledge.trim()) sec.push("!! 知识\n" + knowledge.trim());
+  const compHtml = components.filter((c) => c.trim()).map((c) => "[[" + c + "]]").join("\n");
+  if (compHtml) sec.push("!! 套装组成\n" + compHtml);
+  const bonusHtml = bonuses
+    .filter((b) => b.text.trim())
+    .map((b) => "!!! " + JSON.stringify(b.pieces.trim()).replace(/"/g, "") + "\n" + b.text.trim());
+  if (bonusHtml.length) sec.push("!! 套装增益\n" + bonusHtml.join("\n\n"));
+  return sec.join("\n\n");
+}
+
+/** 截取 `!! 标题` 到下个 `!! ` 之间的正文（无标题结尾可选） */
+function sectionBetweenWiki(src: string, startTitle: string, endTitle?: string): string {
+  const re = new RegExp("\\n!! " + startTitle + "\\n(.*?)(?:\\n!! |$)", "s");
+  const m = src.match(re);
+  if (!m) return "";
+  let body = m[1];
+  if (endTitle) {
+    const idx = body.search(new RegExp("\\n!! " + endTitle + "\\n"));
+    if (idx >= 0) body = body.slice(0, idx);
+  }
+  return body.trim();
+}
+
+// —— 专长预设与前提候选（统计驱动）——
+export const FEAT_PRESETS: PowerPreset[] = [
+  {
+    name: "检定加值型",
+    group: "增益型",
+    desc: "你在「技能」检定上获得+N（技能/数值填空）",
+    blocks: [{ label: "增益", text: "你在「运动」检定上获得+2。", indent: 0 }],
+  },
+  {
+    name: "引导神力型",
+    group: "增益型",
+    desc: "获得引导神力威能",
+    blocks: [{ label: "增益", text: "你获得引导神力威能「{{威能}}」。" }],
+  },
+  {
+    name: "回气增强型",
+    group: "增益型",
+    desc: "当你使用你的回气时…",
+    blocks: [{ label: "增益", text: "当你使用你的回气时，在你下一次回合开始前，你在所有防御上获得+2加值。" }],
+  },
+  {
+    name: "遭遇限制型",
+    group: "增益型",
+    desc: "每遭遇一次的限定效果",
+    blocks: [{ label: "增益", text: "每遭遇一次，当一个敌人攻击你时，你可以用一次自由动作对它做一次随模仿的攻击。" }],
+  },
+  {
+    name: "重伤触发型",
+    group: "增益型",
+    desc: "当你重伤时触发的增益",
+    blocks: [{ label: "增益", text: "当你重伤时，你获得5点临时生命值。" }],
+  },
+  {
+    name: "威能授予型",
+    group: "增益型",
+    desc: "将一个N级或更低的\\胜利类别\\威能作为遭遇威能",
+    blocks: [{ label: "增益", text: "你可以将一个1级或更低的「武器」威能作为遭遇威能使用。" }],
+  },
+];
+/** 前提句式候选：职业式/等级式/受训式（官方 3202 条统计）
+ *  value 为整句模板，"$" 表示可填充槽位。 */
+export const FEAT_PREREQ_CANDIDATES: string[] = [
+  "职业：战士",
+  "职业：游荡者",
+  "职业：诗人",
+  "角色等级：5级",
+  "5级，增援 3 个",
+  "技能受训：隐秘",
+  "智力 15",
+  "反击者",
+];
+
 const COMMON: SheetField[] = [
   { key: "name", label: "名称", type: "text", placeholder: "必填", required: true },
   { key: "nameEn", label: "英文名", type: "text", placeholder: "可选" },
@@ -708,7 +1099,8 @@ export const CATEGORY_FIELDS: Record<string, SheetField[]> = {
     { key: "cost", label: "价格", type: "text" },
     { key: "weight", label: "重量", type: "text" },
     { key: "critical", label: "重击", type: "text" },
-    { key: "power", label: "威能", type: "longtext" },
+    { key: "itemSuitable", label: "适合", type: "multichips", options: ITEM_SUITABLE, delimiter: "，", placeholder: "如：法杖，权杖（多选，以顿号分隔）" },
+    { key: "powerSections", label: "物品威能段", type: "longtext" },
   ],
   feat: [
     { key: "tierZh", label: "层级", type: "select", options: ["英雄", "典范", "天命", "史诗"] },
@@ -716,6 +1108,7 @@ export const CATEGORY_FIELDS: Record<string, SheetField[]> = {
     { key: "prerequisite", label: "前提", type: "longtext", placeholder: "如：职业：战士" },
     { key: "benefit", label: "增益", type: "longtext", placeholder: "该专长带来的效果" },
     { key: "special", label: "特殊", type: "longtext", placeholder: "可选，如特殊说明/可多次选择" },
+    { key: "featRows", label: "关联威能等级表", type: "longtext", placeholder: "流派专长的等级×关联威能列表" },
   ],
   race: [
     { key: "size", label: "体型", type: "select", options: RACIAL_SIZES },
@@ -740,11 +1133,20 @@ export const CATEGORY_FIELDS: Record<string, SheetField[]> = {
   ],
   "item-set": [
     { key: "tier", label: "层级", type: "select", options: TIERS },
+    { key: "setKnowledge", label: "知识（背景 lore）", type: "longtext", placeholder: "套装背景故事/传说段落（可折叠显示）" },
+    { key: "setComponents", label: "套装组成", type: "multichips", delimiter: "，", placeholder: "组成本文物的物品名（多选，以顿号分隔；保存时生成 [[物品]] 链接列表）" },
+    { key: "setBonuses", label: "套装增益", type: "longtext" },
   ],
   ritual: [
     { key: "ritualLevel", label: "仪式等级", type: "text" },
     { key: "ritualCategory", label: "仪式类别", type: "select", options: RITUAL_CATEGORIES },
     { key: "keySkill", label: "关键技能", type: "multichips", options: SKILLS },
+    { key: "time", label: "时间", type: "text", placeholder: "如：10分钟" },
+    { key: "cost", label: "材料花费", type: "text", placeholder: "如：25gp，和价值20gp的器材" },
+    { key: "marketPrice", label: "市场价格", type: "text", placeholder: "如：125gp" },
+  ],
+  dictionary: [
+    { key: "termsPairs", label: "词条对", type: "longtext", placeholder: "英文: 中文（每行一对）" },
   ],
 };
 
@@ -807,8 +1209,9 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
   equipment: [
     { title: "基本信息 · 装备", keys: ["name", "nameEn", "source", "itemCategory", "rarity", "itemLevel"], core: true },
     { title: "统计数据", keys: ["group", "enh", "cost", "weight", "critical"], core: true },
+    { title: "物品威能", keys: ["powerSections"], core: true },
+    { title: "适合", keys: ["itemSuitable"] },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
-    { title: "物品威能", keys: ["power"] },
     TAGS_SECTION,
   ],
   power: [
@@ -826,6 +1229,7 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
     { title: "增益", keys: ["benefit"], core: true },
     { title: "前提", keys: ["prerequisite"] },
     { title: "特殊", keys: ["special"] },
+    { title: "关联威能等级表", keys: ["featRows"] },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
@@ -856,12 +1260,21 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
   "item-set": [
     { title: "基本信息 · 物品套装", keys: ["name", "nameEn", "source"], core: true },
     { title: "套装信息", keys: ["tier"], core: true },
+    { title: "知识（lore）", keys: ["setKnowledge"], core: true },
+    { title: "套装组成", keys: ["setComponents"], core: true },
+    { title: "套装增益", keys: ["setBonuses"], core: true },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
   ritual: [
     { title: "基本信息 · 仪式", keys: ["name", "nameEn", "source"], core: true },
-    { title: "仪式信息", keys: ["ritualLevel", "ritualCategory", "keySkill"], core: true },
+    { title: "仪式信息", keys: ["ritualLevel", "ritualCategory", "keySkill", "time", "cost", "marketPrice"], core: true },
+    { title: "外观", keys: ["cardColor", "cardIcon"] },
+    TAGS_SECTION,
+  ],
+  dictionary: [
+    { title: "基本信息 · 译名字典", keys: ["name", "nameEn", "source"], core: true },
+    { title: "词条对", keys: ["termsPairs"], core: true },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
@@ -875,7 +1288,6 @@ export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
   bloodline: genericSections("血统"),
   creature: genericSections("生物"),
   reference: genericSections("术语"),
-  dictionary: genericSections("译名字典"),
 };
 
 // 纯通用类型的分区：仅「基本信息 + 外观 + 标签」，正文独立成区（无专属标量字段）。
@@ -889,7 +1301,7 @@ function genericSections(label: string): HomebrewSection[] {
 
 /** 在编辑表单中「不显示正文(sourceText)区」的分类：只在卡片真正渲染 details/sourceText 的类型出现正文区。
  *  feat：卡片不渲染 details；power：详情完全由「标签块」派生，不再提供自由 Markdown 正文。 */
-export const WITHOUT_BODY: ReadonlySet<string> = new Set(["feat", "power"]);
+export const WITHOUT_BODY: ReadonlySet<string> = new Set(["feat", "power", "dictionary"]);
 
 export function fieldsFor(cat: string): SheetField[] {
   return [...COMMON, ...(CATEGORY_FIELDS[cat] ?? []), ...APPEARANCE_FIELDS];
@@ -918,14 +1330,16 @@ export function buildEntry(
   }
 
   const extras: Record<string, string> = {};
+  // 结构化编辑的 JSON form 键（存编辑态，不落库为标量；由下方分类分支派生成 entry 字段）
+  const STRUCTURED_KEYS = new Set(["powerSections", "featRows", "setBonuses", "termsPairs"]);
   for (const f of fieldsFor(cat)) {
     const v = (form[f.key] ?? "").trim();
-    if (f.type === "tags" || f.key === "name" || f.key === "nameEn" || f.key === "category" || f.key === "source" || f.key === "sourceText" || f.key === "powerBlocks" || !v) continue;
+    if (f.type === "tags" || f.key === "name" || f.key === "nameEn" || f.key === "category" || f.key === "source" || f.key === "sourceText" || f.key === "powerBlocks" || STRUCTURED_KEYS.has(f.key) || !v) continue;
     extras[f.key] = v;
   }
   for (const f of CATEGORY_FIELDS[cat] ?? []) {
     const v = (form[f.key] ?? "").trim();
-    if (v && f.key !== "powerBlocks") extras[f.key] = v;
+    if (v && f.key !== "powerBlocks" && !STRUCTURED_KEYS.has(f.key)) extras[f.key] = v;
   }
 
   // 威能：再生频率 → usage 代码；威能类型 → powerKind（两个正交维度）
@@ -936,7 +1350,31 @@ export function buildEntry(
     if (type) extras.powerKind = type.powerKind;
   }
 
-  const sourceText = form.sourceText ?? "";
+  let sourceText = form.sourceText ?? "";
+  // —— 各类型结构化派生 ——
+  // 装备：物品威能段 → entry.power（官方 bg-item 格式），供 ItemCard 专属威能区块渲染
+  if (cat === "equipment") {
+    const secs = parseItemPowerSections(form.powerSections);
+    if (secs.length) extras.power = serializeItemPowerSections(secs);
+  }
+  // 专长：关联威能等级表 → 拼到 benefit 末尾（官方 <table>）
+  if (cat === "feat") {
+    const rows = parseFeatTable(form.featRows) ?? [];
+    if (rows.length && form.benefit) extras.benefit = form.benefit.trim() + "\n" + serializeFeatTable(rows);
+  }
+  // 物品套装：知识/组成/增益 → sourceText（wiki 章节）
+  if (cat === "item-set") {
+    const components = (form.setComponents ?? "").split(/[，,、]/).map((s) => s.trim()).filter(Boolean);
+    const bonuses = parseSetBonuses(form.setBonuses ?? "");
+    sourceText = serializeItemSet(form.setKnowledge ?? "", components, bonuses.setBonus);
+  }
+  // 译名字典：词条对 → sourceText / terms
+  if (cat === "dictionary") {
+    const pairs = parseTerms(form.termsPairs ?? "");
+    sourceText = serializeTerms(pairs);
+    if (pairs.length) extras.terms = pairs.map(([e, z]) => `${e}: ${z}`).join("\n");
+  }
+
   const bodyFormat: "md" | "wiki" = form.bodyFormat === "wiki" ? "wiki" : "md";
   // 威能结构化「标签块」：非空时渲染为官方一致的 <table class=details>，优先于 Markdown 正文。
   const powerBlocks = cat === "power" ? parsePowerBlocks(form.powerBlocks) : null;
@@ -945,6 +1383,18 @@ export function buildEntry(
   // 其余无正文区的类型（如专长，卡片不渲染 details）不派生 details，避免保存冗余数据。
   if (cat === "power") {
     if (powerBlocks && powerBlocks.length) details = serializePowerBlocks(powerBlocks);
+  } else if (cat === "ritual") {
+    // 仪式：头部六行(div.ritualinfo) + 效果正文（对齐官方仪式卡布局）
+    const header = serializeRitualInfo({
+      ritualLevel: form.ritualLevel ?? "",
+      ritualCategory: form.ritualCategory ?? "",
+      time: form.time ?? "",
+      cost: form.cost ?? "",
+      marketPrice: form.marketPrice ?? "",
+      keySkill: form.keySkill ?? "",
+    });
+    const effect = sourceText ? renderBody(sourceText, bodyFormat, extras) : "";
+    details = header || effect ? (header ? header + (effect ? "\n" + effect : "") : effect) : undefined;
   } else if (!WITHOUT_BODY.has(cat)) {
     if (powerBlocks && powerBlocks.length) {
       details = serializePowerBlocks(powerBlocks);
@@ -984,6 +1434,41 @@ export function draftToForm(entry: Entry): Record<string, string> {
   for (const f of CATEGORY_FIELDS[entry.category] ?? []) {
     const v = (entry as Record<string, unknown>)[f.key];
     form[f.key] = typeof v === "string" ? v : "";
+  }
+  // —— 结构化编辑回填（各类型）——
+  // 装备：entry.power / details 中的 bg-item 威能段 → powerSections
+  if (entry.category === "equipment") {
+    const secs = parseItemPowerSectionsHtml((entry.power as string) || (entry.details as string) || "");
+    if (secs.length) form.powerSections = JSON.stringify(secs);
+  }
+  // 专长：benefit 内嵌的等级×威能表 → featRows
+  if (entry.category === "feat") {
+    const rows = parseFeatTable((entry as Record<string, unknown>).benefit as string);
+    if (rows?.length) form.featRows = JSON.stringify(rows);
+  }
+  // 物品套装：sourceText 的知识/组成/增益三节 → 三个字段
+  if (entry.category === "item-set") {
+    const parsed = parseSetBonuses(entry.sourceText ?? "");
+    form.setKnowledge = parsed.knowledge;
+    form.setBonuses = JSON.stringify(parsed.setBonus);
+    form.setComponents = extractLinks(sectionBetweenWiki(entry.sourceText ?? "", "套装组成", "套装增益")).join("，");
+  }
+  // 译名字典：terms/sourceText 的「英: 中」行 → termsPairs
+  if (entry.category === "dictionary") {
+    const src = (typeof entry.terms === "object" && entry.terms ? Object.entries(entry.terms).map(([e, z]) => `${e}: ${z}`).join("\n") : "") || entry.sourceText || "";
+    form.termsPairs = parseTerms(src).map(([e, z]) => `${e}: ${z}`).join("\n");
+  }
+  // 仪式：从 details/sourceText 的 ritualinfo 反推缺失的头部字段（time/cost/marketPrice）
+  if (entry.category === "ritual") {
+    if (!form.time || !form.cost || !form.marketPrice) {
+      const h = parseRitualInfo(
+        ((entry as Record<string, unknown>).details as string) || entry.sourceText || "",
+        { ritualLevel: form.ritualLevel, ritualCategory: form.ritualCategory, time: form.time, cost: form.cost, marketPrice: form.marketPrice, keySkill: String((form.keySkill ?? "")) },
+      );
+      if (h.time) form.time = h.time;
+      if (h.cost) form.cost = h.cost;
+      if (h.marketPrice) form.marketPrice = h.marketPrice;
+    }
   }
   // 威能「标签块」回填：以数组形式存入表单（编辑器按 PowerBlock[] 使用）
   if (entry.category === "power" && Array.isArray(entry.powerBlocks) && entry.powerBlocks.length) {
