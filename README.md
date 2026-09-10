@@ -1,10 +1,8 @@
 # 4E NEXT
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL 2.0-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
-
 面向 D&D 4E 中文社区，基于4e Wiki 数据的网页端车卡器。
 
-使用完全的 **Google Material Design 3** 设计风格开发。
+使用完全的 **Google Material Design** 设计风格开发。
 
 ## 快速开始
 
@@ -30,6 +28,8 @@
 
 ## 开源许可
 
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL 2.0-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
+
 4E NEXT遵循Mozilla Public License Version 2.0，条款与效力请参阅LICENSE文件。
 
 ## 致谢
@@ -45,3 +45,5 @@
 《龙与地下城》（DUNGEONS & DRAGONS）、DUNGEONS & DRAGONS 兼容性标志、D&D、《玩家手册》（PLAYER’S HANDBOOK）、《地下城主指南》（DUNGEON MASTER’S GUIDE）和《怪物图鉴》（MONSTER MANUAL）是 Wizards of the Coast, Inc. 在美国和其他国家的商标。
 
 《龙与地下城》第 4 版《玩家手册》，由 Rob Heinsoo、Andy Collins 和 James Wyatt 撰写；《地下城主指南》，由 James Wyatt 撰写；《怪物图鉴》，由 Mike Mearls、Stephen Schubert 和 James Wyatt 撰写 © 2008 Wizards of the Coast, Inc. 保留所有权利。
+
+4E NEXT Logo基于CC-BY-NC4.0协议提供，作者@KitaAkeru
