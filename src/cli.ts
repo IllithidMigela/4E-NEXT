@@ -7,7 +7,7 @@ import { runClassify } from "./etl/classify.js";
 import { runNormalize } from "./etl/normalize.js";
 import { runIndex } from "./etl/index.js";
 import { runAudit } from "./etl/audit.js";
-import { runRules } from "./etl/rules.js";
+import { findRulesSource, runRules } from "./etl/rules.js";
 
 function findSourceHtml(): string | undefined {
   if (!existsSync(DATA_DIR)) return undefined;
@@ -115,6 +115,13 @@ async function cmdIndex(): Promise<void> {
 }
 
 async function cmdRules(): Promise<void> {
+  // 万律书源文件（单文件 TW5）不随仓库分发：没放源文件时保留已入库的 out/rules/rules.json，
+  // 仅提示跳过，避免 pnpm all 整体失败。
+  const src = findRulesSource();
+  if (!src) {
+    console.warn("[rules] 未找到万律书源文件（4e-rules.html），跳过词条化；沿用已入库的 out/rules/rules.json");
+    return;
+  }
   const r = runRules();
   console.log("[rules] 源文件: " + r.source);
   console.log("[rules] 词条 " + r.total + " 条（章节 " + r.chapters + " / 术语 " + r.terms + " / 问答 " + r.faq + "）");

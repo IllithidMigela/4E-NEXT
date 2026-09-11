@@ -4,6 +4,16 @@
    取色一律走 MD3 语义色（--md-sys-color-*），字重走全局 --fw-*。
    ============================================================================ */
 
+/* 规则页栏位：单栏时上下堆叠，双栏时「万律速查」独占一栏、规则表排入另一栏 */
+.learn-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* 双栏下沿用全局 .layout-double 的紧凑版式，并覆盖 .learn-view 的纵向 flex */
+.learn-view.layout-double {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
 .rules-quick { display: flex; flex-direction: column; gap: 10px; }
 .rules-quick-bar { display: flex; align-items: center; gap: 8px; }
 .rules-quick-field { flex: 1; min-width: 0; }

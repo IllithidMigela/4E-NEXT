@@ -359,7 +359,7 @@ function Shell() {
           {view === "draw" && <DrawView char={char} setChar={setChar} onExit={() => setView("sheet")} onFinish={finishDraw} />}
           {view === "overview" && <OverviewView layout={layout} char={char} setChar={setChar} />}
           {view === "search" && <SearchView />}
-          {view === "learn" && <LearnView />}
+          {view === "learn" && <LearnView layout={layout} />}
           {view === "homebrew" && <HomebrewView layout={layout} />}
           {view === "settings" && <SettingsView layout={layout} />}
         </div>

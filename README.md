@@ -30,7 +30,7 @@
 
 ```bash
 pnpm all      # 主维基：data/4e Wiki.htm → out/canonical、out/categories、out/index
-pnpm rules    # 万律书：4e-rules.html → out/rules/rules.json
+pnpm rules    # 万律书：4e-rules.html（需自行放入仓库根目录，仓库不分发）→ out/rules/rules.json
 ```
 
 `web` 构建时由 `web/scripts/copy-data.mjs` 把 `out/` 的产物同步到 `web/public/data/`。
