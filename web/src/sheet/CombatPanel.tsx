@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { createPortal } from "react-dom";
 import type { AbilityKey, AttackRowData, Character, DamageRowData } from "./character";
-import { ABILITY_LABELS, ABILITY_KEYS, emptyCombatMods } from "./character";
+import { ABILITY_LABELS, ABILITY_KEYS, customSum, emptyCombatMods, emptyCustomBonuses, type CustomBonuses, type CustomEntry } from "./character";
 import type { CombatSource } from "./combat-source";
 import { Menu, MenuItem, Divider } from "../components/md";
+import { CustomBonusEditor } from "../components/CustomBonusEditor";
 
 const ABILITY_OPTIONS = ABILITY_KEYS.map((k) => ({ key: k, zh: ABILITY_LABELS[k].zh }));
 
@@ -26,8 +28,148 @@ function parseNum(v: string, min = -20, max = 50): number {
 
 // 攻击面板列头（与 CombatMods.attacks 一一对应）
 const ATTACK_HEAD = ["名称", "总加值", "½等级", "属性调整值", "职业加值", "熟练加值", "专长加值", "增强加值", "其他"] as const;
-// 伤害面板列头（与 CombatMods.damages 一一对应）
-const DAMAGE_HEAD = ["名称", "总加值", "伤害骰", "属性调整值", "专长加值", "增强加值", "其他1", "其他2"] as const;
+// 伤害面板列头（与 CombatMods.damages 一一对应；原「其他1/其他2」合并为详情右栏自定义列表，合计显示为「其他」）
+const DAMAGE_HEAD = ["名称", "总加值", "伤害骰", "属性调整值", "专长加值", "增强加值", "其他"] as const;
+
+// 攻击详情弹窗：双栏结构——左栏逐行展示每对攻击的加值构成（½等级 + 属性调整 + 职业/熟练/专长/增强 + 自定义条目），
+// 右栏是「自定义」编辑器（条目合计即面板「其他」），风格仿照「抵御」详情弹窗
+function AttackDetailDialog(props: {
+  attacks: AttackRowData[];
+  mods: Record<AbilityKey, number>;
+  halfLevel: number;
+  enhanceOf: (slot: number) => number;
+  profOf: (slot: number, override: boolean) => number;
+  custom: CustomEntry[][];
+  onChangeCustom: (i: number, entries: CustomEntry[]) => void;
+  onClose: () => void;
+}) {
+  const { attacks, mods, halfLevel, enhanceOf, profOf, custom, onChangeCustom, onClose } = props;
+  type Row = { label: string; value: string; auto?: boolean };
+  const blocks: { label: string; value: number; rows: Row[] }[] = attacks.map((r, i) => {
+    const ability = r.ability;
+    const prof = profOf((r.profSlot ?? 0) >= 0 ? r.profSlot! : 0, !!r.profOverride);
+    const enhance = enhanceOf(r.enhanceSlot ?? 0);
+    const entries = custom[i] ?? [];
+    const otherSum = customSum(entries);
+    const rows: Row[] = [];
+    if (halfLevel !== 0) rows.push({ label: "½等级", value: "+" + halfLevel, auto: true });
+    if (mods[ability] !== 0) rows.push({ label: "属性调整值（" + ABILITY_LABELS[ability].zh + "）", value: fmtMod(mods[ability]), auto: true });
+    if (r.classBonus !== 0) rows.push({ label: "职业加值", value: fmtMod(r.classBonus) });
+    if (prof !== 0) rows.push({ label: "熟练加值", value: fmtMod(prof), auto: true });
+    if (r.feat !== 0) rows.push({ label: "专长加值", value: fmtMod(r.feat) });
+    if (enhance !== 0) rows.push({ label: "增强加值", value: fmtMod(enhance), auto: true });
+    for (const e of entries) if (e.value !== 0) rows.push({ label: e.label || "其他", value: fmtMod(e.value) });
+    const total = halfLevel + mods[ability] + r.classBonus + prof + r.feat + enhance + otherSum;
+    return { label: attacks[i]?.label || "攻击 " + (i + 1), value: total, rows };
+  });
+  return createPortal(
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-head">
+          <span className="picker-title">攻击详情</span>
+          <div className="picker-head-btns">
+            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
+          </div>
+        </div>
+        <div className="def-detail-cols">
+          {attacks.map((_, i) => {
+            const b = blocks[i];
+            return (
+              <div key={i} className="def-detail-col">
+                <div className="def-detail-block">
+                  <div className="def-detail-title">{b.label} <span className="def-detail-total">{fmtMod(b.value)}</span></div>
+                  <div className="def-detail-rows">
+                    {b.rows.map((row, j) => (
+                      <div key={j} className={"def-detail-row" + (row.auto ? " auto" : "")}>
+                        <span className="ddr-label">{row.label}</span>
+                        <span className="ddr-value">{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <CustomBonusEditor
+                  title="其他"
+                  entries={custom[i] ?? []}
+                  onChange={(entries) => onChangeCustom(i, entries)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// 伤害详情弹窗：双栏结构——左栏逐行展示每对伤害的加值构成（伤害骰 + 属性调整 + 专长/增强 + 自定义条目），
+// 右栏是「自定义」编辑器（条目合计即面板「其他」），风格仿照「抵御」详情弹窗
+function DamageDetailDialog(props: {
+  damages: DamageRowData[];
+  labels: (string | undefined)[];
+  mods: Record<AbilityKey, number>;
+  diceOf: (slot: number) => string;
+  enhanceOf: (slot: number) => number;
+  custom: CustomEntry[][];
+  onChangeCustom: (i: number, entries: CustomEntry[]) => void;
+  onClose: () => void;
+}) {
+  const { damages, labels, mods, diceOf, enhanceOf, custom, onChangeCustom, onClose } = props;
+  type Row = { label: string; value: string; auto?: boolean };
+  const blocks: { label: string; value: number; rows: Row[] }[] = damages.map((r, i) => {
+    const ability = r.ability;
+    const enhance = enhanceOf(r.enhanceSlot ?? 0);
+    const dice = diceOf(r.enhanceSlot ?? 0);
+    const entries = custom[i] ?? [];
+    const otherSum = customSum(entries);
+    const rows: Row[] = [];
+    if (dice) rows.push({ label: "伤害骰", value: dice, auto: true });
+    if (mods[ability] !== 0) rows.push({ label: "属性调整值（" + ABILITY_LABELS[ability].zh + "）", value: fmtMod(mods[ability]), auto: true });
+    if (r.feat !== 0) rows.push({ label: "专长加值", value: fmtMod(r.feat) });
+    if (enhance !== 0) rows.push({ label: "增强加值", value: fmtMod(enhance), auto: true });
+    for (const e of entries) if (e.value !== 0) rows.push({ label: e.label || "其他", value: fmtMod(e.value) });
+    const total = mods[ability] + r.feat + enhance + otherSum;
+    return { label: labels[i] || "攻击 " + (i + 1), value: total, rows };
+  });
+  return createPortal(
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-head">
+          <span className="picker-title">伤害详情</span>
+          <div className="picker-head-btns">
+            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
+          </div>
+        </div>
+        <div className="def-detail-cols">
+          {damages.map((_, i) => {
+            const b = blocks[i];
+            return (
+              <div key={i} className="def-detail-col">
+                <div className="def-detail-block">
+                  <div className="def-detail-title">{b.label} <span className="def-detail-total">{fmtMod(b.value)}</span></div>
+                  <div className="def-detail-rows">
+                    {b.rows.map((row, j) => (
+                      <div key={j} className={"def-detail-row" + (row.auto ? " auto" : "")}>
+                        <span className="ddr-label">{row.label}</span>
+                        <span className="ddr-value">{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <CustomBonusEditor
+                  title="其他"
+                  entries={custom[i] ?? []}
+                  onChange={(entries) => onChangeCustom(i, entries)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 export default function CombatPanels(props: {
   char: Character;
@@ -58,6 +200,9 @@ export default function CombatPanels(props: {
   // 是否显示骰子指令（攻击/伤害各自独立切换）
   const [showDiceAtk, setShowDiceAtk] = useState(false);
   const [showDiceDmg, setShowDiceDmg] = useState(false);
+  // 详情弹窗开关（攻击/伤害各自独立）
+  const [atkDetailOpen, setAtkDetailOpen] = useState(false);
+  const [dmgDetailOpen, setDmgDetailOpen] = useState(false);
   // 居中提示（复制成功后弹出）
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,6 +245,14 @@ export default function CombatPanels(props: {
       return { ...p, combatMods: { ...c, damages: rows } };
     });
   }
+  // 详情弹窗「自定义」列写入：attack/damage 都是「行 → 条目列表」
+  function setCustom(fn: (c: CustomBonuses) => CustomBonuses) {
+    setChar((p) => ({ ...p, customBonuses: fn(p.customBonuses ?? emptyCustomBonuses()) }));
+  }
+  const setAttackCustom = (i: number, entries: CustomEntry[]) =>
+    setCustom((c) => ({ ...c, attack: c.attack.map((row, idx) => (idx === i ? entries : row)) }));
+  const setDamageCustom = (i: number, entries: CustomEntry[]) =>
+    setCustom((c) => ({ ...c, damage: c.damage.map((row, idx) => (idx === i ? entries : row)) }));
   // 攻击与伤害成对增减：一次操作同时改两张表，保证「第 N 行攻击」永远对应「第 N 行伤害」
   function addPair() {
     setChar((p) => {
@@ -220,14 +373,12 @@ export default function CombatPanels(props: {
     );
   };
 
-  // 数值单元格：编辑模式输入框，渲染模式格式化显示
-  const numCell = (v: number, onChange: (n: number) => void, key: string) => (
+  // 「其他」单元格：只读显示详情右栏自定义列合计，点击展开详情弹窗编辑
+  const otherCell = (v: number, onClick: () => void, key: string) => (
     <div className="ct-cell" key={key}>
-      {mode === "edit" ? (
-        <input type="number" min={-20} max={50} value={v} onChange={(e) => onChange(parseNum(e.target.value))} />
-      ) : (
-        <span className="ct-auto">{fmtMod(v)}</span>
-      )}
+      <button type="button" className="ct-other-link" onClick={onClick} title="点击展开详情，在右栏编辑自定义加值">
+        其他 {fmtMod(v)}
+      </button>
     </div>
   );
 
@@ -294,6 +445,7 @@ export default function CombatPanels(props: {
               <button type="button" className="sg-step" title="新增一对（攻击与伤害同时增加）" disabled={attacks.length >= MAX_ROWS} onClick={addPair}>+</button>
             </span>
           )}
+          <button type="button" className="def-detail-btn" onClick={() => setAtkDetailOpen(true)} title="查看每对攻击加值的构成">查看详情</button>
           <button type="button" className={"mode-chip" + (showDiceAtk ? " active" : "")} onClick={() => setShowDiceAtk((v) => !v)} title="在每个栏位下方显示可复制的骰子指令">
             <span className="material-symbols-outlined mode-chip-ic">casino</span>
             显示骰子指令
@@ -304,7 +456,8 @@ export default function CombatPanels(props: {
           {attacks.map((row, i) => {
             const enhance = enhanceOf(row.enhanceSlot ?? 0);
             const prof = profOf((row.profSlot ?? 0) >= 0 ? row.profSlot! : 0, !!row.profOverride);
-            const total = halfLevel + mods[row.ability] + row.classBonus + prof + row.feat + enhance + row.other;
+            const otherSum = customSum(char.customBonuses?.attack?.[i]);
+            const total = halfLevel + mods[row.ability] + row.classBonus + prof + row.feat + enhance + otherSum;
             return (
               <Fragment key={i}>
                 <div className="ct-row">
@@ -316,7 +469,7 @@ export default function CombatPanels(props: {
                   {profCell(row.profSlot, row.profOverride, (s) => setAttack(i, { profSlot: s }), (v) => setAttack(i, { profOverride: v }), `ct-pr-a-${i}`)}
                   {sourceCell(row.feat, (n) => setAttack(i, { feat: n }), featAttackSources, `ct-fe-a-${i}`, "点击选择已选专长中提及攻击骰的加值来源")}
                   {enhanceCell(row.enhanceSlot, (s) => setAttack(i, { enhanceSlot: s }), `ct-en-a-${i}`)}
-                  {numCell(row.other, (n) => setAttack(i, { other: n }), "other")}
+                  {otherCell(otherSum, () => setAtkDetailOpen(true), "other")}
                 </div>
                 {showDiceAtk && (
                   <div className="ct-dice-row" onClick={() => copyText(`.r d20${fmtMod(total)}`)} title="点击复制指令">
@@ -339,6 +492,7 @@ export default function CombatPanels(props: {
               <button type="button" className="sg-step" title="新增一对（攻击与伤害同时增加）" disabled={damages.length >= MAX_ROWS} onClick={addPair}>+</button>
             </span>
           )}
+          <button type="button" className="def-detail-btn" onClick={() => setDmgDetailOpen(true)} title="查看每对伤害加值的构成">查看详情</button>
           <button type="button" className={"mode-chip" + (showDiceDmg ? " active" : "")} onClick={() => setShowDiceDmg((v) => !v)} title="在每个栏位下方显示可复制的骰子指令">
             <span className="material-symbols-outlined mode-chip-ic">casino</span>
             显示骰子指令
@@ -348,7 +502,8 @@ export default function CombatPanels(props: {
           <div className="ct-head">{DAMAGE_HEAD.map((h) => <span key={h}>{h}</span>)}</div>
           {damages.map((row, i) => {
             const enhance = enhanceOf(row.enhanceSlot ?? 0);
-            const total = mods[row.ability] + row.feat + enhance + row.otherA + row.otherB;
+            const otherSum = customSum(char.customBonuses?.damage?.[i]);
+            const total = mods[row.ability] + row.feat + enhance + otherSum;
             const dice = diceOf((row.enhanceSlot ?? 0) >= 0 ? row.enhanceSlot! : 0);
             return (
               <Fragment key={i}>
@@ -359,8 +514,7 @@ export default function CombatPanels(props: {
                   {abilityCell(row.ability, (k) => setDamage(i, { ability: k }), `ct-ab-d-${i}`)}
                   {sourceCell(row.feat, (n) => setDamage(i, { feat: n }), featDamageSources, `ct-fe-d-${i}`, "点击选择已选专长中提及伤害骰的加值来源")}
                   {enhanceCell(row.enhanceSlot, (s) => setDamage(i, { enhanceSlot: s }), `ct-en-d-${i}`)}
-                  {numCell(row.otherA, (n) => setDamage(i, { otherA: n }), "otherA")}
-                  {numCell(row.otherB, (n) => setDamage(i, { otherB: n }), "otherB")}
+                  {otherCell(otherSum, () => setDmgDetailOpen(true), "other")}
                 </div>
                 {showDiceDmg && (
                   <div className="ct-dice-row" onClick={() => copyText(`.r ${dice || "?"}${fmtMod(total)}`)} title="点击复制指令">
@@ -379,6 +533,30 @@ export default function CombatPanels(props: {
           <span className="material-symbols-outlined">check_circle</span>
           {toast}
         </div>
+      )}
+      {atkDetailOpen && (
+        <AttackDetailDialog
+          attacks={attacks}
+          mods={mods}
+          halfLevel={halfLevel}
+          enhanceOf={enhanceOf}
+          profOf={profOf}
+          custom={char.customBonuses?.attack ?? []}
+          onChangeCustom={setAttackCustom}
+          onClose={() => setAtkDetailOpen(false)}
+        />
+      )}
+      {dmgDetailOpen && (
+        <DamageDetailDialog
+          damages={damages}
+          labels={attacks.map((r) => r.label)}
+          mods={mods}
+          diceOf={diceOf}
+          enhanceOf={enhanceOf}
+          custom={char.customBonuses?.damage ?? []}
+          onChangeCustom={setDamageCustom}
+          onClose={() => setDmgDetailOpen(false)}
+        />
       )}
     </>
   );
