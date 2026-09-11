@@ -1,10 +1,8 @@
 # 4E NEXT
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL 2.0-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
-
 面向 D&D 4E 中文社区，基于4e Wiki 数据的网页端车卡器。
 
-使用完全的 **Google Material Design 3** 设计风格开发。
+使用完全的 **Google Material Design** 设计风格开发。
 
 ## 快速开始
 
@@ -37,15 +35,10 @@ pnpm rules    # 万律书：4e-rules.html → out/rules/rules.json
 
 `web` 构建时由 `web/scripts/copy-data.mjs` 把 `out/` 的产物同步到 `web/public/data/`。
 
-## 规则页 · 万律速查
-
-规则页（规则表所在页面）内置「万律速查」：输入关键词即可检索《4e Rules Compendium》（万律书）的全部记载——规则条文、术语表与常见问答收录在同一处。
-
-- 词条化来源为仓库根目录的 `4e-rules.html`（单文件 TW5），由 `pnpm rules` 拆分为章节、小节、术语与问答四类词条，产物为 `out/rules/rules.json`（前端按需加载，不影响首屏）。
-- 检索先做「全部关键词都命中」的严格匹配，按标题 › 英文名 › 小节 › 章节 › 标签 › 正文分层打分；严格匹配无结果时自动降级为部分命中，并给出「你是不是想找」的近似标题。
-- 条目正文按万律 wikitext 渲染：标题、`''粗体''`、`* #` 列表、`[[词条链接]]`（可就地跳转）、`{{转写}}`（展开为引文块）、`<div class="sidebar">` 边栏块，以及正文里的原生 HTML 表格；威能/物品/专长/疾病样例词条按字段渲染成数据卡。
 
 ## 开源许可
+
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL 2.0-green.svg?style=flat-square" alt="License: MPL 2.0"/></a>
 
 4E NEXT遵循Mozilla Public License Version 2.0，条款与效力请参阅LICENSE文件。
 
