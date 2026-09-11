@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { writeJson, writeJsonCompact } from "../lib/io.js";
 import { extractStoreTiddlers } from "../lib/store.js";
 import { DATA_DIR, RULES_DIR } from "../lib/paths.js";
@@ -383,11 +383,16 @@ export function buildRules(sourcePath: string): RulesPayload {
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    source: sourcePath,
+    source: repoRelative(sourcePath),
     total: entries.length,
     chapters,
     entries,
   };
+}
+
+/** 溯源信息统一记仓库相对路径（POSIX 风格），不把本机绝对路径写进产物 */
+function repoRelative(p: string): string {
+  return relative(process.cwd(), p).split(sep).join("/");
 }
 
 export function findRulesSource(): string | undefined {
@@ -404,7 +409,7 @@ export function runRules(): RulesSummary {
   writeJsonCompact(output, payload);
   const meta = {
     generatedAt: payload.generatedAt,
-    source: src,
+    source: repoRelative(src),
     schemaVersion: payload.schemaVersion,
     chapters: payload.chapters.length,
     total: payload.total,
@@ -416,7 +421,7 @@ export function runRules(): RulesSummary {
   };
   writeJson(metaPath, meta);
   return {
-    source: src,
+    source: repoRelative(src),
     total: payload.total,
     chapters: payload.chapters.length,
     terms: payload.entries.filter((e) => e.kind === "glossary").length,
