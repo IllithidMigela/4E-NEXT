@@ -14,7 +14,6 @@ import {
   parseRaceDefenses,
   racialBonus,
   parseBuiltinTrainedSkills,
-  customSum,
   ABILITY_LABELS,
   ARMOR_PENALTY_SKILLS,
   SKILL_TABLE,
@@ -225,7 +224,7 @@ export function useGlance(char: Character): GlanceData {
       return override || isProficient(base.weapon, profTokens) ? base.weapon.prof : 0;
     };
 
-    const attacks: GlanceAttackLine[] = char.combatMods.attacks.map((r, i) => {
+    const attacks: GlanceAttackLine[] = char.combatMods.attacks.map((r) => {
       const slot = (r.enhanceSlot ?? 0) >= 0 ? r.enhanceSlot ?? 0 : 0;
       const profSlot = (r.profSlot ?? 0) >= 0 ? r.profSlot ?? 0 : 0;
       return {
@@ -238,7 +237,7 @@ export function useGlance(char: Character): GlanceData {
           profOf(profSlot, !!r.profOverride) +
           r.feat +
           enhanceOf(slot) +
-          customSum(char.customBonuses.attack[i]),
+          r.other,
       };
     });
     const damages: GlanceDamageLine[] = char.combatMods.damages.map((r, i) => {
@@ -247,7 +246,7 @@ export function useGlance(char: Character): GlanceData {
         label: (char.combatMods.attacks[i]?.label ?? "").trim(),
         ability: r.ability,
         dice: diceOf(slot),
-        total: stats.mods[r.ability] + r.feat + enhanceOf(slot) + customSum(char.customBonuses.damage[i]),
+        total: stats.mods[r.ability] + r.feat + enhanceOf(slot) + r.otherA + r.otherB,
       };
     });
 
@@ -273,7 +272,7 @@ export function useGlance(char: Character): GlanceData {
           (trained ? 5 : 0) +
           (skillVersatile && !trained ? 1 : 0) +
           sm.race +
-          customSum(char.customBonuses.skill[s.name]) -
+          sm.other -
           (ARMOR_PENALTY_SKILLS.has(s.name) ? armorPen : 0),
       };
     });

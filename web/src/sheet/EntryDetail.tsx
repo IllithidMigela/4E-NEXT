@@ -5,7 +5,7 @@ import { stripWiki } from "../lib/text";
 const FIELD_LABELS: [string, string][] = [
   ["usageZh", "使用"], ["actionType", "动作"], ["keywords", "关键词"], ["range", "射程"], ["level", "等级"],
   ["powerType", "威能类型"], ["skill", "技能"], ["tierZh", "层级"], ["itemLevel", "物品等级"],
-  ["itemCategory", "类别"], ["rarity", "稀有度"], ["size", "体型"],
+  ["itemCategory", "类别"], ["itemSuitable", "适用"], ["rarity", "稀有度"], ["size", "体型"],
   ["speed", "速度"], ["vision", "视觉"], ["abilityOne", "属性1"], ["abilityTwo", "属性2"],
   ["role", "职位"], ["powerSource", "威能来源"], ["ritualLevel", "仪式等级"], ["keySkill", "关键技能"],
   ["ritualCategory", "仪式类别"], ["prerequisite", "前置"], ["benefit", "收益"],

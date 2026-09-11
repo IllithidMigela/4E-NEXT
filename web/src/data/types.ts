@@ -28,14 +28,6 @@ export interface WikiInfo {
   headings: string[];
 }
 
-// 威能详情「标签块」：与官方威能卡正文的 <th>标签：</th><td>内容</td> 详情表一一对应。
-// indent>0 表示子行（如 次目标/次攻击/次命中），渲染时在标签前补全角缩进。
-export interface PowerBlock {
-  label: string;
-  text: string;
-  indent?: number;
-}
-
 export interface Entry {
   id: string;
   name: string;
@@ -63,8 +55,6 @@ export interface Entry {
   level?: string;
   flavorText?: string;
   details?: string;
-  // 私设威能的「标签块」详情：非空时优先渲染（等价于官方 details 的 <table class=details>）。
-  powerBlocks?: PowerBlock[];
   skill?: string;
   tier?: string;
   tierZh?: string;
@@ -75,14 +65,6 @@ export interface Entry {
   itemSuitable?: string;
   rarity?: string;
   rarityEn?: string;
-  // 私设「装备」统计字段（buildEntry 铺平到顶层）
-  group?: string;
-  enh?: string;
-  enhTarget?: string;
-  cost?: string;
-  weight?: string;
-  critical?: string;
-  power?: string;
   ritualLevel?: string;
   keySkill?: string;
   ritualCategory?: string;
