@@ -447,38 +447,33 @@
 .hb-ed-field-sep { grid-column: 1 / -1; }
 .hb-ed-card md-filled-text-field { width: 100%; }
 
-/* 「附加设置」折叠区：未标 core 的面板统一收进底部，默认收起（主次分明）；
-   标题栏点击展开/收起，内容区用 grid-template-rows 动画平滑开合 */
+/* 文本输入框 placeholder 过长的提示词会因内部 <input> overflow:visible 溢出边框：
+   在宿主元素上裁剪到框内，保持框内显示简洁（不影响浮动 label，其位于宿主范围内） */
+.hb-ed-card md-filled-text-field { overflow: hidden; }
+/* 缩小私设编辑器输入框文字（含 placeholder），让长提示词在框内显示更多 */
+.hb-ed-card md-filled-text-field {
+  --md-filled-text-field-input-text-size: 13px;
+  --md-filled-text-field-label-text-size: 12px;
+}
+
+/* 「附加设置」区：未标 core 的面板统一收进底部。面板永久展开，无折叠开关 */
 .hb-extra-section {
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface-container-low);
   overflow: hidden;
 }
-.hb-extra-header {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 10px 16px; cursor: pointer; text-align: left;
-  border: none; background: var(--md-sys-color-surface-container);
-  font: inherit; color: inherit;
-}
 .hb-extra-title {
   display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 16px; width: 100%;
   font-size: 14px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-surface-container);
 }
 .hb-extra-title .material-symbols-outlined { font-size: 19px; }
-.hb-extra-sub {
-  flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant);
-}
-.hb-extra-arrow { flex: none; font-size: 20px; color: var(--md-sys-color-on-surface-variant); transition: transform .25s ease; }
-.hb-extra-section.open .hb-extra-arrow { transform: rotate(180deg); }
 .hb-extra-body {
-  display: grid; grid-template-rows: 0fr;
-  transition: grid-template-rows .28s ease;
+  display: block;
 }
-.hb-extra-section.open .hb-extra-body { grid-template-rows: 1fr; }
 .hb-extra-body-inner {
-  min-height: 0; overflow: hidden;
   display: flex; flex-direction: column; gap: 12px;
   padding: 12px 16px 16px;
 }
@@ -587,6 +582,22 @@
   margin-right: 2px;
 }
 .hb-pblock-presets .chip { height: 26px; padding: 0 10px; font-size: 12px; }
+/* 专长预设：按钮三栏排布（内容互斥，点击整体替换）；提示文案置于字段标题右栏 */
+.hb-field-feat-benefit { flex-direction: column; gap: 8px; }
+.hb-field-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.hb-field-head .hb-label { margin: 0; }
+.hb-feat-hint { flex: none; }
+.hb-feat-presets .chip {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; text-align: center;
+}
+.hb-feat-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
 .hb-pblock-presets .chip.armed {
   background: var(--md-sys-color-tertiary-container);
   color: var(--md-sys-color-on-tertiary-container);
@@ -675,6 +686,24 @@
 .hb-tmpl-item:hover { background: var(--md-sys-color-surface-container-high); }
 .hb-tmpl-name { font-size: 14px; font-weight: var(--fw-body); color: var(--md-sys-color-on-surface); }
 .hb-tmpl-meta { font-size: 11.5px; color: var(--md-sys-color-on-surface-variant); }
+
+/* 从基础名录选择：分组列表（组标签 + 条目） */
+.hb-gear-group { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+.hb-gear-group + .hb-gear-group { border-top: 1px solid var(--md-sys-color-outline-variant); margin-top: 4px; }
+.hb-gear-group-label {
+  position: sticky; top: 0; z-index: 1; padding: 6px 10px; margin: 0 -10px;
+  font-size: 12px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-surface-container-high);
+}
+/* 基本信息面板标题右侧的「从基础名录选择」按钮 */
+.hb-gear-pick {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 3px 10px;
+  font: inherit; font-size: 12px; color: var(--md-sys-color-primary); cursor: pointer;
+  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 999px;
+  background: var(--md-sys-color-surface-container-low);
+}
+.hb-gear-pick:hover { background: var(--md-sys-color-surface-container-high); }
+.hb-gear-pick .material-symbols-outlined { font-size: 14px; }
 
 /* 正文：Markdown 工具条 + 文本域 */
 .hb-body-field { gap: 8px; }
@@ -938,6 +967,51 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
 .hb-feattable-rows, .hb-terms-rows { display: flex; flex-direction: column; gap: 8px; }
 .hb-feattable-row, .hb-terms-row { display: flex; align-items: end; gap: 8px; }
 .hb-feattable-row > * { flex: 1; }
+
+/* —— 装备·「统计数据」横排表：与右侧 ic-stats 同构（标签窄列左对齐 + 输入右），行间分隔线 —— */
+.hb-stat-table { grid-column: 1 / -1; display: flex; flex-direction: column; }
+.hb-stat-row {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 2px 12px;
+  padding: 7px 0; border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.hb-stat-row:first-child { border-top: 0; }
+.hb-stat-row-label { font-size: 13px; font-weight: var(--fw-heading, 600); color: var(--md-sys-color-on-surface); white-space: nowrap; }
+.hb-stat-row md-filled-text-field { grid-column: 2; width: 100%; overflow: hidden; }
+.hb-stat-row .hint { grid-column: 2; margin: 0; }
+.hb-stat-row .hb-ed-chips { grid-column: 2; align-items: center; }
+.hb-stat-row .hb-ed-chips md-filled-text-field { width: 170px; flex: none; }
+/* —— 装备·选择式引导卡（形态+类别前置）与特性段数徽标 —— */
+.hb-equip-guide {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+}
+.hb-guide-chips { margin: 2px 0; }
+.hb-guide-chips .chip { height: 36px; padding: 0 16px; font-size: 13.5px; }
+.hb-count-badge {
+  align-self: flex-start;
+  font-size: 12px; font-weight: var(--fw-heading, 600); color: var(--md-sys-color-primary);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+  border-radius: 999px; padding: 2px 10px;
+}
+.hb-itempower-sec.collapsed { padding: 8px 12px; }
+/* —— 可选区块（装备 物品威能/正文）：收起态「＋ 添加」细条 + 展开态关闭 chip —— */
+.chip.armed {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+  border-color: transparent;
+  font-weight: var(--fw-subheading, 600);
+}
+.hb-opt-strip {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 14px; font-family: inherit; text-align: left; cursor: pointer;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: transparent; color: var(--md-sys-color-on-surface-variant); font-size: 13px;
+}
+.hb-opt-strip:hover { border-color: var(--md-sys-color-primary); color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container-low); }
+.hb-opt-strip .material-symbols-outlined { font-size: 18px; }
+.hb-opt-strip-hint { margin-left: auto; font-size: 12px; opacity: 0.75; }
+.hb-opt-close { margin-left: 6px; }
 
 /* —— 生物·数据块编辑器（分段：头部 / 加工标签 / 数据行 / 行动段）—— */
 .hb-creature { display: flex; flex-direction: column; gap: 12px; }

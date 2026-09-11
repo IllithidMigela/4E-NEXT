@@ -78,6 +78,7 @@ export interface Entry {
   // 私设「装备」统计字段（buildEntry 铺平到顶层）
   group?: string;
   enh?: string;
+  enhTarget?: string;
   cost?: string;
   weight?: string;
   critical?: string;

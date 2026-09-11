@@ -4,6 +4,7 @@ import { POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import { CATEGORY_LABELS } from "../data/labels";
 import { tokenizeWikiBody, wikiToHtml } from "../lib/wikirender";
 import { SmartHover } from "./SmartHover";
+import { equipFamilyOf, equipmentStatRows, MUNDANE_STAT_ROWS, isMundaneEntry, suitRowFor } from "../lib/homebrewSchema";
 
 // 展开 details 中的 {{!!字段}} 引用、[[链接]] 与宏
 function expandDetails(html: string, entry: Entry): string {
@@ -117,41 +118,59 @@ function PowerCard({ entry, frame, jump }: { entry: Entry; frame?: boolean; jump
   );
 }
 
-// 物品统计数据表行（镜像原版物品卡数据表）：[字段 key, 中文标签]，值来自 buildEntry 铺平到顶层的标量
-type IcStatKey = keyof Pick<Entry, "group" | "enh" | "cost" | "weight" | "critical">;
-const IC_STATS: [IcStatKey, string][] = [
-  ["group", "分类组"], ["enh", "增强"], ["cost", "价格"],
-  ["weight", "重量"], ["critical", "重击"],
-];
+// 物品统计数据表行：由「装备格式族」FAMILY_STAT_ROWS 决定（分类组/增强/价格/重量/重击/甲类·AC），
+// 与左侧「统计数据」面板逐行对齐（单一权威：增强/重击/甲类 不再写入 details，此表为唯一展示位置）。
+type IcStatRow = { key: string; label: string };
 
 function ItemCard({ entry, frame, jump, lookup }: { entry: Entry; frame?: boolean; jump?: (k: string) => void; lookup?: (t: string) => Entry | undefined }) {
-  const anyStats = IC_STATS.some(([k]) => entry[k]);
+  const mundane = isMundaneEntry(entry);
+  const fam = equipFamilyOf(entry.itemCategory);
+  // 基础（非魔法）形态：按类别显示基础专属统计行（擅长/伤害/护甲加值/检定…）；魔法形态走族行
+  const statRows: IcStatRow[] = mundane
+    ? (MUNDANE_STAT_ROWS[entry.itemCategory ?? ""] ?? [])
+    : equipmentStatRows(fam, !!entry.enh);
+  // 「适合」行：武器/法器/护甲 由分类组承载；其余类别（臂部=盾位/奇物=纹身…）有值时显示
+  const suit = mundane ? null : suitRowFor(entry.itemCategory, !!entry.itemSuitable);
+  if (suit) statRows.push(suit);
+  // 增强行单元格 = 加值 + 对象合并展示（如「+3（攻击骰和伤害骰）」；对象单存时原样显示，如官方「AC」）
+  const statCell = (r: IcStatRow): string | undefined => {
+    const v = entry[r.key] as string | undefined;
+    if (r.key !== "enh") return v;
+    const t = entry.enhTarget as string | undefined;
+    if (v && t) return `${v}（${t}）`;
+    return v || t;
+  };
+  const anyStats = statRows.some((r) => statCell(r));
   const cardColor = entry.fields.cardColor || ITEM_COLOR;
+  const meta = mundane
+    ? [entry.itemCategory, entry.subCategory].filter(Boolean).join(" · ")
+    : [entry.itemCategory, entry.rarity, entry.itemLevel ? "L" + entry.itemLevel : ""].filter(Boolean).join(" · ");
   return (
     <div className="item-card" style={{ "--ic": cardColor } as CSSProperties}>
       <div className="ic-head">
         {entry.fields.cardIcon && <span className="material-symbols-outlined ic-icon">{entry.fields.cardIcon}</span>}
         <span className="ic-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
         {entry.origin === "user" && <span className="origin-badge">自制</span>}
-        <span className="ic-meta">{[entry.itemCategory, entry.rarity, entry.itemLevel ? "L" + entry.itemLevel : ""].filter(Boolean).join(" · ")}</span>
+        <span className="ic-meta">{meta}</span>
       </div>
       {frame && !entry.flavorText ? (
-        <Ghost label="风味文本（写入正文）" className="ic-flavor" target="sourceText" jump={jump} />
+        <Ghost label="风味文本（装备数据）" className="ic-flavor" target="flavorText" jump={jump} />
       ) : entry.flavorText ? (
         <div className="ic-flavor">{entry.flavorText}</div>
       ) : null}
       {(anyStats || frame) && (
         <table className="ic-stats">
           <tbody>
-            {IC_STATS.map(([k, label], i) =>
-              frame && !entry[k] ? (
+            {statRows.map((r, i) => {
+              const v = statCell(r);
+              return frame && !v ? (
                 <tr key={i} className="ic-stat-ghost-row">
-                  <td colSpan={2}><Ghost className="ic-stat-ghost" target={k} jump={jump} /></td>
+                  <td colSpan={2}><Ghost className="ic-stat-ghost" target={r.key} jump={jump} /></td>
                 </tr>
-              ) : entry[k] ? (
-                <tr key={i}><th>{label}</th><td>{entry[k]}</td></tr>
-              ) : null
-            )}
+              ) : v ? (
+                <tr key={i}><th>{r.label}</th><td>{v}</td></tr>
+              ) : null;
+            })}
           </tbody>
         </table>
       )}
@@ -159,7 +178,7 @@ function ItemCard({ entry, frame, jump, lookup }: { entry: Entry; frame?: boolea
         <div className="ic-power">
           <div className="ic-power-label">威能</div>
           {frame && !entry.power ? (
-            <Ghost className="ic-power-frame" target="power" jump={jump} />
+            <Ghost className="ic-power-frame" target="powerSections" jump={jump} />
           ) : lookup ? (
             <div className="fc-content"><FeatRichText text={entry.power ?? ""} fields={entry.fields} lookup={lookup} /></div>
           ) : (
@@ -249,6 +268,8 @@ const GENERIC_LABELS: [string, string][] = [
 ];
 
 function GenericCard({ entry, frame, jump }: { entry: Entry; frame?: boolean; jump?: (k: string) => void }) {
+  // 冒险装备(gear)等基础条目可能没有 fields 对象，统一兜底为空
+  const f = entry.fields ?? {};
   const rows: [string, string][] = [];
   for (const [k, label] of GENERIC_LABELS) {
     if (k === "abilityOne") {
@@ -259,10 +280,10 @@ function GenericCard({ entry, frame, jump }: { entry: Entry; frame?: boolean; ju
     if (typeof v === "string" && v) rows.push([label, v]);
   }
   return (
-    <div className="generic-card" style={{ "--gc": (entry.fields.cardColor || "var(--md-sys-color-primary)") } as CSSProperties}>
+    <div className="generic-card" style={{ "--gc": (f.cardColor || "var(--md-sys-color-primary)") } as CSSProperties}>
       <div className="gc-head">
         <span className="gc-left">
-          {entry.fields.cardIcon && <span className="material-symbols-outlined head-icon">{entry.fields.cardIcon}</span>}
+          {f.cardIcon && <span className="material-symbols-outlined head-icon">{f.cardIcon}</span>}
           <span className="gc-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
           {entry.origin === "user" && <span className="origin-badge">自制</span>}
         </span>
@@ -283,7 +304,7 @@ function GenericCard({ entry, frame, jump }: { entry: Entry; frame?: boolean; ju
       ) : entry.sourceText ? (
         // sourceText 含不少原生 HTML（如生物 <div class=creature>…），需经 wikiToHtml 渲染，
         // 直接 stripWiki 会把 HTML 标签当成可见代码显示出来。
-        <div className="pc-details gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(entry.sourceText, entry.fields) }} />
+        <div className="pc-details gen-creature-card" dangerouslySetInnerHTML={{ __html: wikiToHtml(entry.sourceText, f) }} />
       ) : frame ? (
         <Ghost label="正文详情" className="pc-details" target="sourceText" jump={jump} />
       ) : null}

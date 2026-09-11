@@ -1,6 +1,7 @@
 import type { Entry, PowerBlock } from "../data/types";
 import { wikiToHtml } from "./wikirender";
 import { mdToHtml } from "./markdown";
+import { itemLevels, enhancementBonusForLevel } from "./levelprices";
 
 // 私设编辑器：schema 驱动的表单定义。每种分类对应一批可表单化的标量字段。
 // 正文统一走 sourceText，默认 Markdown（bodyFormat="md"）；旧条目的 wikitext 正文（bodyFormat="wiki"）继续按原语法渲染。
@@ -253,12 +254,73 @@ export const RITUAL_CATEGORIES = ["探险", "创造", "防护", "复原", "旅�
 export const TIERS = ["英雄", "典范", "传奇", "团体"];
 // 专长类型（开集，仅建议）
 export const FEAT_TYPES = ["职业专长", "典范专长", "史诗专长", "英雄专长"];
-// 装备「分类组」常见建议（可自由输入，点选一键填入）
-export const GROUPS = [
-  "重剑", "轻刃", "长柄", "矛", "链枷", "锤", "镐", "斧", "弓", "弩", "投掷",
-  "权杖", "法杖", "法球", "圣徽", "魔杖", "灵念器", "图腾", "基手标",
-  "布甲", "皮甲", "链甲", "鳞甲", "板甲", "盾牌",
-];
+// 装备「分类组」常见建议：按类别分组，编辑端随 itemCategory 过滤候选（可自由输入，点选一键填入）
+export const GROUPS_BY_CATEGORY: Record<string, string[]> = {
+  武器: ["重刃", "轻刃", "长武器", "矛", "连枷", "锤", "镐", "斧", "弓", "弩", "投掷"],
+  法器: ["权杖", "法杖", "法珠", "圣徽", "魔杖", "魔典", "图腾", "气印"],
+  护甲: ["布甲", "皮甲", "革甲", "链甲", "鳞甲", "板甲", "盾牌"],
+};
+export const GROUPS = Object.values(GROUPS_BY_CATEGORY).flat();
+
+// —— 装备「适合」（itemSuitable）：官方 99% 魔法装备携带的字段（details 首行 {{!!item-category}}：{{!!item-suitable}}）。
+//    武器/法器/护甲 的适合 token 与分类组(group)同空间（重刃/法杖/鳞甲…）→ 用 group 承载，不另设行；
+//    其余类别的适合词完全不同（臂部=盾位、奇物=纹身、消耗品=药剂…），按下表给候选与统计行（2026-09-10 官方数据勘误新增）。 ——
+export const SUIT_CANDIDATES_BY_CATEGORY: Record<string, string[]> = {
+  臂部: ["任意盾牌", "轻盾", "重盾", "护腕"],
+  奇物: ["基地物品", "纹身", "异能小雕像", "军旗", "荒神碎片", "魔术袋"],
+  消耗品: ["药剂及灵药", "药剂", "试剂", "磨刀石", "毒药"],
+  炼金物品: ["爆弹", "油膏", "药物", "毒药", "其他"],
+  另类奖励: ["妖精魔法赠礼", "元素赠礼", "失落符文", "神圣恩赐", "大师特训"],
+  龙晶强化: ["（武器）"],
+};
+/** 该类别是否需要「适合」统计行：group 之外的分类型适合轴（武器/法器/护甲 用分类组承载，不重复设行）。 */
+export function suitRowFor(cat: string | undefined, hasValue = false): { key: "itemSuitable"; label: string } | null {
+  if (!cat || GROUPS_BY_CATEGORY[cat]) return null;
+  return SUIT_CANDIDATES_BY_CATEGORY[cat] || hasValue ? { key: "itemSuitable", label: "适合" } : null;
+}
+
+// —— 装备·增强算法（2026-09-10）：官方 details 的「增强：」行**永远是对象文本**（加值数字从不出现，由物品等级推导）。
+//    两个正交量分字段承载，消灭旧版「对象文本塞进 enh 加值位」的语义双载（导入官方护甲后 enh="AC" 触发加值误告警）：
+//    · 增强加值 enh（数值）：等级推导 + 用户覆盖（清空 = 跟随等级）
+//    · 增强对象 enhTarget（文本）：类别默认 + 用户覆盖（chips / 自定义输入）
+//    实证（2603 条 增强 行值分布）：法器 509/武器 351/弹药 23 = 攻击骰和伤害骰；护甲 295 = AC；
+//    颈部 147 = 强韧、反射和意志（含 50 条行尾多句号、1 条 +N 前缀的脏数据）；机关附件 混合（攻3/AC3/豁免2）。 ——
+/** 各类别增强对象候选（首项 = 该类别默认）；键集合同时定义「该类别是否有增强」——奇物/头部/戒指等无增强条目的类别不在表内，
+ *  不做加值推导（与官方覆盖一致），用户仍可手动填。 */
+export const ENH_TARGETS_BY_CATEGORY: Record<string, string[]> = {
+  武器: ["攻击骰和伤害骰"],
+  法器: ["攻击骰和伤害骰"],
+  弹药: ["攻击骰和伤害骰"],
+  机关附件: ["攻击骰和伤害骰", "AC", "强韧、反射和意志"],
+  护甲: ["AC"],
+  盾牌: ["AC"],
+  颈部: ["强韧、反射和意志"],
+};
+/** 无类别映射时的通用候选（用户手动为奇物等填增强时的对象选项） */
+export const ENH_TARGETS_COMMON = ["攻击骰和伤害骰", "AC", "强韧、反射和意志"];
+/** 该类别是否默认有增强（推导加值/显示对象 chips 的依据）。 */
+export function enhAppliesTo(cat: string | undefined): boolean {
+  return !!ENH_TARGETS_BY_CATEGORY[cat ?? ""];
+}
+/** 增强对象算法：显式覆盖优先 → 类别默认 → 空。 */
+export function enhTargetOf(cat: string | undefined, explicit?: string): string {
+  const t = (explicit ?? "").trim();
+  if (t) return t;
+  return (ENH_TARGETS_BY_CATEGORY[cat ?? ""] ?? [])[0] ?? "";
+}
+/** 官方「增强：」行值 → 规范对象文本（剥前导 +N 加值与行尾句号；如「+5强韧、反射和意志。」→「强韧、反射和意志」）。 */
+export function normalizeEnhTarget(raw: string): string {
+  return raw.replace(/^\s*\+\s*\d+\s*/, "").replace(/[\s。．.]+$/, "").trim();
+}
+/** 增强加值算法：显式覆盖优先 → 按物品等级推导（多级取并集，如「2 7 12」→「+1/+2/+3」）；无等级无覆盖 → 空。 */
+export function enhBonusOf(itemLevel: string, explicit?: string): string {
+  const t = (explicit ?? "").trim();
+  if (t) return t;
+  const lvls = itemLevels(itemLevel ?? "");
+  if (!lvls.length) return "";
+  const bonuses = [...new Set(lvls.map(enhancementBonusForLevel))];
+  return bonuses.map((b) => "+" + b).join("/");
+}
 // —— 威能再生频率 / 威能类型（两个正交维度，与官方一致）——
 // 再生频率（usage）：官方只有 随意(at-will)/遭遇(encounter)/每日(daily) 三值，决定卡面色与使用次数。
 // 威能类型（powerType/powerKind）：攻击/辅助/特殊，决定卡头文字（如「战士攻击 1」）与人物页归类。
@@ -768,10 +830,18 @@ export function serializeLevelRefSections(sections: LevelTitleRefs[]): string {
 // —— 装备·物品威能段 ——
 // 官方装备威能正文（details 内）形如：<div class="bold bg-item">威能（关键词）✦每日（自由动作）</div>
 // + <div class=text>触发/效果…</div>。这里把它结构化为 段头（关键词/频率/动作）+ 标签块正文。
-export const ITEM_FREQUENCIES = ["每日", "遭遇", "随意", "消耗"] as const;
+export const ITEM_FREQUENCIES = ["每日", "遭遇", "随意", "消耗", "回复力"] as const;
 export type ItemFreq = (typeof ITEM_FREQUENCIES)[number];
 
+/** 官方段头基名族谱（2603 条实测）：威能 2014 / 辅助威能 51 / 攻击威能 20；其余为自定义标题段（固有增益 11 / 神圣展现 11 / 怪癖 11） */
+export const POWER_HEAD_BASES = ["威能", "辅助威能", "攻击威能"] as const;
+export type ItemPowerBase = (typeof POWER_HEAD_BASES)[number] | "自定义";
+
 export interface ItemPowerSection {
+  /** 段头基名（威能/辅助威能/攻击威能；「自定义」= 非威能标题段，用 head 作段头） */
+  base?: ItemPowerBase;
+  /** 自定义标题段的标题（固有增益/神圣展现/怪癖…）；base 非「自定义」时忽略 */
+  head?: string;
   /** 段头「威能（关键词）」中的关键词（可缺省） */
   keywords?: string;
   /** 段头「✦频率」 */
@@ -781,26 +851,319 @@ export interface ItemPowerSection {
   /** 正文：复用 20 标签集 + 自由文本的标签块 */
   blocks: PowerBlock[];
 }
-/** 物品威能段头关键词候选（官方 2603 条装备威能段高频词排序） */
+/** 物品威能段头关键词候选（2026-09-10 勘误：按官方 2603 条段头实测频次排序，替换 10 个零出现词） */
 export const ITEM_POWER_KEYWORDS = [
-  "医疗", "传送", "毒素", "可强化", "幻术", "火焰", "咒法", "区域",
-  "魅惑", "光耀", "恐惧", "心灵", "寒冷", "暗蚀", "闪电", "雷电",
-  "精神", "反射", "甜蜜", "失真", "迅捷", "安抚", "重创", "瓦解",
-];
-/** 装备「适合」候选（官方 2603 条装备统计高频，可自由输入） */
-export const ITEM_SUITABLE = [
-  "法杖", "权杖", "圣徽", "任意", "法珠", "盾牌", "近战", "魔杖", "护腕",
-  "基地物品", "斧", "链枷", "弓", "矛", "匕首", "锤", "重剑", "投掷",
+  "医疗", "传送", "毒素", "可强化", "幻术", "火焰", "咒法", "魅惑",
+  "区域", "光耀", "恐惧", "心灵", "闪电", "雷鸣", "暗蚀", "寒冰",
+  "力场", "强酸", "变形", "奥术",
 ];
 
-/** parsePowerBlockJSON 别名：物品威能段列表以 JSON 字符串存于 form.itemPowerSections */
-export function parseItemPowerSections(json?: string): ItemPowerSection[] {
+/** 装备格式四大类（2026-09-08 官方数据画像）：A 进攻战斗件(武器/法器) / B 护甲 / C 通用配件 / D 消耗品 */
+export type EquipFamily = "A" | "B" | "C" | "D";
+/** 由装备类别判定格式族；未知/空类别按 C 处理。机关附件（增强53%+重击20%+适合=武器组）归 A（2026-09-10 勘误，原归 C 致重击行丢失）。 */
+export function equipFamilyOf(cat?: string): EquipFamily {
+  if (cat === "护甲" || cat === "盾牌") return "B";
+  if (cat === "武器" || cat === "法器" || cat === "机关附件") return "A";
+  if (cat === "消耗品" || cat === "炼金物品" || cat === "刺客毒药") return "D";
+  return "C";
+}
+
+// —— 装备候选词解释（参考威能「关键词」的悬停含义说明）——
+/** 类别(itemCategory 单选 chips) 说明 */
+export const ITEM_CATEGORY_TIPS: Record<string, string> = {
+  武器: "增强攻击骰和伤害骰，通常需要武器熟练",
+  护甲: "增强 AC，通常需要护甲熟练",
+  法器: "施法/异能用具，通常需要对应法器熟练",
+  消耗品: "一次性使用的消耗品，用后销毁",
+  "冒险装备": "标准的冒险道具（绳、火把、油等）",
+  坐骑: "可骑乘的动物或载具",
+  奇物: "功效各异的魔法奇物",
+  戒指: "戴在手上的魔法戒指（通常限两枚）",
+  颈部: "颈部位（护符/披肩）",
+  头部: "头部位（头盔/头饰）",
+  足部: "足部位（靴子/胫甲）",
+  手部: "手部位（护手）",
+  腰部: "腰带位",
+  臂部: "臂部位（护臂/盾）",
+  "龙晶强化": "以龙晶碎片强化的器物",
+  炼金物品: "炼金产物（酸瓶、火瓶、炽焰瓶等）",
+  "另类奖励": "非标准奖励（异能纹身、圣物等）",
+  伙伴: "战斗伙伴（魔宠、召唤物等）",
+  魔宠: "小型魔法仆从",
+};
+/** 稀有度(单选 chips) 说明 */
+export const RARITY_TIPS: Record<string, string> = {
+  普通: "最常见，无稀有特性",
+  非普通: "较常见，价格略高",
+  稀有: "罕见、昂贵",
+  "神之碎片": "神器级，独一无二",
+};
+/** 分类组(group 候选)解释：按类型关键词命中；未命中的候选不显示 tooltip */
+export const ITEM_TYPE_TIPS: Record<string, string> = {
+  板甲: "重型护甲；AC 含甲+增强，无属性调整",
+  链甲: "重型锁子甲",
+  鳞甲: "重型鳞甲",
+  重甲: "重型护甲",
+  革甲: "皮革护甲",
+  皮甲: "软皮护甲",
+  布甲: "布料护甲，最轻",
+  重刃: "重型刀刃武器",
+  轻刃: "轻型刀刃武器",
+  锤: "钝击重型武器",
+  斧: "劈砍武器",
+  矛: "长杆刺击武器",
+  硬头锤: "单手钝击武器",
+  连枷: "链式钝击武器",
+  弓: "远程射击武器",
+  弩: "远程机弩",
+  投石索: "远程投掷武器",
+  权杖: "法器：Scepter（单体/临近法术）",
+  法杖: "法器：Staff（通用法术）",
+  魔杖: "法器：Wand（单体法术）",
+  圣徽: "法器：Holy Symbol（圣疗/圣术）",
+  法珠: "法器：Orb（控制法术）",
+  魔典: "法器：Tome（书本仪式）",
+  图腾: "法器：Totem（野性/疾风）",
+  气印: "法器：Ki 印章（武僧异能）",
+  药剂: "消耗品：药剂",
+  "药剂及灵药": "消耗品：药剂与灵药",
+  试剂: "消耗品：炼金试剂",
+  毒药: "消耗品：淬毒",
+  磨刀石: "消耗品：临时附魔（如晶石磨刀石）",
+};
+
+/** 装备「特性」段：官方 `<div class=text>` 纯文本行集合；多段特性逐段添加。 */
+export interface ItemPropertySection { lines: string[]; }
+/** 解析 form.properties 的 JSON → ItemPropertySection[] */
+export function parseItemProperties(json?: string): ItemPropertySection[] {
   if (!json) return [];
   try {
     const v = JSON.parse(json);
     if (!Array.isArray(v)) return [];
     return v
+      .map((s): ItemPropertySection => ({
+        lines: Array.isArray(s?.lines)
+          ? s.lines.map((l: unknown) => (typeof l === "string" ? l : "")).filter((l: string) => l.trim())
+          : [],
+      }))
+      .filter((s) => s.lines.length);
+  } catch {
+    return [];
+  }
+}
+/** 序列化 ItemPropertySection[] 为官方「特性」bg-item 段 HTML（多段并列） */
+export function serializeItemProperties(secs: ItemPropertySection[]): string {
+  return secs
+    .map((s) =>
+      '<div class="bold bg-item">特性</div>' +
+      s.lines.map((l) => `<div class=text>${escapeHtml(l)}</div>`).join("")
+    )
+    .join("");
+}
+/** 从官方 details HTML 逆解析「特性」bg-item 段 → ItemPropertySection[]（剥除内联 <b>/链接 标签，解码实体，<br> 拆行） */
+export function parseItemPropertiesHtml(html: string): ItemPropertySection[] {
+  const out: ItemPropertySection[] = [];
+  const re = /class="bold bg-item">特性<\/div>([\s\S]*?)(?=class="bold bg-item"|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const seg = m[1] || "";
+    const lines = [...seg.matchAll(/<div class=text>([\s\S]*?)<\/div>/g)]
+      .flatMap((x) => x[1].replace(/<br\s*\/?>/gi, "\n").split("\n"))
+      .map((l) => decodeHtmlEntities(l.replace(/<[^>]+>/g, "")).replace(/[ \t]+/g, " ").trim())
+      .filter(Boolean);
+    if (lines.length) out.push({ lines });
+  }
+  return out;
+}
+
+// —— 装备·统一数据结构（威能标准：统计标量为单一权威，details 纯派生，消灭「标量↔details」双重同步）——
+export type ItemStatKey = "group" | "enh" | "critical" | "cost" | "weight";
+/** 装备统计：权威标量（卡片统计表行即此；details 不再重复写 增强/重击）
+ *  注：官方护甲无独立「甲类/AC」行（295 条全部为 增强：AC，即增强作用于 AC），故不设 armorClass 字段（2026-09-10 勘误）。 */
+export interface ItemStat {
+  group: string;      // 分类组
+  enh: string;        // 增强加值（A/B；D 无）
+  critical: string;   // 重击（仅 A）
+  cost: string;       // 价格
+  weight: string;     // 重量
+}
+/** 装备统一数据（封装配方向的读写对象；字段仍落在 CATEGORY_FIELDS.equipment 各标量键，不引入单 JSON blob） */
+export interface EquipmentData {
+  flavorText: string;
+  stat: ItemStat;
+  properties: ItemPropertySection[];
+  powers: ItemPowerSection[];
+  bodyText: string;
+}
+
+/** 各族统计表行（单一来源，EntryEditor 面板显隐 与 ItemCard 卡片表行共用）；C 族可带增强（颈部/臂部） */
+export const FAMILY_STAT_ROWS: Record<EquipFamily, { key: ItemStatKey; label: string }[]> = {
+  A: [
+    { key: "group", label: "分类组" },
+    { key: "enh", label: "增强" },
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+    { key: "critical", label: "重击" },
+  ],
+  B: [
+    { key: "group", label: "分类组" },
+    { key: "enh", label: "增强" },
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+  C: [
+    // 「分类组」仅对 武器/法器(A)/护甲(B) 有意义（GROUPS_BY_CATEGORY 也只定义这三类）；魔宠/伙伴/坐骑等通用配件无分类组
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+  D: [
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+};
+/** 取某族的统计表行；C 族在已填增强时追加「增强」行。 */
+export function equipmentStatRows(fam: EquipFamily, enhPresent: boolean): { key: ItemStatKey; label: string }[] {
+  const rows = [...FAMILY_STAT_ROWS[fam]];
+  if (fam === "C" && enhPresent) {
+    rows.splice(1, 0, { key: "enh", label: "增强" });
+  }
+  return rows;
+}
+
+// —— 基础装备（非魔法）形态统计行：按 itemCategory 显示基础专属字段（擅长/伤害/护甲加值/检定…）。
+//    与魔法形态 FAMILY_STAT_ROWS 平行；特性(properties)不进统计表，统一走「物品特性」段渲染。 ——
+export type MundaneStatKey = "proficiency" | "damage" | "range" | "armorBonus" | "minEnhancement"
+  | "checkPenalty" | "speed" | "special" | "baseType" | "proficiencyFeat" | "shieldBonus" | ItemStatKey;
+export const MUNDANE_STAT_ROWS: Record<string, { key: MundaneStatKey; label: string }[]> = {
+  武器: [
+    { key: "proficiency", label: "擅长加值" },
+    { key: "damage", label: "伤害" },
+    { key: "range", label: "射程" },
+    { key: "group", label: "分类组" },
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+  护甲: [
+    { key: "armorBonus", label: "护甲加值" },
+    { key: "minEnhancement", label: "最小增强加值" },
+    { key: "checkPenalty", label: "检定" },
+    { key: "speed", label: "速度" },
+    { key: "special", label: "特殊" },
+    { key: "baseType", label: "基本类型" },
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+  法器: [
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+  盾牌: [
+    { key: "shieldBonus", label: "盾牌加值" },
+    { key: "checkPenalty", label: "检定" },
+    { key: "speed", label: "速度" },
+    { key: "baseType", label: "基本类型" },
+    { key: "proficiencyFeat", label: "擅长专长" },
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+  冒险装备: [
+    { key: "cost", label: "价格" },
+    { key: "weight", label: "重量" },
+  ],
+};
+/** 基础形态可用类别（gear.json 覆盖）；魔法形态维持全类别。 */
+export const MUNDANE_CATEGORIES = ["武器", "护甲", "法器", "盾牌", "冒险装备"];
+/** 基础形态专属字段（切换形态时清空/校验用） */
+export const MUNDANE_FIELDS = [
+  "proficiency", "damage", "range", "armorBonus", "minEnhancement",
+  "checkPenalty", "speed", "special", "baseType", "proficiencyFeat", "shieldBonus",
+];
+
+/** 是否为基础（非魔法）装备形态：显式 itemForm 标记优先，否则按基础字段自明兜底。 */
+export function isMundaneEntry(e: { itemForm?: string } & Record<string, unknown>): boolean {
+  return e.itemForm === "mundane" || !!(e.proficiency || e.armorBonus || e.minEnhancement
+    || e.shieldBonus || e.checkPenalty || e.speed || e.proficiencyFeat || e.damage || e.range);
+}
+
+/** gear.json 基础名录条目 → 装备编辑表单值（itemForm=mundane；properties 转 特性段 JSON）。 */
+export function gearToForm(g: Record<string, unknown>): Record<string, string> {
+  const s = (k: string) => (typeof g[k] === "string" ? (g[k] as string).trim() : "");
+  const props = s("properties");
+  return {
+    name: s("name"),
+    nameEn: s("nameEn"),
+    source: s("source"),
+    sourceText: s("details"),
+    bodyFormat: "md",
+    itemForm: "mundane",
+    itemCategory: s("itemCategory") || "冒险装备",
+    // 武器：subGroup（单手/双手）并入子类别展示；护甲 subGroup（护甲及精制品护甲）为冗余分组，不并入
+    subCategory: s("itemCategory") === "武器" ? [s("subCategory"), s("subGroup")].filter(Boolean).join(" · ") : s("subCategory"),
+    cost: s("cost"),
+    weight: s("weight"),
+    proficiency: s("proficiency"),
+    damage: s("damage"),
+    range: s("range"),
+    armorBonus: s("armorBonus"),
+    minEnhancement: s("minEnhancement"),
+    checkPenalty: s("checkPenalty"),
+    speed: s("speed"),
+    special: s("special"),
+    baseType: s("baseType"),
+    proficiencyFeat: s("proficiencyFeat"),
+    shieldBonus: s("shieldBonus"),
+    group: s("group"),
+    properties: props ? JSON.stringify([{ lines: [props] }]) : "",
+  };
+}
+
+/** 装备 details 纯派生：仅 特性段 + 正文（增强/重击/分类组 移到卡片统计表，此不写）。 */
+export function serializeEquipmentDetails(opts: {
+  props: ItemPropertySection[];
+  bodyHtml: string;
+}): string | undefined {
+  // ⚠ 勿用 [...str] 展开（会把字符串拆成单字符数组）；直接拼接数组
+  return [serializeItemProperties(opts.props), opts.bodyHtml].filter(Boolean).join("\n") || undefined;
+}
+
+/**
+ * 官方装备 details 剥除已结构化部分（等级宏 / {{!!类别行}} / 增强·重击·甲类行 / 特性段 / 威能段 / 标题段）后的残余文本。
+ * 用于 draftToForm：残余（配方花费/关键技能/时间/要求/前提/特殊 等未结构化头部行）→ 正文，官方条目导入再保存不丢内容。
+ */
+export function residualEquipmentText(html: string): string {
+  if (!html) return "";
+  let h = html
+    .replace(/<<[^>]*>>/g, "") // 等级宏 <<item-level-N>>
+    .replace(/<div\b[^>]*>(?:(?!<\/div>)[\s\S])*?\{\{!![\s\S]*?<\/div>/g, "") // 含 {{!!宏}} 的行（类别/部件）
+    .replace(/<div\b[^>]*class=["']?text["']?[^>]*>\s*<b>\s*(?:增强|重击|甲类|AC)\s*[：:]\s*<\/b>[^<]*<\/div>/gi, ""); // 统计标量行
+  // 剥除所有 bg-item 段（特性/威能/标题段均已结构化，含其正文 div）
+  h = h.replace(/<div\b[^>]*class=["']?bold bg-item["']?[^>]*>[\s\S]*?(?=<div\b[^>]*class=["']?bold bg-item["']?|$)/gi, "");
+  const txt = h
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:div|span|p)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+  return txt;
+}
+
+export function parseItemPowerSections(json?: string): ItemPowerSection[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    if (!Array.isArray(v)) return [];
+    const baseOf = (b: unknown): ItemPowerBase =>
+      typeof b === "string" && (b === "自定义" || (POWER_HEAD_BASES as readonly string[]).includes(b)) ? (b as ItemPowerBase) : "威能";
+    return v
       .map((s): ItemPowerSection => ({
+        base: baseOf(s?.base),
+        head: typeof s?.head === "string" ? s.head : "",
         keywords: typeof s?.keywords === "string" ? s.keywords : "",
         freq: (ITEM_FREQUENCIES as readonly string[]).includes(s?.freq) ? (s.freq as ItemFreq) : "",
         action: typeof s?.action === "string" ? s.action : "",
@@ -814,30 +1177,56 @@ export function parseItemPowerSections(json?: string): ItemPowerSection[] {
               .filter((b: PowerBlock) => b.label.trim() || b.text.trim())
           : ([] as PowerBlock[]),
       }))
-      .filter((s) => s.freq || s.action || s.keywords || s.blocks.length);
+      .filter((s) => (s.base === "自定义" ? (s.head ?? "").trim() : s.freq || s.action || s.keywords || s.blocks.length));
   } catch {
     return [];
   }
 }
 
-/** 物品威能段 → 官方 `<div class="bold bg-item">` 段头 + `<div class=text>` 正文 */
+/** 物品威能/标题段正文 → 官方 div.text 行内格式：`<b>标签：</b>内容` 以 <br> 分行；无标签行输出纯文本。
+ *  注意与威能卡的 <table class=details> 不同——官方装备威能正文是 div.text 行内文本（毒药式 <b> 标签 / 普通行内「标签：」）。 */
+function serializeItemBlocksText(blocks: PowerBlock[]): string {
+  const lines = blocks
+    .map((b) => {
+      const label = (b.label ?? "").trim();
+      const textHtml = (b.text ?? "").split(/\r?\n/).map((l) => escapeHtml(l.trim())).filter(Boolean).join("<br>");
+      if (!label && !textHtml) return "";
+      const pad = (b.indent ?? 0) > 0 ? "&nbsp;&nbsp;" : "";
+      if (!label) return textHtml;
+      return `${pad}<b>${escapeHtml(label)}：</b>${textHtml}`;
+    })
+    .filter(Boolean);
+  return lines.join("<br>");
+}
+
+/** 物品威能段 → 官方 `<div class="bold bg-item">` 段头 + `<div class=text>` 行内正文 */
 export function serializeItemPowerSection(s: ItemPowerSection): string {
+  const bodyText = serializeItemBlocksText(s.blocks);
+  const textDiv = bodyText ? `<div class=text>${bodyText}</div>` : "";
+  if (s.base === "自定义") {
+    const t = (s.head ?? "").trim() || "威能";
+    return `<div class="bold bg-item">${escapeHtml(t)}</div>` + textDiv;
+  }
+  const base = s.base || "威能";
   const kw = s.keywords?.trim();
   const freq = s.freq?.trim();
   const action = s.action?.trim();
-  const head = "威能" + (kw ? "（" + kw + "）" : "") + "✦" + freq + (action ? "（" + action + "）" : "");
-  const bodyText = serializePowerBlocks(s.blocks) || "";
-  const textDiv = bodyText ? `<div class=text>${bodyText}</div>` : "";
-  return `<div class="bold bg-item">${head}</div>` + textDiv;
+  const head = base + (kw ? "（" + kw + "）" : "") + "✦" + freq + (action ? "（" + action + "）" : "");
+  return `<div class="bold bg-item">${escapeHtml(head)}</div>` + textDiv;
 }
 
 export function serializeItemPowerSections(sections: ItemPowerSection[]): string {
-  return sections.filter((s) => s.freq || s.action || s.keywords || s.blocks.length).map(serializeItemPowerSection).join("");
+  return sections
+    .filter((s) => (s.base === "自定义" ? (s.head ?? "").trim() : s.freq || s.action || s.keywords || s.blocks.length))
+    .map(serializeItemPowerSection)
+    .join("");
 }
 
 /**
  * 反向解析官方装备威能 HTML（details 内的 bg-item 段头 + text 正文行）为 ItemPowerSection[]。
- * 段头文本格式：`威能（关键词）✦频率（动作）`；正文行提取内联 `<b>标签：</b>` 与纯文本。
+ * 段头族谱（2603 条实测）：威能 2014 / 辅助威能 51 / 攻击威能 20（→ base）；
+ * 固有增益 11 / 神圣展现 11 / 怪癖 11（→ base="自定义" + head）；「特性」1443 由 parseItemPropertiesHtml 处理，此处跳过（防双重复解析）。
+ * 段头格式：`（基名）（关键词）✦频率（动作）`；正文按 <br> 拆行，每行认 `<b>标签：</b>`（毒药式）、行内「标签：内容」（普通式）或纯文本；行首 &nbsp; 识别缩进子行。
  */
 export function parseItemPowerSectionsHtml(html: string): ItemPowerSection[] {
   if (!html) return [];
@@ -846,34 +1235,54 @@ export function parseItemPowerSectionsHtml(html: string): ItemPowerSection[] {
     /<div\b[^>]*\bclass=["']?bold bg-item["']?[^>]*>([\s\S]*?)<\/div>(?:\s*<div\b[^>]*\bclass=["']?text["']?[^>]*>([\s\S]*?)<\/div>)?/gi;
   let m: RegExpExecArray | null;
   while ((m = tokenRe.exec(html))) {
-    const head = htmlToPlain(m[1] ?? "").replace(/^威能\s*✦?/, "").replace(/^✦/, "");
-    // 段头如「（关键词）✦每日（自由动作）」：先剥「（...）」键词，再剥 频率/动作
-    let rest = head.trim();
+    const raw = htmlToPlain(m[1] ?? "").trim();
+    if (!raw || raw === "特性") continue; // 特性段由 parseItemPropertiesHtml 结构化
+    let base: ItemPowerBase = "威能";
+    let head = "";
     let keywords = "";
-    const km = rest.match(/^（([^）]+)）\s*✦\s*(.*)$/);
-    if (km) { keywords = km[1].trim(); rest = km[2].trim(); }
-    // rest 余下应为「频率（动作）」或仅「频率」
+    let rest = raw;
+    const bm = raw.match(/^(辅助威能|攻击威能|威能)\s*(?:（([^）]*)）)?\s*✦?\s*(.*)$/);
+    if (bm) {
+      base = bm[1] as ItemPowerBase;
+      keywords = (bm[2] ?? "").trim();
+      rest = bm[3].trim();
+    } else {
+      base = "自定义";
+      head = raw;
+    }
     let freq: ItemFreq | "" = "";
     let action = "";
-    const fam = rest.match(/^(每日|遭遇|随意|消耗)\s*（([^）]+)）?\s*$/);
-    if (fam) { freq = fam[1] as ItemFreq; action = fam[2] ?? ""; }
-    // 正文行：解析 <b>标签：</b> 或纯文本
+    if (base !== "自定义") {
+      const fam = rest.match(/^(每日|遭遇|随意|消耗|回复力)\s*（([^）]+)）?\s*$/);
+      if (fam) { freq = fam[1] as ItemFreq; action = fam[2] ?? ""; }
+    }
+    // 正文行：按 <br> 拆行；每行 <b>标签：</b> / 行内「标签：内容」 / 纯文本；行首 &nbsp; = 缩进子行
     const body = m[2] !== undefined ? m[2] : "";
     const blocks: PowerBlock[] = [];
-    const lineRe = /<b>([^<]*?)：?<\/b>\s*([\s\S]*?)(?=<b>|$)/gi;
-    let lm: RegExpExecArray | null;
-    const pure = body.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
-    if (/<b>/i.test(body)) {
-      while ((lm = lineRe.exec(body))) {
-        const label = htmlToPlain(lm[1]).replace(/[：:]\s*$/, "");
-        const text = htmlToPlain(lm[2] ?? "");
-        if (label || text) blocks.push({ label, text });
+    for (const ln of body.split(/<br\s*\/?>/i)) {
+      const indent = /^(?:&nbsp;|\u00A0)/.test(ln) ? 1 : 0;
+      const line = ln.replace(/^(?:&nbsp;|\u00A0)+/, "");
+      const bm2 = line.match(/^\s*<b>([^<]*?)：?\s*<\/b>\s*([\s\S]*)$/i);
+      if (bm2) {
+        const label = htmlToPlain(bm2[1]).replace(/[：:]\s*$/, "").trim();
+        const text = htmlToPlain(bm2[2] ?? "").trim();
+        if (label || text) blocks.push({ label, text, indent });
+        continue;
       }
-    } else if (pure.trim()) {
-      blocks.push({ label: "", text: pure.trim() });
+      const pm = line.match(/^\s*([^：:<（(]{1,10})[：:]\s*([\s\S]+)$/);
+      if (pm) {
+        const label = htmlToPlain(pm[1]).trim();
+        const text = htmlToPlain(pm[2]).trim();
+        if (label && text) blocks.push({ label, text, indent });
+        continue;
+      }
+      const t = htmlToPlain(line).trim();
+      if (t) blocks.push({ label: "", text: t, indent });
     }
-    if (freq || action || keywords || blocks.length) {
-      out.push({ keywords, freq, action, blocks });
+    if (head || freq || action || keywords || blocks.length) {
+      out.push(base === "自定义"
+        ? { base, head, keywords: "", freq: "", action: "", blocks }
+        : { base, head: "", keywords, freq, action, blocks });
     }
   }
   return out;
@@ -1109,6 +1518,48 @@ export function parseLevelSections(src?: string, opts?: { /** 允许无等级前
   if (cur) pushRefs();
   return out.filter((s) => s.level || s.title || s.body.trim() || s.refs.length);
 }
+// —— 编辑态 form 的 JSON 字符串 → 结构化数组（JSON 感知；非 JSON 回落 wikitext 解析）——
+function tryParseJsonArray<T>(json?: string): T[] | null {
+  if (!json || !json.trim()) return null;
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as T[]) : null;
+  } catch {
+    return null;
+  }
+}
+/** 编辑态 form.featRows（JSON）→ FeatRow[]；空/非法返回 [] */
+export function parseFeatRowsJson(json?: string): FeatRow[] {
+  const v = tryParseJsonArray<FeatRow>(json) ?? [];
+  return v
+    .map((r) => ({ level: String(r?.level ?? ""), power: String(r?.power ?? "") }))
+    .filter((r) => r.level.trim() || r.power.trim());
+}
+/** 编辑态 form.setBonuses（JSON）→ SetBonusBlock[]；空/非法返回 [] */
+export function parseSetBonusesJson(json?: string): SetBonusBlock[] {
+  const v = tryParseJsonArray<SetBonusBlock>(json) ?? [];
+  return v
+    .map((b) => ({ pieces: String(b?.pieces ?? ""), text: String(b?.text ?? "") }))
+    .filter((b) => b.pieces.trim() || b.text.trim());
+}
+/** 编辑态 form.levelSections（JSON）→ LevelFeatureSection[]；
+ *  兼容旧值（存 wikitext）时回落 parseLevelSections。 */
+export function parseLevelSectionsJson(json?: string, opts?: { allowPlain?: boolean }): LevelFeatureSection[] {
+  const v = tryParseJsonArray<LevelFeatureSection>(json);
+  if (v) {
+    return v
+      .map((s) => ({
+        level: String(s?.level ?? ""),
+        title: String(s?.title ?? ""),
+        kind: (s?.kind === "power" ? "power" : "feature") as LevelFeatureSection["kind"],
+        body: String(s?.body ?? ""),
+        refs: Array.isArray(s?.refs) ? s.refs.map((r) => String(r ?? "")) : [],
+      }))
+      .filter((s) => s.level || s.title || s.body.trim() || s.refs.length);
+  }
+  return parseLevelSections(json, opts);
+}
+
 /** 小节数组 → 正文 wikitext：!! N级：标题 + 正文 + {{引用}} 行 */
 export function serializeLevelSections(sections: LevelFeatureSection[]): string {
   return sections
@@ -1139,7 +1590,7 @@ export interface CreatureBlock {
   /** 双栏数据行：每行 = 左标签 + 左值 + 右标签 + 右值（左右可空） */
   rows: { leftLabel: string; leftValue: string; rightLabel: string; rightValue: string }[];
   /** 行动/特质/灵气段 */
-  actions: { name: string; freq: string; action: string; description: string }[];
+  actions: { name: string; freq: string; action: string; qualifier: string; description: string }[];
 }
 // 生物「角色」常见取值（官方 205 条统计常见）
 export const CREATURE_ROLES = ["标准", "精英", "独一", "下属", "召唤生物"];
@@ -1148,8 +1599,8 @@ export const CREATURE_SIZES = ["微型", "小型", "中型", "大型", "超大�
 export const CREATURE_ORIGINS = ["妖精界", "元素界", "天然界", "阴影界", "暗影界", "虚空界", "未知", "原体"];
 // 生物动作段头的动作类别（官方图标 {{$:/dnd/images/xxx}} 按动作映射；灵气/特制无动作图标类）
 export const CREATURE_ACTIONS = ["标准动作", "移动动作", "次要动作", "自由动作", "借机动作", "即时中断", "即时反应", "灵气", "特制"];
-// 生物常见频率（“灵气N”形如 ◈灵气2）
-export const CREATURE_FREQUENCIES = ["随意", "遭遇", "每日", "灵气2", "灵气5"];
+// 生物常见频率（“灵气N”形如 ◈灵气2；充能的触发条件写入动作「限定词」）
+export const CREATURE_FREQUENCIES = ["随意", "遭遇", "每日", "充能", "灵气2", "灵气5"];
 // 常用双栏数据行标签预设（点选即加行）
 export const CREATURE_ROW_PRESETS = ["生命值", "回复力", "防御", "速度", "技能", "豁免", "行动点", "免疫", "状态免疫", "感官", "感知", "语言", "装备", "擅用"];
 
@@ -1161,14 +1612,17 @@ function creatureActionFromIcon(iconKey: string): string {
   };
   return map[iconKey] ?? "";
 }
-/** 把官方「行动/特质/灵气」段的段头 HTML 解析为 { name, freq, action }。
+/** 把官方「行动/特质/灵气」段的段头 HTML 解析为 { name, freq, action, qualifier }。
  *  段头变体：{{icon}}闪光姿态✦灵气2 / {{icon}}标准动作（光耀）✦随意 / 次要动作✦随意（每轮一次） */
-function parseCreatureActionHead(head: string): { name: string; freq: string; action: string } {
+function parseCreatureActionHead(head: string): { name: string; freq: string; action: string; qualifier: string } {
   const star = head.indexOf("✦");
   // 频率：✦ 之后取 灵气N / 随意 / 遭遇 / 每日 / 每轮一次
   const tail = star >= 0 ? head.slice(star + 1).trim() : "";
-  const freqM = tail.match(/(灵气\s*\d+|每日|遭遇|随意|每轮一次)/);
+  const freqM = tail.match(/(灵气\s*\d+|每日|遭遇|随意|充能|每轮一次|每遭遇\d+次)/);
   const freq = (freqM && freqM[1]) ? freqM[1] : "";
+  // 限定词：频率之后的括号内容（如 次要动作✦随意（每轮一次）的「每轮一次」），回填时原样写回
+  const qualM = tail.match(/[（(]\s*([^）)]*)\s*[）)]\s*$/);
+  const qualifier = qualM ? qualM[1].trim() : "";
   // 名称/动作段：✦ 之前去掉图标与括号关键词
   let namePart = (star >= 0 ? head.slice(0, star) : head).trim();
   namePart = namePart.replace(/\{\{\$:\/dnd\/images\/(\w+)\}\}/g, "");
@@ -1186,7 +1640,7 @@ function parseCreatureActionHead(head: string): { name: string; freq: string; ac
     .replace(/^[（(]\s*([^）)]*)\s*[）)]/, "$1")
     .replace(/[\s：:]+$/, "")
     .trim();
-  return { name: namePart, freq, action };
+  return { name: namePart, freq, action, qualifier };
 }
 /** 提取 <div class=creature>…</div> 的内层 HTML：按 <div>/</div> 配对计数定位闭合标签，
  *  避免遇到首个内部 </div>（如头部 bg-title 行）就截断。找不到返回 null。 */
@@ -1273,7 +1727,8 @@ export function parseCreatureBlockJson(json?: string): CreatureBlock | null {
       actions: Array.isArray(b.actions)
         ? b.actions.map((a: Record<string, unknown>) => ({
             name: String(a?.name ?? ""), freq: String(a?.freq ?? ""),
-            action: String(a?.action ?? ""), description: String(a?.description ?? ""),
+            action: String(a?.action ?? ""), qualifier: String(a?.qualifier ?? ""),
+            description: String(a?.description ?? ""),
           }))
         : [],
     };
@@ -1297,14 +1752,15 @@ export function serializeCreatureBlock(b: CreatureBlock): string {
       return `<div><span>${l.trim()}</span><span>${rcol.trim()}</span></div>`;
     });
   const actions = b.actions
-    .filter((a) => a.name || a.action || a.freq || a.description)
+    .filter((a) => a.name || a.action || a.freq || a.qualifier || a.description)
     .map((a) => {
-      // 灵气/特制：{{icon}}名称✦频率；其余：{{icon}}动作（名称）✦频率
+      // 灵气/特制：{{icon}}名称✦频率；其余：{{icon}}动作（名称）✦频率；限定词写回为频率后括号（每轮一次）
       const isAuraLike = a.action === "灵气" || a.action === "特制";
       const icon = a.action ? `{{$:/dnd/images/${iconForAction(a.action)}}}` : "";
+      const q = a.qualifier ? `（${esc(a.qualifier)}）` : "";
       const inner = isAuraLike
-        ? [a.name, a.freq ? `✦${a.freq}` : ""].filter(Boolean).join("")
-        : [(a.action || a.name ? `${a.action || ""}${a.name ? `（${a.name}）` : ""}` : ""), a.freq ? `✦${a.freq}` : ""].filter(Boolean).join("");
+        ? [a.name, a.freq ? `✦${a.freq}${q}` : ""].filter(Boolean).join("")
+        : [(a.action || a.name ? `${a.action || ""}${a.name ? `（${a.name}）` : ""}` : ""), a.freq ? `✦${a.freq}${q}` : ""].filter(Boolean).join("");
       const desc = a.description.replace(/\n+/g, "<br>");
       return `<div class="bold bg-power">${icon}${esc(inner)}</div><div class=description>${desc}</div>`;
     });
@@ -1393,16 +1849,32 @@ export const CATEGORY_FIELDS: Record<string, SheetField[]> = {
     { key: "powerBlocks", label: "威能详情", type: "longtext" },
   ],
   equipment: [
-    { key: "itemCategory", label: "类别", type: "select", options: ["武器", "护甲", "法器", "消耗品", "冒险装备", "坐骑", "奇物", "戒指", "颈部", "头部", "足部", "手部", "腰部", "臂部", "龙晶强化", "炼金物品", "另类奖励", "伙伴", "魔宠"], required: true },
+    { key: "itemForm", label: "形态", type: "select", options: ["magic", "mundane"] },
+    { key: "itemCategory", label: "类别", type: "select", options: ["武器", "护甲", "法器", "臂部", "头部", "颈部", "手部", "戒指", "腰部", "足部", "奇物", "另类奖励", "龙晶强化", "消耗品", "炼金物品", "冒险装备", "伙伴", "坐骑", "魔宠", "盾牌"], required: true },
     { key: "itemLevel", label: "物品等级", type: "text" },
     { key: "rarity", label: "稀有度", type: "select", options: RARITIES },
+    { key: "flavorText", label: "风味文本", type: "text", placeholder: "可选的斜体风味描述（显示在卡片名字下）" },
     { key: "group", label: "分类组", type: "multichips", options: GROUPS, placeholder: "如：重型刀剑" },
+    { key: "itemSuitable", label: "适合", type: "text", placeholder: "该装备适用的槽位/形态，如 臂部：任意盾牌、奇物：纹身（武器/法器/护甲 填「分类组」即可）" },
     { key: "enh", label: "增强加值", type: "text" },
+    { key: "enhTarget", label: "增强对象", type: "text", placeholder: "增强作用于什么（如 攻击骰和伤害骰 / AC），默认按类别自动推导" },
     { key: "cost", label: "价格", type: "text" },
     { key: "weight", label: "重量", type: "text" },
     { key: "critical", label: "重击", type: "text" },
-    { key: "itemSuitable", label: "适合", type: "multichips", options: ITEM_SUITABLE, delimiter: "，", placeholder: "如：法杖，权杖（多选，以顿号分隔）" },
+    { key: "subCategory", label: "子类别", type: "text", placeholder: "基础装备分组，如：军用近战武器 / 布甲（轻甲）/ 圣徽（从基础名录选择自动填入）" },
+    { key: "proficiency", label: "擅长加值", type: "text", placeholder: "如：+3" },
+    { key: "damage", label: "伤害", type: "text", placeholder: "如：1d8" },
+    { key: "range", label: "射程", type: "text", placeholder: "如：10/20；近战填 —" },
+    { key: "armorBonus", label: "护甲加值", type: "text", placeholder: "如：+6" },
+    { key: "minEnhancement", label: "最小增强加值", type: "text", placeholder: "如：+1" },
+    { key: "checkPenalty", label: "检定", type: "text", placeholder: "如：-1" },
+    { key: "speed", label: "速度", type: "text", placeholder: "如：-1" },
+    { key: "special", label: "特殊", type: "text" },
+    { key: "baseType", label: "基本类型", type: "text", placeholder: "如：链甲" },
+    { key: "proficiencyFeat", label: "擅长专长", type: "text", placeholder: "如：轻盾擅长" },
+    { key: "shieldBonus", label: "盾牌加值", type: "text", placeholder: "如：+1" },
     { key: "powerSections", label: "物品威能段", type: "longtext" },
+    { key: "properties", label: "物品特性", type: "longtext" },
   ],
   feat: [
     { key: "tierZh", label: "层级", type: "select", options: ["英雄", "典范", "天命", "史诗"] },
@@ -1511,6 +1983,11 @@ export interface HomebrewSection {
   hint?: string;
   /** 核心面板：常驻展开；未标 core 的面板统一收进底部「附加设置」折叠区（主次分明） */
   core?: boolean;
+  /** 专属渲染器标记：equip-stats = 装备「统计数据」用横排表组件（与右侧 ic-stats 逐行同构） */
+  kind?: "equip-stats";
+  /** 可选区块：非空 = 该面板可由用户开关（收起成「＋ 添加」细条；有内容自动展开；关闭时二次确认清空）。
+   *  值为收起态细条上的说明文案（如「官方 72% 装备含威能段；消耗品/基础装备常不需要」）。 */
+  optional?: string;
 }
 /** 标签（tags）为元数据：仅用于搜索与归类，不会显示在卡片上。 */
 export const TAGS_SECTION: HomebrewSection = {
@@ -1521,20 +1998,27 @@ export const TAGS_SECTION: HomebrewSection = {
 
 export const CATEGORY_SECTIONS: Record<string, HomebrewSection[]> = {
   equipment: [
-    { title: "基本信息 · 装备", keys: ["name", "nameEn", "source", "itemCategory", "rarity", "itemLevel"], core: true },
-    { title: "统计数据", keys: ["group", "enh", "cost", "weight", "critical"], core: true },
-    { title: "物品威能", keys: ["powerSections"], core: true },
-    { title: "适合", keys: ["itemSuitable"] },
+    // 面板顺序与装备卡视觉、官方 details 顺序（等级表→分类→增强→重击→特性→威能）一致：
+    // 抬头(meta) → 风味文本 → 统计表 → 特性 → 威能 → 正文。
+    // 「统计数据」用横排表渲染器（kind:"equip-stats"），行集由形态/类别(装备族)自动决定；
+    // 基础专属字段（subCategory + MUNDANE_FIELDS）由该组件按 MUNDANE_STAT_ROWS 呈现。
+    { title: "基本信息 · 装备", keys: ["name", "nameEn", "source", "itemForm", "itemCategory", "rarity", "itemLevel"], core: true },
+    { title: "风味文本", keys: ["flavorText"], core: true },
+    { title: "统计数据", keys: ["group", "itemSuitable", "enh", "critical", "cost", "weight", "subCategory", ...MUNDANE_FIELDS], core: true, kind: "equip-stats", hint: "统计行按装备族/形态自动决定，与右侧卡片统计表一一对应。" },
+    { title: "物品特性", keys: ["properties"], core: true },
+    { title: "物品威能", keys: ["powerSections"], core: true, optional: "官方 72% 装备含威能段；消耗品、基础装备常不需要", },
+    { title: "正文", keys: ["sourceText"], core: true, optional: "自由 Markdown 补充（背景故事/变体规则/DM 备注）；官方装备无此部分" },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
   power: [
+    // 面板顺序与威能卡视觉从上到下、从左到右一致：抬头 → 风味文本 → 关键词行（频率✦关键词 / 动作✦射程）→ 数据（标签块）
     { title: "基本信息 · 威能", keys: ["name", "nameEn", "source", "grantedBy", "powerType", "level"], core: true },
+    { title: "风味文本", keys: ["flavorText"], core: true },
     { title: "使用频率", keys: ["usageZh"], core: true },
+    { title: "关键词", keys: ["keywords"], core: true },
+    { title: "动作与射程", keys: ["actionType", "range"], core: true },
     { title: "威能详情（标签块）", keys: ["powerBlocks"], core: true },
-    { title: "风味文本", keys: ["flavorText"] },
-    { title: "关键词", keys: ["keywords"] },
-    { title: "动作与射程", keys: ["actionType", "range"] },
     { title: "外观", keys: ["cardColor", "cardIcon"] },
     TAGS_SECTION,
   ],
@@ -1670,7 +2154,7 @@ export function buildEntry(
 
   const extras: Record<string, string> = {};
   // 结构化编辑的 JSON form 键（存编辑态，不落库为标量；由下方分类分支派生成 entry 字段）
-  const STRUCTURED_KEYS = new Set(["powerSections", "featRows", "setBonuses", "termsPairs", "levelSections", "creatureBlock"]);
+  const STRUCTURED_KEYS = new Set(["powerSections", "properties", "featRows", "setBonuses", "termsPairs", "levelSections", "creatureBlock"]);
   for (const f of fieldsFor(cat)) {
     const v = (form[f.key] ?? "").trim();
     if (f.type === "tags" || f.key === "name" || f.key === "nameEn" || f.key === "category" || f.key === "source" || f.key === "sourceText" || f.key === "powerBlocks" || STRUCTURED_KEYS.has(f.key) || !v) continue;
@@ -1695,17 +2179,30 @@ export function buildEntry(
   if (cat === "equipment") {
     const secs = parseItemPowerSections(form.powerSections);
     if (secs.length) extras.power = serializeItemPowerSections(secs);
+    // 增强算法：对象 = 类别默认+覆盖（有默认的类别才落字段）；加值 = 等级推导+覆盖（仅对有增强的类别推导，
+    // 奇物/头部等不凭空造增强行——与官方覆盖一致）
+    if (form.itemForm !== "mundane") {
+      const target = enhTargetOf(form.itemCategory, form.enhTarget);
+      if (target) extras.enhTarget = target;
+      // 加值推导：类别默认有增强，或用户已显式设置对象（设对象即意味着该物品有增强）
+      if (enhAppliesTo(form.itemCategory) || target) {
+        const bonus = enhBonusOf(form.itemLevel ?? "", extras.enh);
+        if (bonus) extras.enh = bonus;
+      }
+    }
+    // 武器/法器/护甲：分类组即官方 itemSuitable（同 token 空间），补写以对齐 ItemSlotPicker 槽位过滤（官方条目均携带该字段）
+    if (extras.group && !extras.itemSuitable && GROUPS_BY_CATEGORY[form.itemCategory ?? ""]) extras.itemSuitable = extras.group;
   }
   // 专长：关联威能等级表 → 拼到 benefit 末尾（官方 <table>）
   if (cat === "feat") {
-    const rows = parseFeatTable(form.featRows) ?? [];
+    const rows = parseFeatRowsJson(form.featRows);
     if (rows.length && form.benefit) extras.benefit = form.benefit.trim() + "\n" + serializeFeatTable(rows);
   }
   // 物品套装：知识/组成/增益 → sourceText（wiki 章节）
   if (cat === "item-set") {
     const components = (form.setComponents ?? "").split(/[，,、]/).map((s) => s.trim()).filter(Boolean);
-    const bonuses = parseSetBonuses(form.setBonuses ?? "");
-    sourceText = serializeItemSet(form.setKnowledge ?? "", components, bonuses.setBonus);
+    const bonuses = parseSetBonusesJson(form.setBonuses);
+    sourceText = serializeItemSet(form.setKnowledge ?? "", components, bonuses);
   }
   // 译名字典：词条对 → sourceText / terms
   if (cat === "dictionary") {
@@ -1716,7 +2213,7 @@ export function buildEntry(
   // 威能引用类：提供「等级特性小节」结构化编辑，但**不隐藏正文**——lore 类正文（如 主题扮演/创建、种族外貌）
   // 仍需 textarea 承载。仅当用户填写了 levelSections 时才用结构化结果覆盖 sourceText，否则保留手写正文。
   if (POWER_REF_CATEGORIES.has(cat)) {
-    const secs = parseLevelSections(form.levelSections, { allowPlain: true });
+    const secs = parseLevelSectionsJson(form.levelSections, { allowPlain: true });
     if (secs.length) {
       let body = serializeLevelSections(secs);
       // 典范之道/传奇天命：正文以「前提条件：{{!!prerequisite}}」模板开头
@@ -1754,6 +2251,12 @@ export function buildEntry(
     const blk = parseCreatureBlockJson(form.creatureBlock);
     const blockHtml = blk ? serializeCreatureBlock(blk) : "";
     details = lore || blockHtml ? [lore, blockHtml].filter(Boolean).join("\n") : undefined;
+  } else if (cat === "equipment") {
+    // 装备：details 纯派生 —— 仅 特性段 + 正文。
+    // 增强/重击/甲类 是卡片统计表行的权威标量，此处不再重复写入 details（消灭双重同步）。
+    const props = parseItemProperties(form.properties);
+    const bodyHtml = sourceText ? renderBody(sourceText, bodyFormat, extras) : "";
+    details = serializeEquipmentDetails({ props, bodyHtml });
   } else if (!WITHOUT_BODY.has(cat)) {
     if (powerBlocks && powerBlocks.length) {
       details = serializePowerBlocks(powerBlocks);
@@ -1795,10 +2298,44 @@ export function draftToForm(entry: Entry): Record<string, string> {
     form[f.key] = typeof v === "string" ? v : "";
   }
   // —— 结构化编辑回填（各类型）——
-  // 装备：entry.power / details 中的 bg-item 威能段 → powerSections
+  // 装备：entry.power / details 中的 bg-item 威能段 → powerSections；
+  //       另把 details 的「增强：/重击：」文本行回填进 enh/critical（官方此类信息存于 details，顶层为空）
   if (entry.category === "equipment") {
-    const secs = parseItemPowerSectionsHtml((entry.power as string) || (entry.details as string) || "");
+    // 基础形态兜底：无 itemForm 标记的旧条目，按基础字段自明判定（isMundaneEntry），保证回填后仍显示基础形态
+    if (!form.itemForm && isMundaneEntry(entry)) form.itemForm = "mundane";
+    const full = (entry.power as string) || (entry.details as string) || "";
+    const secs = parseItemPowerSectionsHtml(full);
     if (secs.length) form.powerSections = JSON.stringify(secs);
+    const props = parseItemPropertiesHtml(full);
+    if (props.length) form.properties = JSON.stringify(props);
+    const statOf = (label: string) => {
+      const m = full.match(new RegExp(`<b>\\s*${label}\\s*：\\s*</b>\\s*([^<]*)`));
+      return m && m[1] ? m[1].trim() : "";
+    };
+    if (!form.critical) form.critical = statOf("重击");
+    // —— 增强算法回填：官方 details「增强：」行是**对象文本**（加值由等级推导），进 enhTarget 而非 enh ——
+    // 旧数据迁移：与等级推导一致的加值 → 清空交由算法跟随；曾被塞进 enh 的对象文本（如 "AC"/"+2攻击骰和伤害骰"）→ 归位 enhTarget
+    const lvls = itemLevels(form.itemLevel ?? "");
+    const derivedBonuses = lvls.length ? [...new Set(lvls.map(enhancementBonusForLevel))] : [];
+    const derivedStr = derivedBonuses.map((b) => "+" + b).join("/");
+    if (form.enh && derivedStr && form.enh.trim() === derivedStr) {
+      form.enh = "";
+    } else if (form.enh && !/^\s*[+−-]?\d+(\.\d+)?\s*$/.test(form.enh)) {
+      if (!form.enhTarget) form.enhTarget = normalizeEnhTarget(form.enh);
+      form.enh = "";
+    }
+    const enhLine = statOf("增强");
+    if (!form.enhTarget && enhLine) form.enhTarget = normalizeEnhTarget(enhLine);
+    // 武器/法器/护甲：官方 itemSuitable 与分类组同 token 空间（重刃/法杖/鳞甲…），映射进「分类组」供统计行与候选使用
+    if (!form.group && form.itemSuitable && GROUPS_BY_CATEGORY[form.itemCategory ?? ""]) form.group = form.itemSuitable;
+    // 残余头部行（配方花费/关键技能/时间/要求/前提 等未结构化内容）→ 正文，官方条目导入不丢内容。
+    // 官方 sourceText 全部为 <<item-format>> 宏占位（无实义），先清空再填；自制条目（origin=user）的
+    // details 由 特性段+正文 派生，跳过残余回填避免正文重复。
+    if (entry.origin !== "user") {
+      if (/^\s*<<item-format>>\s*$/.test(form.sourceText)) form.sourceText = "";
+      const residual = residualEquipmentText(full);
+      if (residual) form.sourceText = [form.sourceText.trim(), residual].filter(Boolean).join("\n\n");
+    }
   }
   // 专长：benefit 内嵌的等级×威能表 → featRows
   if (entry.category === "feat") {
