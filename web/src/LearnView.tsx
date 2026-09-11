@@ -1,4 +1,5 @@
 import { LEVELS, NOTE_HP, NOTE_REPLACE, NOTE_HUMAN_FEAT } from "./sheet/leveling";
+import RulesQuickSearch from "./rules/RulesQuickSearch";
 
 const FORMULAS: { title: string; rows: [string, string][] }[] = [
   {
@@ -30,6 +31,10 @@ const FORMULAS: { title: string; rows: [string, string][] }[] = [
 export default function LearnView() {
   return (
     <div className="learn-view">
+      <section className="block">
+        <h3 className="block-title">万律速查</h3>
+        <RulesQuickSearch />
+      </section>
       {FORMULAS.map((f) => (
         <section key={f.title} className="block">
           <h3 className="block-title">{f.title}</h3>

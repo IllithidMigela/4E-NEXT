@@ -1,0 +1,135 @@
+/* ============================================================================
+   万律速查（规则页）——4e-rules.html 词条检索与阅读
+   —— 独立文件：由 main.tsx 导入，避免整份覆盖 styles.css 时被一并丢失。
+   取色一律走 MD3 语义色（--md-sys-color-*），字重走全局 --fw-*。
+   ============================================================================ */
+
+.rules-quick { display: flex; flex-direction: column; gap: 10px; }
+.rules-quick-bar { display: flex; align-items: center; gap: 8px; }
+.rules-quick-field { flex: 1; min-width: 0; }
+.rules-quick-field md-filled-text-field { width: 100%; }
+.rules-quick-meta { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.rules-note { margin: 0; font-size: 13px; color: var(--md-sys-color-on-surface-variant); }
+.rules-error { color: var(--md-sys-color-error); }
+
+/* 常查词与章节浏览 */
+.rules-hot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rules-hot-label { font-size: 12px; color: var(--md-sys-color-on-surface-variant); flex: none; }
+.rules-chapters { display: flex; flex-direction: column; gap: 4px; }
+.rules-chapter {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  overflow: hidden;
+}
+.rules-chapter-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 8px 10px; border: none; background: none; color: inherit;
+  font: inherit; cursor: pointer; text-align: left;
+}
+.rules-chapter-head:hover { background: var(--md-sys-color-surface-container-high); }
+.rules-chapter.open .rules-chapter-head { background: var(--md-sys-color-surface-container); }
+.rules-chapter-head .material-symbols-outlined { font-size: 20px; color: var(--md-sys-color-on-surface-variant); }
+.rules-chapter-title { flex: 1; font-size: 14px; font-weight: var(--fw-body); }
+.rules-chapter-count { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
+.rules-sections { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 10px 36px; }
+.rules-section-title { font-size: 12.5px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }
+.rules-section-entries { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+/* 检索结果 */
+.rules-results { display: flex; flex-direction: column; gap: 4px; max-height: 54vh; overflow: auto; }
+.rules-result {
+  display: flex; flex-direction: column; gap: 2px; width: 100%;
+  padding: 8px 10px; border: 1px solid transparent; border-radius: var(--md-sys-shape-corner-small);
+  background: none; color: inherit; font: inherit; cursor: pointer; text-align: left;
+}
+.rules-result:hover { background: var(--md-sys-color-surface-container-high); }
+.rules-result-head { display: flex; align-items: baseline; gap: 8px; }
+.rules-result-title { font-size: 14px; font-weight: var(--fw-body); }
+.rules-result-kind {
+  flex: none; padding: 1px 6px; border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container);
+  font-size: 11px; font-weight: var(--fw-label);
+}
+.rules-result-path { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.rules-result-snippet { font-size: 12.5px; color: var(--md-sys-color-on-surface-variant); line-height: 1.5; }
+.rules-empty { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.rules-quick mark, .rules-detail mark {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+  border-radius: 3px; padding: 0 1px;
+}
+
+/* 词条正文 */
+.rules-detail { display: flex; flex-direction: column; gap: 10px; }
+.rules-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rules-detail-en { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.rules-detail-tag {
+  padding: 1px 8px; border-radius: var(--md-sys-shape-corner-full);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  font-size: 11px; color: var(--md-sys-color-on-surface-variant);
+}
+.rules-body { font-size: 14px; line-height: 1.65; }
+.rules-body > p { margin: 0 0 10px; }
+.rules-body h4 { margin: 16px 0 6px; font-size: 17px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary); }
+.rules-body h5 { margin: 14px 0 5px; font-size: 15px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }
+.rules-body h6 { margin: 12px 0 4px; font-size: 14px; font-weight: var(--fw-subheading); color: var(--md-sys-color-on-surface); }
+.rules-body ul, .rules-body ol { margin: 0 0 10px; padding-left: 22px; }
+.rules-body li { margin: 2px 0; }
+.rules-body hr { border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 12px 0; }
+.rules-body table {
+  width: auto; max-width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 13px;
+}
+.rules-body th, .rules-body td { padding: 3px 8px; text-align: left; vertical-align: top; }
+.rules-body tr + tr td, .rules-body tr + tr th { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.rules-body table.dndTable tr.header td, .rules-body table.dndTable tr.header th {
+  background: var(--md-sys-color-surface-container-high); font-weight: var(--fw-subheading);
+}
+.rules-body caption { caption-side: top; text-align: left; font-weight: var(--fw-subheading); font-size: 13px; }
+.rules-body .bold, .rules-body b { font-weight: var(--fw-subheading); }
+.rules-body .text { margin: 2px 0; }
+.rules-link {
+  color: var(--md-sys-color-primary); cursor: pointer;
+  border-bottom: 1px dashed var(--md-sys-color-outline);
+}
+.rules-link:hover { border-bottom-style: solid; }
+
+/* 边栏块（原文 <div class="sidebar">）与转写引文块 */
+.rules-callout {
+  margin: 10px 0; padding: 10px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 3px solid var(--md-sys-color-tertiary);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-high);
+}
+.rules-callout > p:last-child { margin-bottom: 0; }
+.rules-embed {
+  margin: 10px 0; padding: 8px 12px 2px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-low);
+}
+.rules-embed-head { font-size: 13px; font-weight: var(--fw-subheading); margin-bottom: 4px; }
+.rules-embed .rules-embed { background: var(--md-sys-color-surface-container); }
+
+/* 威能/物品/专长样例词条的数据卡 */
+.rules-stat { display: flex; flex-direction: column; gap: 6px; }
+.rules-flavor { margin: 0; font-style: italic; color: var(--md-sys-color-on-surface-variant); }
+.rules-stat-list {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 14px; margin: 0;
+  padding: 8px 12px; border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container);
+}
+.rules-stat-row { display: contents; }
+.rules-stat-row dt { font-size: 12.5px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
+.rules-stat-row dd { margin: 0; font-size: 13px; }
+.rules-details { font-size: 13.5px; }
+
+.rules-related { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.rules-related-title { font-size: 12.5px; font-weight: var(--fw-subheading); color: var(--md-sys-color-primary); }
+
+@media (max-width: 768px) {
+  .rules-results { max-height: none; }
+  .rules-sections { padding-left: 16px; }
+  .rules-body { font-size: 13.5px; }
+}

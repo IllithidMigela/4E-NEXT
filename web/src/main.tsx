@@ -8,6 +8,8 @@ import "./styles.css";
 import "./styles.extra.css";
 // 速览页样式（紧凑 HUD 版式）同样独立成文件
 import "./styles.glance.css";
+// 万律速查样式（规则页词条检索与阅读）
+import "./styles.rules.css";
 
 initRipple();
 initOverlayLock();

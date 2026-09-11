@@ -147,11 +147,35 @@ export default function OverviewView({ layout, char, setChar }: Props) {
       <div className="gl-shell">
         <header className="gl-bar">
           <div className="gl-bar-id">
-            <span className="gl-bar-name">{char.name || "未命名角色"}</span>
-            <span className="gl-bar-sub">
-              Lv{char.level}
-              {d.raceName ? " · " + d.raceName : ""}
-              {d.className ? " · " + d.className : ""}
+            {/* 身份与常查数值连成一行：名字 · 等级/种族/职业 · 先攻 / 被动侦查 / 被动洞察 / 移动力 */}
+            <span className="gl-bar-line">
+              <span className="gl-bar-name">{char.name || "未命名角色"}</span>
+              <span className="gl-bar-sub">
+                Lv{char.level}
+                {d.raceName ? " · " + d.raceName : ""}
+                {d.className ? " · " + d.className : ""}
+              </span>
+              <button
+                type="button"
+                className="gl-qs"
+                title={rollMode === "cmd" ? "点击复制先攻指令" : "点击掷先攻"}
+                onClick={() => act.run("先攻", "d20" + fmtSigned(d.initiative))}
+              >
+                <span className="gl-qs-label">先攻</span>
+                <span className="gl-qs-val">{fmtSigned(d.initiative)}</span>
+              </button>
+              <span className="gl-qs static" title="被动侦查 = 10 + 侦查技能加值">
+                <span className="gl-qs-label">被动侦查</span>
+                <span className="gl-qs-val">{d.passivePerception}</span>
+              </span>
+              <span className="gl-qs static" title="被动洞察 = 10 + 洞察技能加值">
+                <span className="gl-qs-label">被动洞察</span>
+                <span className="gl-qs-val">{d.passiveInsight}</span>
+              </span>
+              <span className="gl-qs static" title="移动力（种族基础速度 + 各类加值 − 重甲减值）">
+                <span className="gl-qs-label">移动</span>
+                <span className="gl-qs-val">{d.speedText}</span>
+              </span>
             </span>
           </div>
           <div className="gl-bar-res">

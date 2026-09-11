@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { CSSProperties } from "react";
+import { HexColorPicker } from "react-colorful";
 import type { Entry, PowerBlock } from "../data/types";
 import { CATEGORY_LABELS } from "../data/labels";
 import { FilledButton, FilledTextField, IconButton, OutlinedButton, TextButton } from "../components/md";
@@ -941,6 +942,68 @@ function CreatureBlockEditor({ value, onChange }: { value: CreatureBlock; onChan
   );
 }
 
+/** 卡片「配色」的自选色行：预置色板之外，再给一个与设置页「自选」同款的选色器
+ *  （react-colorful 色盘 + HEX 输入框），两者共用同一 form.cardColor 字段；
+ *  清空即回落到该类型卡片的默认语义色。 */
+function CardColorCustomizer({
+  presets,
+  value,
+  onChange,
+}: {
+  presets: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hex, setHex] = useState(value);
+  // 值由外部改动（点预置色板 / 切换条目 / 导入 JSON）时同步 HEX 输入框
+  useEffect(() => setHex(value), [value]);
+
+  const isPreset = value !== "" && presets.some((p) => p.toLowerCase() === value.toLowerCase());
+  const custom = value && !isPreset ? value : "";
+  // 选色器需要一个合法色值：优先用输入框里当前合法的 HEX，其次自选色，最后预置色/主题色兜底
+  const shown = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : custom || presets[0] || "#6750a4";
+
+  return (
+    <div className="hb-color-field">
+      <div className="hb-color-custom">
+        <span className="hb-color-custom-label">自选色</span>
+        <button
+          type="button"
+          className={"swatch hb-color-custom-swatch" + (custom ? " active" : "")}
+          style={{ background: shown }}
+          title={open ? "收起选色器" : "展开选色器，自选卡片配色"}
+          aria-label="自选卡片配色"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        />
+        <input
+          className="hex-input"
+          value={hex}
+          placeholder="#RRGGBB"
+          aria-label="卡片配色 HEX 颜色值"
+          onChange={(e) => {
+            setHex(e.target.value);
+            const v = e.target.value.trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v.toLowerCase());
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") setOpen(false); }}
+        />
+        {custom && (
+          <button type="button" className="hb-color-clear" onClick={() => onChange("")} title="清除自选色，回到该类型的默认卡片配色">
+            恢复默认
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="color-picker-pop">
+          <HexColorPicker color={shown} onChange={(c) => onChange(c.toLowerCase())} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 预览「威能引用」懒加载缓存：首次需要时加载一次官方威能表，供 [[威能]] 悬浮解析
 let powerIndexPromise: Promise<Entry[]> | undefined;
 // 物品套装「套装组成」的装备库候选缓存：首次需要时加载一次官方装备表（名称候选）
@@ -1594,6 +1657,8 @@ export default function EntryEditor({
                     <span className="hb-color-swatch" />
                   </button>
                 ))}
+                {/* 预置色之外：设置页同款自选色器（色盘 + HEX 输入），写入同一 cardColor 字段 */}
+                <CardColorCustomizer presets={f.options ?? []} value={val} onChange={(v) => set(f.key, v)} />
               </>
             ) : f.key === "cardIcon" ? (
               (f.options ?? []).map((o) => (

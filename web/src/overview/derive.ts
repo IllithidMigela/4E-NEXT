@@ -24,7 +24,7 @@ import {
   type DefenseKey,
 } from "../sheet/character";
 import { collectProficiencyTokens, isProficient } from "../sheet/proficiency";
-import { deriveDefenses } from "../sheet/defense";
+import { deriveDefenses, speedInfo } from "../sheet/defense";
 import { findBaseItem } from "../lib/baseitems";
 import { itemLevels, enhancementBonusForLevel } from "../lib/levelprices";
 
@@ -71,6 +71,11 @@ export interface GlanceData {
   damages: GlanceDamageLine[];
   defenses: GlanceDefenseLine[];
   skills: GlanceSkillLine[];
+  // 顶部速览：先攻 / 感知（被动侦查）/ 移动力
+  initiative: number;
+  passivePerception: number; // 被动侦查 = 10 + 侦查技能加值
+  passiveInsight: number;    // 被动洞察 = 10 + 洞察技能加值
+  speedText: string;
   powerMap: Map<string, Entry>;
   featMap: Map<string, Entry>;
   itemMap: Map<string, Entry>;
@@ -295,6 +300,14 @@ export function useGlance(char: Character): GlanceData {
       damages,
       defenses,
       skills,
+      initiative: stats.initiative + customSum(char.customBonuses?.init),
+      passivePerception:
+        10 + (skills.find((k) => k.name === "侦查")?.total ?? stats.mods.wis + stats.halfLevel) +
+        customSum(char.customBonuses?.perception?.passivePerception),
+      passiveInsight:
+        10 + (skills.find((k) => k.name === "洞察")?.total ?? stats.mods.wis + stats.halfLevel) +
+        customSum(char.customBonuses?.perception?.passiveInsight),
+      speedText: speedInfo(char, raceEntry, defense.primalPredatorSpeed).text,
       powerMap,
       featMap,
       itemMap,

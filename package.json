@@ -1,6 +1,6 @@
 {
   "name": "dnd4e-kcc",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "type": "module",
@@ -12,6 +12,7 @@
     "classify": "tsc && node dist/cli.js classify",
     "normalize": "tsc && node dist/cli.js normalize",
     "index": "tsc && node dist/cli.js index",
+    "rules": "tsc && node dist/cli.js rules",
     "sync": "tsc && node dist/cli.js sync",
     "commit": "tsc && node dist/cli.js commit",
     "pipeline": "tsc && node dist/cli.js all"

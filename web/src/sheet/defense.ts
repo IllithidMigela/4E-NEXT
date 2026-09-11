@@ -348,3 +348,15 @@ export function deriveDefenses(char: Character, ctx: DefenseCtx): DefenseDerived
     primalPredatorSpeed: primal.startsWith("原力掠食者") && !isHeavyArmor(char) ? 1 : 0,
   };
 }
+
+/** 移动力：种族基础速度 + 各类加值 − 重甲速度减值（护甲自带，自动计入）。
+ *  人物页与速览页共用，保证两页显示同一个数字。 */
+export function speedInfo(char: Character, raceEntry: Entry | undefined, primalSpeed: number): { value: number; text: string } {
+  const armorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
+  const armorSpeed = armorBase?.kind === "armor" && armorBase.armor ? armorBase.armor.speed : 0;
+  const custom = customSum(char.customBonuses?.speed);
+  const total = char.speedMods.power + char.speedMods.feat + char.speedMods.item + custom + primalSpeed + armorSpeed;
+  const num = parseInt(raceEntry?.speed ?? "", 10);
+  if (Number.isNaN(num)) return { value: 0, text: raceEntry?.speed ?? "—" };
+  return { value: num + total, text: num + total + " 格" };
+}

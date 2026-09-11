@@ -32,7 +32,7 @@ import { CustomBonusEditor, OtherLink } from "../components/CustomBonusEditor";
 // 灵能点推导：与速览页共用（速览页长休需按同一规则恢复灵能点）
 import { psionicPowerPoints, hybridPowerPoints } from "./powerpoints";
 // 防御推导（装备/职业特性自动加值、AC 属性替换）：与速览页共用同一实现
-import { deriveDefenses, hybridTalentProf, resolvePrimalAspect, runicArtistry } from "./defense";
+import { deriveDefenses, hybridTalentProf, resolvePrimalAspect, runicArtistry, speedInfo } from "./defense";
 
 const ABILITIES: AbilityKey[] = ["str", "con", "dex", "int", "wis", "cha"];
 
@@ -5050,9 +5050,10 @@ export default function CharacterSheet({
   const speedOther = customSum(char.customBonuses?.speed);
   const perceptionPP = customSum(char.customBonuses?.perception?.passivePerception);
   const perceptionPI = customSum(char.customBonuses?.perception?.passiveInsight);
-  const speedTotal = char.speedMods.power + char.speedMods.feat + char.speedMods.item + speedOther + primalPredatorSpeed + equippedArmorSpeedPen;
-  const speedNum = parseInt(raceEntry?.speed ?? "", 10);
-  const speedDisplay = Number.isNaN(speedNum) ? (raceEntry?.speed ?? "—") : speedNum + speedTotal + " 格";
+  // 移动力推导与速览页共用同一份实现（defense.ts 的 speedInfo）
+  const speed = speedInfo(char, raceEntry, primalPredatorSpeed);
+  const speedTotal = speed.value - (parseInt(raceEntry?.speed ?? "", 10) || 0);
+  const speedDisplay = speed.text;
 
   const powerMap = useMemo(() => new Map(powers.map((p) => [p.id, p])), [powers]);
   const themeMap = useMemo(() => new Map(themes.map((t) => [t.id, t])), [themes]);

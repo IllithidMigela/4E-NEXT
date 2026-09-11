@@ -7,6 +7,7 @@ import { runClassify } from "./etl/classify.js";
 import { runNormalize } from "./etl/normalize.js";
 import { runIndex } from "./etl/index.js";
 import { runAudit } from "./etl/audit.js";
+import { runRules } from "./etl/rules.js";
 
 function findSourceHtml(): string | undefined {
   if (!existsSync(DATA_DIR)) return undefined;
@@ -113,11 +114,19 @@ async function cmdIndex(): Promise<void> {
   console.log("[index] relations: " + r.relations);
 }
 
+async function cmdRules(): Promise<void> {
+  const r = runRules();
+  console.log("[rules] 源文件: " + r.source);
+  console.log("[rules] 词条 " + r.total + " 条（章节 " + r.chapters + " / 术语 " + r.terms + " / 问答 " + r.faq + "）");
+  console.log("[rules] 已写出: " + r.output);
+}
+
 async function cmdAll(): Promise<void> {
   await cmdExtract();
   await cmdClassify();
   await cmdNormalize();
   await cmdIndex();
+  await cmdRules();
 }
 
 async function main(): Promise<void> {
@@ -128,13 +137,14 @@ async function main(): Promise<void> {
     classify: cmdClassify,
     normalize: cmdNormalize,
     index: cmdIndex,
+    rules: cmdRules,
     sync: cmdSync,
     commit: cmdCommit,
     all: cmdAll,
   };
   const h = handlers[cmd];
   if (!h) {
-    console.error("未知命令: " + cmd + "。用法: pnpm <extract|profile|classify|normalize|index|sync|commit|all>");
+    console.error("未知命令: " + cmd + "。用法: pnpm <extract|profile|classify|normalize|index|rules|sync|commit|all>");
     process.exitCode = 1;
     return;
   }

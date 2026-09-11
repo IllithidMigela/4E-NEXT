@@ -23,3 +23,9 @@ export function writeJson(path: string, data: unknown): void {
   ensureDir(dirname(path));
   writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf8");
 }
+
+/** 前端按需加载的数据用紧凑 JSON（无缩进），减少传输体积 */
+export function writeJsonCompact(path: string, data: unknown): void {
+  ensureDir(dirname(path));
+  writeFileSync(path, JSON.stringify(data), "utf8");
+}

@@ -23,4 +23,13 @@ for (const f of readdirSync(join(outDir, "categories"))) {
   }
 }
 
+// 万律书速查词条（可选产物：仓库根目录执行 pnpm rules 后生成）
+const rulesFile = join(outDir, "rules", "rules.json");
+if (existsSync(rulesFile)) {
+  cpSync(rulesFile, join(dest, "rules.json"));
+  console.log("[copy-data] rules.json 已同步（万律速查）");
+} else {
+  console.log("[copy-data] 未找到 out/rules/rules.json，跳过万律速查数据（可执行 pnpm rules 生成）");
+}
+
 console.log("[copy-data] 数据已同步到 web/public/data/");

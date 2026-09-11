@@ -35,9 +35,25 @@
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface-container);
 }
-.gl-bar-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
+.gl-bar-id { min-width: 0; margin-right: auto; }
+/* 名字 / 等级种族职业 / 常查数值 连成一行，窄屏自然折行 */
+.gl-bar-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .gl-bar-name { font-size: 17px; font-weight: var(--fw-heading); color: var(--md-sys-color-on-surface); line-height: 1.2; }
 .gl-bar-sub { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
+/* 名字后面的三个速查值：先攻（可掷/可复制）、被动侦查、移动力 */
+.gl-bar-line .gl-bar-sub { flex: none; }
+.gl-qs {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 9px; border: none; border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface); font: inherit;
+}
+.gl-qs.static { cursor: help; }
+.gl-qs:not(.static) { cursor: pointer; }
+.gl-qs:not(.static):hover { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.gl-qs-label { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); white-space: nowrap; }
+.gl-qs:not(.static):hover .gl-qs-label { color: inherit; }
+.gl-qs-val { font-size: 13px; font-weight: var(--fw-subheading); font-variant-numeric: tabular-nums; }
 .gl-bar-res { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .gl-bar-rest { display: flex; align-items: center; gap: 8px; }
 
