@@ -2,6 +2,7 @@
 // 从 CharacterSheet 抽出，人物页与速览页共用同一份实现，保证两页防御数字永远一致。
 import type { Entry } from "../data/types";
 import type { AbilityKey, Character, DefenseBonusSource, DefenseKey } from "./character";
+import { customSum } from "./character";
 import { findBaseItem } from "../lib/baseitems";
 import { itemLevels, enhancementBonusForLevel } from "../lib/levelprices";
 import { hybridTalentGroups, hybridTalentProfTokens, isHybridTalentFeat, resolveHybridOption } from "../lib/hybrid";
@@ -20,15 +21,18 @@ export interface DefenseSource {
   source: string;
 }
 
+/** 各防御加值对象：面板可编辑来源（feat/enhance/armor/shield）+ 显式保留的 other（自定义列合计 + 职业特性自动值）。 */
+type DefenseModsWithOther = Record<DefenseBonusSource, number> & { other: number };
+
 export interface DefenseDerived {
-  acMods: Record<DefenseBonusSource, number>;
-  fortMods: Record<DefenseBonusSource, number>;
-  refMods: Record<DefenseBonusSource, number>;
-  willMods: Record<DefenseBonusSource, number>;
+  acMods: DefenseModsWithOther;
+  fortMods: DefenseModsWithOther;
+  refMods: DefenseModsWithOther;
+  willMods: DefenseModsWithOther;
   /** 职业特性自动加值明细（详情弹窗逐条标注来源，不混进「其他」手动格） */
   classDefSources: Record<DefenseKey, DefenseSource[]>;
-  /** 传给 deriveStats 的最终加值（手动值 + 职业特性自动值） */
-  statDefenseMods: Record<DefenseKey, Record<DefenseBonusSource, number>>;
+  /** 传给 deriveStats 的最终加值（自定义「其他」合计 + 职业特性自动值） */
+  statDefenseMods: Record<DefenseKey, DefenseModsWithOther>;
   /** 生效的 AC 属性替换键（无替换时 undefined） */
   acKey?: AbilityKey;
   /** 原力掠食者：未穿重甲时速度 +1 */
@@ -110,6 +114,7 @@ export function magicDefenseEnhance(c: Character, itemMap: Map<string, Entry>): 
 }
 
 // 合并手动加值与装备自动加值：防具/盾牌来源以装备为准（装备决定），其余保留手动录入值
+// （「其他」不在此合并：由 customBonuses.defense 的自定义列合计提供）
 export function mergeDefenseMods(
   _k: DefenseKey,
   manual: Record<DefenseBonusSource, number>,
@@ -120,7 +125,6 @@ export function mergeDefenseMods(
     enhance: auto.enhance ?? manual.enhance ?? 0,
     armor: auto.armor ?? manual.armor ?? 0,
     shield: auto.shield ?? manual.shield ?? 0,
-    other: manual.other ?? 0,
   };
 }
 
@@ -323,10 +327,10 @@ export function deriveDefenses(char: Character, ctx: DefenseCtx): DefenseDerived
   (Object.keys(mEnh) as DefenseKey[]).forEach((k) => {
     autoDef[k].enhance = mEnh[k];
   });
-  const acMods = { ...mergeDefenseMods("ac", char.defenseMods.ac, autoDef.ac), other: char.defenseMods.ac.other ?? 0 };
-  const fortMods = { ...mergeDefenseMods("fort", char.defenseMods.fort, autoDef.fort), other: char.defenseMods.fort.other ?? 0 };
-  const refMods = { ...mergeDefenseMods("ref", char.defenseMods.ref, autoDef.ref), other: char.defenseMods.ref.other ?? 0 };
-  const willMods = { ...mergeDefenseMods("will", char.defenseMods.will, autoDef.will), other: char.defenseMods.will.other ?? 0 };
+  const acMods = { ...mergeDefenseMods("ac", char.defenseMods.ac, autoDef.ac), other: customSum(char.customBonuses.defense.ac) };
+  const fortMods = { ...mergeDefenseMods("fort", char.defenseMods.fort, autoDef.fort), other: customSum(char.customBonuses.defense.fort) };
+  const refMods = { ...mergeDefenseMods("ref", char.defenseMods.ref, autoDef.ref), other: customSum(char.customBonuses.defense.ref) };
+  const willMods = { ...mergeDefenseMods("will", char.defenseMods.will, autoDef.will), other: customSum(char.customBonuses.defense.will) };
   const primal = resolvePrimalAspect(char.classFeatureChoices, [ctx.classEntry, ctx.classEntry2]);
   return {
     acMods,

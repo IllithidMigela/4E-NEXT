@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, Switch } from "../components/md";
+import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, FilledTonalButton, Switch } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, isHeavyArmor, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, armorPenaltyFor, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type InitMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, ENCOUNTER_SLOT_LEVELS, DAILY_SLOT_LEVELS, UTILITY_SLOT_LEVELS, PARAGON_SLOT_LEVELS, LEGENDARY_SLOT_LEVEL, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, isHeavyArmor, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, armorPenaltyFor, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, ENCOUNTER_SLOT_LEVELS, DAILY_SLOT_LEVELS, UTILITY_SLOT_LEVELS, PARAGON_SLOT_LEVELS, LEGENDARY_SLOT_LEVEL, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot, customSum, emptyCustomBonuses, type CustomBonuses, type CustomEntry } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import PowerSlotPicker from "./PowerSlotPicker";
 import FeatSlotPicker from "./FeatSlotPicker";
@@ -28,6 +28,7 @@ import ClassPickerModal from "./ClassPickerModal";
 import SheetDialog from "../components/SheetDialog";
 import RitualPicker, { ritualMarketPrice } from "./RitualPicker";
 import { themeStarting, themeStartingPowers, themeExtraPowers, themeOptionalPowers, tierLevel, splitThemeSections, THEME_MECH_START, type ThemeSection } from "./theme";
+import { CustomBonusEditor, OtherLink } from "../components/CustomBonusEditor";
 // 灵能点推导：与速览页共用（速览页长休需按同一规则恢复灵能点）
 import { psionicPowerPoints, hybridPowerPoints } from "./powerpoints";
 // 防御推导（装备/职业特性自动加值、AC 属性替换）：与速览页共用同一实现
@@ -398,6 +399,18 @@ function featReplacementInfo(f: Entry, lookup: (t: string) => Entry | undefined)
   return undefined;
 }
 
+// 冒险装备价格解析：把「15gp」「2gp」「5sp」「可变」等文本压成 gp 数值
+function parseGearCost(cost?: string): number {
+  if (!cost) return 0;
+  const m = cost.match(/([\d.]+)\s*(gp|sp|cp|银币|铜币)?/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  const unit = (m[2] || "gp").toLowerCase();
+  if (unit === "sp" || unit === "银币") return Math.round(n / 10);
+  if (unit === "cp" || unit === "铜币") return Math.round(n / 100);
+  return n;
+}
+
 // 装备栏位分组（下标对应 EQUIPMENT_SLOTS），按部位各自单独成组
 const EQUIP_GROUPS: { label: string; kind?: "weapon" | "armor" | "shield"; slots: { index: number; name: string }[] }[] = [
   { label: "武器", kind: "weapon", slots: [{ index: 0, name: "主手" }, { index: 1, name: "副手" }] },
@@ -693,7 +706,6 @@ const DEF_BONUS_LABELS: Record<DefenseBonusSource, string> = {
   enhance: "增强",
   armor: "防具",
   shield: "盾牌",
-  other: "其他",
 };
 
 // 职业特性正文渲染：保留换行/表格，并把 [[威能]]、[[专长]] 等超链接转为悬浮卡片预览
@@ -4007,6 +4019,8 @@ function DefenseCell(props: {
   mods: Record<DefenseBonusSource, number>;
   mode: "edit" | "render";
   onChange: (src: DefenseBonusSource, v: string) => void;
+  other: number; // 详情右栏自定义列合计（面板「其他」）
+  onOtherClick: () => void;
 }) {
   const total = DEFENSE_BONUS_SOURCES.reduce((s, k) => s + (props.mods[k] ?? 0), 0);
   return (
@@ -4014,16 +4028,25 @@ function DefenseCell(props: {
       <span>{props.label}</span>
       <span className="defense-value">{props.value}</span>
       {props.mode === "edit" ? (
-        <div className="def-bonus">
-          {DEFENSE_BONUS_SOURCES.map((s) => (
-            <label key={s} className="def-bonus-item">
-              <span>{DEF_BONUS_LABELS[s]}</span>
-              <input type="number" min={-20} max={50} value={props.mods[s] ?? 0} onChange={(e) => props.onChange(s, e.target.value)} />
+        <>
+          <div className="def-bonus">
+            {DEFENSE_BONUS_SOURCES.map((s) => (
+              <label key={s} className="def-bonus-item">
+                <span>{DEF_BONUS_LABELS[s]}</span>
+                <input type="number" min={-20} max={50} value={props.mods[s] ?? 0} onChange={(e) => props.onChange(s, e.target.value)} />
+              </label>
+            ))}
+            <label className="def-bonus-item def-other-item" title="其他自定义加值（点击进入详情界面编辑）">
+              <span>其他</span>
+              <input type="number" readOnly value={props.other} onClick={props.onOtherClick} />
             </label>
-          ))}
-        </div>
+          </div>
+        </>
       ) : (
-        total !== 0 && <div className="def-bonus-total">{total > 0 ? "+" + total : String(total)}</div>
+        <>
+          {total !== 0 && <div className="def-bonus-total">{total > 0 ? "+" + total : String(total)}</div>}
+          <OtherLink value={props.other} onClick={props.onOtherClick} mode="render" />
+        </>
       )}
     </div>
   );
@@ -4113,7 +4136,7 @@ function raceGrantedPowerEntries(
   return out;
 }
 
-// 抵御详情弹窗：逐项展示 AC/强韧/反射/意志的完整计算过程
+// 抵御详情弹窗：双栏结构——左栏逐项展示 AC/强韧/反射/意志的完整计算过程，右栏是各防御的「自定义」编辑器
 function DefenseDetailDialog(props: {
   stats: DerivedStats;
   acMods: Record<DefenseBonusSource, number>;
@@ -4121,6 +4144,8 @@ function DefenseDetailDialog(props: {
   refMods: Record<DefenseBonusSource, number>;
   willMods: Record<DefenseBonusSource, number>;
   classDefSources: Record<DefenseKey, { value: number; source: string }[]>;
+  customDefense: Record<DefenseKey, CustomEntry[]>;
+  onChangeDefense: (k: DefenseKey, entries: CustomEntry[]) => void;
   cls?: ClassStats;
   raceDefs?: RaceDefenseBonus;
   acKey?: AbilityKey;
@@ -4129,7 +4154,7 @@ function DefenseDetailDialog(props: {
   raceName?: string;
   onClose: () => void;
 }) {
-  const { stats, acMods, fortMods, refMods, willMods, classDefSources, cls, raceDefs, acKey, heavyArmor, className, raceName, onClose } = props;
+  const { stats, acMods, fortMods, refMods, willMods, classDefSources, customDefense, onChangeDefense, cls, raceDefs, acKey, heavyArmor, className, raceName, onClose } = props;
   const abilityLabel = (k: AbilityKey) => ABILITY_LABELS[k].zh;
   // 每一项防御的明细行：[标签, 数值文本]；数值为 0 的加值行不展示
   type Row = { label: string; value: string; auto?: boolean };
@@ -4149,6 +4174,10 @@ function DefenseDetailDialog(props: {
     // 职业特性自动加值：逐项标注来源
     for (const s of classDefSources[def] ?? []) {
       if (s.value !== 0) rows.push({ label: s.source, value: fmtMod(s.value), auto: true });
+    }
+    // 自定义条目（详情右栏编辑，合计即面板「其他」）
+    for (const e of customDefense[def] ?? []) {
+      if (e.value !== 0) rows.push({ label: e.label || "其他", value: fmtMod(e.value) });
     }
     return rows;
   };
@@ -4189,27 +4218,33 @@ function DefenseDetailDialog(props: {
   ];
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="picker-dialog def-detail-dialog def-detail-cols-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">防御计算详情</span>
+          <span className="picker-title">防御详情</span>
           <div className="picker-head-btns">
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
           </div>
         </div>
-        <div className="def-detail-grid">
-          {blocks.map((b) => (
-            <div key={b.label} className="def-detail-block">
-              <div className="def-detail-title">{b.label} <span className="def-detail-total">{b.value}</span></div>
-              <div className="def-detail-rows">
-                {b.rows.map((r, i) => (
-                  <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                    <span className="ddr-label">{r.label}</span>
-                    <span className="ddr-value">{r.value}</span>
+        <div className="def-detail-cols">
+          {blocks.map((b, i) => {
+            const k = (["ac", "fort", "ref", "will"] as DefenseKey[])[i];
+            return (
+              <div key={b.label} className="def-detail-col">
+                <div className="def-detail-block">
+                  <div className="def-detail-title">{b.label} <span className="def-detail-total">{b.value}</span></div>
+                  <div className="def-detail-rows">
+                    {b.rows.map((r, j) => (
+                      <div key={j} className={"def-detail-row" + (r.auto ? " auto" : "")}>
+                        <span className="ddr-label">{r.label}</span>
+                        <span className="ddr-value">{r.value}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+                <CustomBonusEditor title="其他" entries={customDefense[k] ?? []} onChange={(entries) => onChangeDefense(k, entries)} />
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>,
@@ -4237,9 +4272,9 @@ function AbilityDetailDialog(props: {
   });
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="picker-dialog def-detail-dialog def-detail-attr" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">属性计算详情</span>
+          <span className="picker-title">属性详情</span>
           <div className="picker-head-btns">
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
           </div>
@@ -4310,7 +4345,7 @@ function LifeDetailDialog(props: {
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">生命计算详情</span>
+          <span className="picker-title">生命详情</span>
           <div className="picker-head-btns">
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
           </div>
@@ -4336,45 +4371,52 @@ function LifeDetailDialog(props: {
   );
 }
 
-// 移动力详情弹窗：逐项展示基础速度与各类加成的构成
+// 移动力详情弹窗：双栏结构——左栏逐项展示基础速度与各类加成的构成，右栏是「自定义」编辑器
 function SpeedDetailDialog(props: {
   display: string;
   baseSpeed: string;
   speedMods: SpeedMods;
   primalSpeed: number;
   armorSpeed: number;
+  custom: CustomEntry[];
+  onChangeCustom: (entries: CustomEntry[]) => void;
   onClose: () => void;
 }) {
-  const { display, baseSpeed, speedMods, primalSpeed, armorSpeed, onClose } = props;
+  const { display, baseSpeed, speedMods, primalSpeed, armorSpeed, custom, onChangeCustom, onClose } = props;
   type Row = { label: string; value: string; auto?: boolean };
   const sm = speedMods;
-  const rows: Row[] = [{ label: "种族基础速度", value: baseSpeed + " 格", auto: true }];
+  // baseSpeed 可能已带「格」单位（如「5格」）或仅为数字，统一只保留一个「格」并补空格
+  const baseVal = /格/.test(baseSpeed) ? baseSpeed.replace(/格$/, "") + " 格" : baseSpeed + " 格";
+  const rows: Row[] = [{ label: "种族基础速度", value: baseVal, auto: true }];
   if (sm.power !== 0) rows.push({ label: "威能", value: "+" + sm.power });
   if (sm.feat !== 0) rows.push({ label: "专长", value: "+" + sm.feat });
   if (armorSpeed < 0) rows.push({ label: "防具减值（重甲）", value: String(armorSpeed), auto: true });
   if (sm.item !== 0) rows.push({ label: "物品", value: "+" + sm.item });
-  if (sm.other !== 0) rows.push({ label: "其他", value: "+" + sm.other });
+  for (const e of custom) if (e.value !== 0) rows.push({ label: e.label || "其他", value: "+" + e.value });
   if (primalSpeed !== 0) rows.push({ label: "原力掠食者", value: "+" + primalSpeed });
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">移动力计算详情</span>
+          <span className="picker-title">移动力详情</span>
           <div className="picker-head-btns">
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
           </div>
         </div>
-        <div className="def-detail-grid">
-          <div className="def-detail-block">
-            <div className="def-detail-title">速度 <span className="def-detail-total">{display}</span></div>
-            <div className="def-detail-rows">
-              {rows.map((r, i) => (
-                <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                  <span className="ddr-label">{r.label}</span>
-                  <span className="ddr-value">{r.value}</span>
-                </div>
-              ))}
+        <div className="def-detail-cols def-detail-cols-1">
+          <div className="def-detail-col">
+            <div className="def-detail-block">
+              <div className="def-detail-title">速度 <span className="def-detail-total">{display}</span></div>
+              <div className="def-detail-rows">
+                {rows.map((r, i) => (
+                  <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
+                    <span className="ddr-label">{r.label}</span>
+                    <span className="ddr-value">{r.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
+            <CustomBonusEditor title="其他" entries={custom} onChange={onChangeCustom} />
           </div>
         </div>
       </div>
@@ -4383,39 +4425,87 @@ function SpeedDetailDialog(props: {
   );
 }
 
-// 先攻详情弹窗：逐项展示先攻加值的构成
-function InitiativeDetailDialog(props: {
-  dexMod: number;
-  halfLevel: number;
-  other: number;
-  total: number;
+// 单技能「其他」自定义弹窗：点击技能面板该技能的「其他」合计输入框时打开，上方展示该技能的加值构成，下方编辑当前技能的条目
+function SkillEditDialog(props: {
+  name: string;
+  block?: { label: string; trained: boolean; value: number; rows: { label: string; value: string }[] };
+  entries: CustomEntry[];
+  onChange: (entries: CustomEntry[]) => void;
   onClose: () => void;
 }) {
-  const { dexMod, halfLevel, other, total, onClose } = props;
-  type Row = { label: string; value: string; auto?: boolean };
-  const rows: Row[] = [{ label: "敏捷调整", value: fmtMod(dexMod), auto: true }];
-  if (halfLevel !== 0) rows.push({ label: "½等级", value: "+" + halfLevel, auto: true });
-  if (other !== 0) rows.push({ label: "其他", value: "+" + other });
+  const { name, block, entries, onChange, onClose } = props;
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
       <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">先攻计算详情</span>
+          <span className="picker-title">{name} · 其他</span>
           <div className="picker-head-btns">
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
           </div>
         </div>
-        <div className="def-detail-grid">
-          <div className="def-detail-block">
-            <div className="def-detail-title">先攻 <span className="def-detail-total">{total}</span></div>
-            <div className="def-detail-rows">
-              {rows.map((r, i) => (
-                <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
-                  <span className="ddr-label">{r.label}</span>
-                  <span className="ddr-value">{r.value}</span>
+        <div className="def-detail-cols def-detail-cols-1">
+          <div className="def-detail-col">
+            {block && (
+              <div className="def-detail-block">
+                <div className="def-detail-title">
+                  {block.label} <span className="def-detail-total">{fmtMod(block.value)}</span>
                 </div>
-              ))}
+                <div className="def-detail-rows">
+                  {block.rows.map((r, i) => (
+                    <div className="def-detail-row auto" key={i}>
+                      <span className="ddr-label">{r.label}</span>
+                      <span className="ddr-value">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <CustomBonusEditor title="其他" entries={entries} onChange={onChange} />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// 先攻详情弹窗：双栏结构——左栏逐项展示先攻加值的构成，右栏是「自定义」编辑器
+function InitiativeDetailDialog(props: {
+  dexMod: number;
+  halfLevel: number;
+  custom: CustomEntry[];
+  onChangeCustom: (entries: CustomEntry[]) => void;
+  onClose: () => void;
+}) {
+  const { dexMod, halfLevel, custom, onChangeCustom, onClose } = props;
+  const total = dexMod + halfLevel + customSum(custom);
+  type Row = { label: string; value: string; auto?: boolean };
+  const rows: Row[] = [{ label: "敏捷调整", value: fmtMod(dexMod), auto: true }];
+  if (halfLevel !== 0) rows.push({ label: "½等级", value: "+" + halfLevel, auto: true });
+  for (const e of custom) if (e.value !== 0) rows.push({ label: e.label || "其他", value: "+" + e.value });
+  return createPortal(
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-head">
+          <span className="picker-title">先攻详情</span>
+          <div className="picker-head-btns">
+            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
+          </div>
+        </div>
+        <div className="def-detail-cols def-detail-cols-1">
+          <div className="def-detail-col">
+            <div className="def-detail-block">
+              <div className="def-detail-title">先攻 <span className="def-detail-total">{total}</span></div>
+              <div className="def-detail-rows">
+                {rows.map((r, i) => (
+                  <div key={i} className={"def-detail-row" + (r.auto ? " auto" : "")}>
+                    <span className="ddr-label">{r.label}</span>
+                    <span className="ddr-value">{r.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
+            <CustomBonusEditor title="其他" entries={custom} onChange={onChangeCustom} />
           </div>
         </div>
       </div>
@@ -4440,30 +4530,94 @@ function SkillDetailDialog(props: {
   const { blocks, onClose } = props;
   return createPortal(
     <div className="picker-overlay" onClick={onClose}>
-      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="picker-dialog def-detail-dialog def-detail-cols-dialog def-detail-skill-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="picker-head">
-          <span className="picker-title">技能计算详情</span>
+          <span className="picker-title">技能详情</span>
           <div className="picker-head-btns">
             <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
           </div>
         </div>
-        <div className="def-detail-grid">
+        <div className="def-detail-cols def-detail-cols-skill">
           {blocks.map((b) => (
-            <div key={b.label} className="def-detail-block">
-              <div className="def-detail-title">
-                {b.label}{b.trained ? <span className="skill-detail-trained">受训</span> : ""} <span className="def-detail-total">{b.value}</span>
-              </div>
-              <div className="def-detail-rows">
-                {b.rows.map((r, i) => (
-                  <div key={i} className="def-detail-row auto">
-                    <span className="ddr-label">{r.label}</span>
-                    <span className="ddr-value">{r.value}</span>
-                  </div>
-                ))}
+            <div key={b.label} className="def-detail-col">
+              <div className="def-detail-block">
+                <div className="def-detail-title">
+                  {b.label}{b.trained ? <span className="skill-detail-trained">受训</span> : ""} <span className="def-detail-total">{b.value}</span>
+                </div>
+                <div className="def-detail-rows">
+                  {b.rows.map((r, i) => (
+                    <div key={i} className="def-detail-row auto">
+                      <span className="ddr-label">{r.label}</span>
+                      <span className="ddr-value">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ))}
         </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// 感知详情弹窗：双栏结构——左栏逐项展示被动侦查、被动洞察的构成（基础 10 + 感知调整 + ½等级 + 自定义），
+// 右栏是「自定义」编辑器（合计同时计入被动侦查与被动洞察）
+function PerceptionDetailDialog(props: {
+  passiveInsight: number;
+  passivePerception: number;
+  perceptionSkill: number; // 侦查技能加值
+  insightSkill: number;    // 洞察技能加值
+  custom: { passivePerception: CustomEntry[]; passiveInsight: CustomEntry[] };
+  onChangeCustom: (field: "passivePerception" | "passiveInsight", entries: CustomEntry[]) => void;
+  onClose: () => void;
+}) {
+  const { passiveInsight, passivePerception, perceptionSkill, insightSkill, custom, onChangeCustom, onClose } = props;
+  type Row = { label: string; value: string; auto?: boolean };
+  const block = (label: string, total: number, skill: number, entries: CustomEntry[]): { label: string; value: number; rows: Row[] } => {
+    const rows: Row[] = [
+      { label: "基础（取10）", value: "10", auto: true },
+      { label: label === "被动侦查" ? "侦查技能加值" : "洞察技能加值", value: fmtMod(skill), auto: true },
+    ];
+    for (const e of entries) if (e.value !== 0) rows.push({ label: e.label || "其他", value: fmtMod(e.value) });
+    return { label, value: total + customSum(entries), rows };
+  };
+  const blocks = [
+    block("被动侦查", passivePerception, perceptionSkill, custom.passivePerception),
+    block("被动洞察", passiveInsight, insightSkill, custom.passiveInsight),
+  ];
+  return createPortal(
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-dialog def-detail-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-head">
+          <span className="picker-title">感知详情</span>
+          <div className="picker-head-btns">
+            <button type="button" className="crop-btn" onClick={onClose}>关闭</button>
+          </div>
+        </div>
+        <div className="def-detail-cols def-detail-cols-2">
+            {blocks.map((b, i) => (
+              <div key={b.label} className="def-detail-col">
+                <div className="def-detail-block">
+                  <div className="def-detail-title">{b.label} <span className="def-detail-total">{b.value}</span></div>
+                  <div className="def-detail-rows">
+                    {b.rows.map((r, j) => (
+                      <div key={j} className={"def-detail-row" + (r.auto ? " auto" : "")}>
+                        <span className="ddr-label">{r.label}</span>
+                        <span className="ddr-value">{r.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <CustomBonusEditor
+                  title="其他"
+                  entries={i === 0 ? custom.passivePerception : custom.passiveInsight}
+                  onChange={(e) => onChangeCustom(i === 0 ? "passivePerception" : "passiveInsight", e)}
+                />
+              </div>
+            ))}
+          </div>
       </div>
     </div>,
     document.body
@@ -4603,6 +4757,8 @@ export default function CharacterSheet({
   // targetCat：被替换威能所在的槽位类别，弹窗只显示该类别相关栏位（无关栏位不出现）。
   const [replacementPicker, setReplacementPicker] = useState<null | { index: number; newPowerId: string; hint: string; targetCat?: keyof PowerSlots }>(null);
   const [equipPicker, setEquipPicker] = useState<null | { kind: "fixed" | "other" | "consumable" | "wondrous"; index: number }>(null);
+  // 冒险装备槽选择器：从数据库(冒险装备目录)挑选，选中后回填名称 + 价格
+  const [advPicker, setAdvPicker] = useState<number | null>(null);
   const [blockDetail, setBlockDetail] = useState<{ powers: boolean; feats: boolean; equipment: boolean; rituals: boolean }>({ powers: true, feats: true, equipment: true, rituals: true });
 
   const [abilityMode, setAbilityMode] = useState<"free" | "buy">("free");
@@ -4623,6 +4779,8 @@ export default function CharacterSheet({
   const [speedDetailOpen, setSpeedDetailOpen] = useState(false);
   const [initDetailOpen, setInitDetailOpen] = useState(false);
   const [skillDetailOpen, setSkillDetailOpen] = useState(false);
+  const [skillEditName, setSkillEditName] = useState<null | string>(null);
+  const [perceptionDetailOpen, setPerceptionDetailOpen] = useState(false);
   const [slotMode, setSlotMode] = useState<null | "mark" | "swap">(null);
   const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: "fixed" | "other" | "consumable" | "wondrous"; index: number }>(null);
   const [basePicker, setBasePicker] = useState<null | { kind: "weapon" | "armor" | "shield"; index: number }>(null);
@@ -4642,7 +4800,13 @@ export default function CharacterSheet({
     void loadCategory("paragon-path").then(setParagonPaths).catch(console.error);
     void loadCategory("epic-destiny").then(setEpicDestinies).catch(console.error);
     void loadCategory("feat").then(setFeats).catch(console.error);
-    void loadCategory("equipment").then(setItems).catch(console.error);
+    // 装备拾取器 = 魔法物品(equipment) + 冒险装备(gear 中 itemCategory=冒险装备 的子集)。
+    // 基础武器/护甲/法器/盾牌由「基础件+增强」双重机制提供，不在此并入以免重复。
+    void loadCategory("equipment").then((magic) =>
+      loadCategory("gear").then((g) =>
+        setItems([...magic, ...g.filter((e) => e.itemCategory === "冒险装备")]),
+      ).catch(() => setItems(magic))
+    ).catch(console.error);
     void loadCategory("power").then(setPowers).catch(console.error);
     void loadCategory("ritual").then(setRituals).catch(console.error);
     void loadCategory("creature").then(setCreatures).catch(console.error);
@@ -4881,7 +5045,12 @@ export default function CharacterSheet({
   // 重甲速度减值按所穿护甲自动计入（链/鳞/板及重甲变体为 -1），无需手动填写
   const equippedArmorBase = char.baseItems?.[5] ? findBaseItem(char.baseItems[5]) : undefined;
   const equippedArmorSpeedPen = equippedArmorBase?.kind === "armor" && equippedArmorBase.armor ? equippedArmorBase.armor.speed : 0;
-  const speedTotal = char.speedMods.power + char.speedMods.feat + char.speedMods.item + char.speedMods.other + primalPredatorSpeed + equippedArmorSpeedPen;
+  // 「其他」= 详情弹窗右栏自定义列合计（面板只读显示，点击展开详情编辑）
+  const initOther = customSum(char.customBonuses?.init);
+  const speedOther = customSum(char.customBonuses?.speed);
+  const perceptionPP = customSum(char.customBonuses?.perception?.passivePerception);
+  const perceptionPI = customSum(char.customBonuses?.perception?.passiveInsight);
+  const speedTotal = char.speedMods.power + char.speedMods.feat + char.speedMods.item + speedOther + primalPredatorSpeed + equippedArmorSpeedPen;
   const speedNum = parseInt(raceEntry?.speed ?? "", 10);
   const speedDisplay = Number.isNaN(speedNum) ? (raceEntry?.speed ?? "—") : speedNum + speedTotal + " 格";
 
@@ -5240,18 +5409,33 @@ export default function CharacterSheet({
       const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
       const armorPen = hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0;
       const abilityVal = stats.mods[s.ability];
+      const otherSum = customSum(char.customBonuses.skill[s.name]);
       const rows: { label: string; value: string }[] = [{ label: "属性调整（" + ABILITY_LABELS[s.ability].zh + "）", value: fmtMod(abilityVal) }];
       if (stats.halfLevel !== 0) rows.push({ label: "½等级", value: "+" + stats.halfLevel });
       if (trained) rows.push({ label: "受训", value: "+5" });
       else if (skillVersatility) rows.push({ label: "技能多才", value: "+1" });
       if (sm.race !== 0) rows.push({ label: "种族", value: fmtMod(sm.race) });
       if (armorPen !== 0) rows.push({ label: "护甲减值", value: fmtMod(-armorPen) });
-      if (sm.other !== 0) rows.push({ label: "其他", value: fmtMod(sm.other) });
-      const total = abilityVal + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - armorPen;
+      if (otherSum !== 0) rows.push({ label: "其他", value: fmtMod(otherSum) });
+      const total = abilityVal + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + otherSum - armorPen;
       return { label: s.name, trained, value: total, rows };
     }),
-    [trainedSet, hasSkillVersatility, equippedArmorName, stats, char.skillMods]
+    [trainedSet, hasSkillVersatility, equippedArmorName, stats, char.skillMods, char.customBonuses.skill]
   );
+  // 被动侦查 / 被动洞察（万律·被动检定 = 技能取 10）：10 + 对应技能加值。
+  const perceptionPassive = useMemo(() => {
+    const find = (name: string) => skillDetailBlocks.find((s) => s.label === name);
+    const pp = find("侦查");
+    const pi = find("洞察");
+    const fallback = () => stats.mods.wis + stats.halfLevel;
+    return {
+      passivePerception: 10 + (pp?.value ?? fallback()),
+      passiveInsight: 10 + (pi?.value ?? fallback()),
+      perceptionSkill: pp?.value ?? fallback(), // 侦查技能加值
+      insightSkill: pi?.value ?? fallback(),    // 洞察技能加值
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skillDetailBlocks, stats.mods.wis, stats.halfLevel]);
   const raceTrait = useMemo(() => (raceEntry ? raceTraitHtml(raceEntry.sourceText) : undefined), [raceEntry]);
   const raceBody = useMemo(() => (raceEntry ? raceBodyHtml(raceEntry.sourceText) : undefined), [raceEntry]);
   const raceLoreSections = useMemo(() => (raceBody ? splitRaceLore(raceBody) : []), [raceBody]);
@@ -5703,11 +5887,15 @@ export default function CharacterSheet({
     setChar((p) => ({ ...p, speedMods: { ...p.speedMods, [k]: val } }));
   }
 
-  function setInitMod(k: keyof InitMods, v: string) {
-    const n = parseInt(v, 10);
-    const val = Number.isNaN(n) ? 0 : Math.max(-20, Math.min(50, n));
-    setChar((p) => ({ ...p, initMods: { ...p.initMods, [k]: val } }));
+  // 详情弹窗「自定义」列写入：各面板自定义条目（合计即面板「其他」加值）
+  function setCustom(fn: (c: CustomBonuses) => CustomBonuses) {
+    setChar((p) => ({ ...p, customBonuses: fn(p.customBonuses ?? emptyCustomBonuses()) }));
   }
+  const setDefenseCustom = (k: DefenseKey, entries: CustomEntry[]) =>
+    setCustom((c) => ({ ...c, defense: { ...c.defense, [k]: entries } }));
+  const setSpeedCustom = (entries: CustomEntry[]) => setCustom((c) => ({ ...c, speed: entries }));
+  const setInitCustom = (entries: CustomEntry[]) => setCustom((c) => ({ ...c, init: entries }));
+  const setPerceptionCustom = (field: "passivePerception" | "passiveInsight", entries: CustomEntry[]) => setCustom((c) => ({ ...c, perception: { ...c.perception, [field]: entries } }));
 
   function setSkillMod(name: string, key: keyof SkillMods[string], v: string) {
     const n = parseInt(v, 10);
@@ -5716,6 +5904,11 @@ export default function CharacterSheet({
       const cur = p.skillMods[name] ?? { race: 0, other: 0, armor: 0 };
       return { ...p, skillMods: { ...p.skillMods, [name]: { ...cur, [key]: val } } };
     });
+  }
+
+  // 技能「其他」自定义：写入 customBonuses.skill[name]（面板「其他」只读显示其合计）
+  function setSkillCustom(name: string, entries: CustomEntry[]) {
+    setChar((p) => ({ ...p, customBonuses: { ...p.customBonuses, skill: { ...p.customBonuses.skill, [name]: entries } } }));
   }
 
   function setAbility(k: AbilityKey, v: number) {
@@ -5768,13 +5961,33 @@ export default function CharacterSheet({
     });
   }
 
-  function setAdvItem(i: number, patch: Partial<{ name: string; cost: number }>) {
+  function setAdvItem(i: number, patch: Partial<{ name: string; cost: number; id: string }>) {
     setChar((p) => {
       const arr = [...p.adventureItems];
       while (arr.length <= i) arr.push({ name: "", cost: 0 });
       arr[i] = { ...arr[i], ...patch };
       return { ...p, adventureItems: arr };
     });
+  }
+
+  // 冒险装备槽：点击弹选择器（仅编辑态）
+  function openAdvPicker(i: number) {
+    if (mode === "render") return;
+    setAdvPicker(i);
+  }
+
+  // 选中数据库冒险装备条目 → 回填名称 + 价格 + 来源 id
+  function pickAdvItem(id: string) {
+    if (advPicker === null) return;
+    const e = itemMap.get(id);
+    if (e) {
+      setAdvItem(advPicker, { id, name: e.name, cost: parseGearCost(e.cost) });
+    }
+    setAdvPicker(null);
+  }
+
+  function clearAdvItem(i: number) {
+    setAdvItem(i, { id: undefined, name: "", cost: 0 });
   }
 
   function setLang(i: number, v: string) {
@@ -6001,23 +6214,12 @@ export default function CharacterSheet({
               <span className="mb-label">先攻</span>
               <button type="button" className="def-detail-btn" onClick={() => setInitDetailOpen(true)} title="查看先攻加值的构成">查看详情</button>
             </div>
-            <span className="mb-value">{fmtMod(stats.initiative + char.initMods.other)}</span>
-            {mode === "edit" ? (
-              <ModInputs sources={[{ key: "other", label: "其他" }]} mods={char.initMods} onChange={(k, v) => setInitMod(k as keyof InitMods, v)} />
-            ) : (
-              char.initMods.other !== 0 && <div className="def-bonus-total">{char.initMods.other > 0 ? "+" + char.initMods.other : String(char.initMods.other)}</div>
-            )}
+            <span className="mb-value">{fmtMod(stats.initiative + initOther)}</span>
           </div>
           <div className="mini-block">
             <div className="mb-head">
               <span className="mb-label">属性</span>
-              {abilityMode === "buy" && (isBoostLevel || boostUsed > 0 ? (
-                <span className="buy-badge">提升 {boostUsed}/2</span>
-              ) : (
-                <button type="button" className={buyPointsUsed(char.abilities) > BUY_POINTS ? "buy-badge clickable over" : "buy-badge clickable"} onClick={() => setBuyPresetOpen(true)} title="点击选择常用购点组合">
-                  购点 {BUY_POINTS - buyPointsUsed(char.abilities)}/{BUY_POINTS}
-                </button>
-              ))}
+              <button type="button" className="def-detail-btn" onClick={() => setAbilityDetailOpen(true)} title="查看每项属性的基础值与种族加成构成">查看详情</button>
             </div>
             <div className="ability-actions-row">
               <span className="ability-actions-left">
@@ -6026,7 +6228,13 @@ export default function CharacterSheet({
                   <Switch selected={abilityMode === "buy"} onChange={(e) => setAbilityMode((e.target as any).selected ? "buy" : "free")} />
                 </label>
               </span>
-              <button type="button" className="def-detail-btn" onClick={() => setAbilityDetailOpen(true)} title="查看每项属性的基础值与种族加成构成">查看详情</button>
+              {abilityMode === "buy" && (isBoostLevel || boostUsed > 0 ? (
+                <span className="buy-badge">提升 {boostUsed}/2</span>
+              ) : (
+                <button type="button" className={buyPointsUsed(char.abilities) > BUY_POINTS ? "buy-badge clickable over" : "buy-badge clickable"} onClick={() => setBuyPresetOpen(true)} title="点击选择常用购点组合">
+                  购点 {BUY_POINTS - buyPointsUsed(char.abilities)}/{BUY_POINTS}
+                </button>
+              ))}
             </div>
             {raceInfo && (raceInfo.one || raceInfo.two.length > 0) && (
               <div className="race-bonus-inline">
@@ -6061,10 +6269,13 @@ export default function CharacterSheet({
         </div>
         <div className="stat-col">
           <div className="mini-block">
-            <span className="mb-label">感知</span>
+            <div className="mb-head">
+              <span className="mb-label">感知</span>
+              <button type="button" className="def-detail-btn" onClick={() => setPerceptionDetailOpen(true)} title="查看被动侦查与被动洞察的构成">查看详情</button>
+            </div>
             <div className="mb-pair">
-              <div className="mb-pair-item"><span>被动侦查</span><span className="mb-pair-value">{stats.passivePerception}</span></div>
-              <div className="mb-pair-item"><span>被动洞察</span><span className="mb-pair-value">{stats.passiveInsight}</span></div>
+              <div className="mb-pair-item"><span>被动侦查</span><span className="mb-pair-value">{perceptionPassive.passivePerception + perceptionPP}</span></div>
+              <div className="mb-pair-item"><span>被动洞察</span><span className="mb-pair-value">{perceptionPassive.passiveInsight + perceptionPI}</span></div>
             </div>
           </div>
           <div className="mini-block">
@@ -6073,10 +6284,10 @@ export default function CharacterSheet({
               <button type="button" className="def-detail-btn" onClick={() => setDefDetailOpen(true)} title="查看各防御属性的详细计算过程">查看详情</button>
             </div>
             <div className="defense-grid">
-              <DefenseCell label="AC" value={stats.ac} mods={acMods} mode={mode} onChange={(src, v) => setDefenseMod("ac", src, v)} />
-              <DefenseCell label="强韧" value={stats.fort} mods={fortMods} mode={mode} onChange={(src, v) => setDefenseMod("fort", src, v)} />
-              <DefenseCell label="反射" value={stats.ref} mods={refMods} mode={mode} onChange={(src, v) => setDefenseMod("ref", src, v)} />
-              <DefenseCell label="意志" value={stats.will} mods={willMods} mode={mode} onChange={(src, v) => setDefenseMod("will", src, v)} />
+              <DefenseCell label="AC" value={stats.ac} mods={acMods} mode={mode} onChange={(src, v) => setDefenseMod("ac", src, v)} other={acMods.other} onOtherClick={() => setDefDetailOpen(true)} />
+              <DefenseCell label="强韧" value={stats.fort} mods={fortMods} mode={mode} onChange={(src, v) => setDefenseMod("fort", src, v)} other={fortMods.other} onOtherClick={() => setDefDetailOpen(true)} />
+              <DefenseCell label="反射" value={stats.ref} mods={refMods} mode={mode} onChange={(src, v) => setDefenseMod("ref", src, v)} other={refMods.other} onOtherClick={() => setDefDetailOpen(true)} />
+              <DefenseCell label="意志" value={stats.will} mods={willMods} mode={mode} onChange={(src, v) => setDefenseMod("will", src, v)} other={willMods.other} onOtherClick={() => setDefDetailOpen(true)} />
             </div>
           </div>
         </div>
@@ -6088,18 +6299,26 @@ export default function CharacterSheet({
             </div>
             <span className="mb-value">{speedDisplay}<span className="mb-unit">速度(格)</span></span>
             {mode === "edit" ? (
-              <ModInputs
-                sources={[
-                  { key: "power", label: "威能" },
-                  { key: "feat", label: "专长" },
-                  { key: "item", label: "物品" },
-                  { key: "other", label: "其他" },
-                ]}
-                mods={char.speedMods}
-                onChange={(k, v) => setSpeedMod(k as keyof SpeedMods, v)}
-              />
+              <>
+                <ModInputs
+                  sources={[
+                    { key: "power", label: "威能" },
+                    { key: "feat", label: "专长" },
+                    { key: "item", label: "物品" },
+                  ]}
+                  mods={char.speedMods}
+                  onChange={(k, v) => setSpeedMod(k as keyof SpeedMods, v)}
+                />
+                <label className="def-bonus-item def-other-item" title="其他自定义加值（点击进入详情界面编辑）">
+                  <span>其他</span>
+                  <input type="number" readOnly value={speedOther} onClick={() => setSpeedDetailOpen(true)} />
+                </label>
+              </>
             ) : (
-              speedTotal !== 0 && <div className="def-bonus-total">{speedTotal > 0 ? "+" + speedTotal : String(speedTotal)}</div>
+              <>
+                {speedTotal !== 0 && <div className="def-bonus-total">{speedTotal > 0 ? "+" + speedTotal : String(speedTotal)}</div>}
+                <OtherLink value={speedOther} onClick={() => setSpeedDetailOpen(true)} mode="render" />
+              </>
             )}
           </div>
           <div className="mini-block tall">
@@ -6647,7 +6866,7 @@ export default function CharacterSheet({
               const sm = char.skillMods[s.name] ?? { race: 0, other: 0, armor: 0 };
               const hasArmor = ARMOR_PENALTY_SKILLS.has(s.name);
               const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
-              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0);
+              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + customSum(char.customBonuses.skill[s.name]) - (hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0);
               return (
                 <div key={s.name} className={trained ? "skill-item trained" : "skill-item"} onClick={() => toggleTrained(s.name)} title="点击切换受训">
                   <span className="skill-check">{trained ? "✓" : ""}</span>
@@ -6659,7 +6878,7 @@ export default function CharacterSheet({
                       <label className="skill-mod" title="护甲减值（由已装备护甲自动计算）"><span>护甲</span><span className="skill-mod-minus">−</span><span className={"skill-mod-armor" + (armorPenaltyFor(equippedArmorName) !== 0 ? " pen" : "")}>{Math.abs(armorPenaltyFor(equippedArmorName))}</span></label>
                     )}
                     <label className="skill-mod" title="种族加值"><span>种族</span><input type="number" min={-20} max={50} value={sm.race} onChange={(e) => setSkillMod(s.name, "race", e.target.value)} /></label>
-                    <label className="skill-mod" title="其他加值"><span>其他</span><input type="number" min={-20} max={50} value={sm.other} onChange={(e) => setSkillMod(s.name, "other", e.target.value)} /></label>
+                    <label className="skill-mod" title="其他加值（点击展开该技能的自定义条目）"><span>其他</span><input type="number" min={-20} max={50} readOnly value={customSum(char.customBonuses.skill[s.name])} onClick={() => setSkillEditName(s.name)} onKeyDown={(e) => e.key === "Enter" && setSkillEditName(s.name)} /></label>
                   </span>
                 </div>
               );
@@ -6694,7 +6913,7 @@ export default function CharacterSheet({
               const sm = char.skillMods[s.name] ?? { race: 0, other: 0, armor: 0 };
               const hasArmor = ARMOR_PENALTY_SKILLS.has(s.name);
               const skillVersatility = hasSkillVersatility && !trained ? 1 : 0;
-              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + sm.other - (hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0);
+              const total = stats.mods[s.ability] + stats.halfLevel + (trained ? 5 : 0) + skillVersatility + sm.race + customSum(char.customBonuses.skill[s.name]) - (hasArmor ? Math.abs(armorPenaltyFor(equippedArmorName)) : 0);
               return (
                 <div key={s.name} className={trained ? "skill-compact-row trained" : "skill-compact-row"} title="简略模式为静态展示，受训请在详细模式中切换">
                   <span className="sc-name">{s.name}</span>
@@ -6935,6 +7154,7 @@ export default function CharacterSheet({
               <span className="sg-count">（{char.adventureItems.filter(Boolean).length}/{char.adventureItems.length}）</span>
               <button type="button" className="sg-step" title="减少槽位" onClick={() => setChar((p) => ({ ...p, adventureItems: p.adventureItems.slice(0, -1) }))}>−</button>
               <button type="button" className="sg-step" title="增加槽位" onClick={() => setChar((p) => ({ ...p, adventureItems: [...p.adventureItems, { name: "", cost: 0 }] }))}>+</button>
+              <FilledTonalButton className="sg-custom sg-custom-btn" aria-label="添加自定义冒险装备" title="添加自定义冒险装备（手动输入名称）" onClick={() => setChar((p) => ({ ...p, adventureItems: [...p.adventureItems, { name: "", cost: 0, custom: true }] }))}><span className="material-symbols-outlined md-mat" slot="icon">add</span>自定义</FilledTonalButton>
             </div>
             <div className="adv-list">
               {char.adventureItems.map((a, i) => (
@@ -6944,9 +7164,27 @@ export default function CharacterSheet({
                       {a.name && <span className="lang-chip">{a.name}</span>}
                       {a.cost > 0 && <span className="adv-cost">{a.cost} gp</span>}
                     </>
+                  ) : a.custom ? (
+                    <>
+                      <input className="lang-input adv-name-input" type="text" placeholder="自定义装备名" value={a.name} onChange={(e) => setAdvItem(i, { name: e.target.value })} />
+                      <span className="slot-x" title="删除此自定义项" onClick={() => setChar((p) => ({ ...p, adventureItems: p.adventureItems.filter((_, k) => k !== i) }))}>✕</span>
+                      <input className="lang-input adv-cost-input" type="number" min={0} value={a.cost || ""} placeholder="gp" onChange={(e) => setAdvItem(i, { cost: parseInt(e.target.value, 10) || 0 })} />
+                    </>
                   ) : (
                     <>
-                      <input className="lang-input adv-name-input" value={a.name} placeholder={"冒险装备 " + (i + 1)} onChange={(e) => setAdvItem(i, { name: e.target.value })} />
+                      <SmartHover
+                        className="adv-pick"
+                        popClass="wiki-ref-pop"
+                        portal
+                        title="点击从冒险装备名录选择"
+                        pop={a.id ? (() => { const en = itemMap.get(a.id); return en ? <EntryCard entry={en} /> : undefined; })() : undefined}
+                        onClick={() => openAdvPicker(i)}
+                      >
+                        {a.name ? <span className="adv-name">{a.name}</span> : <span className="adv-name adv-placeholder">＋ 选择冒险装备 {(i + 1)}</span>}
+                        {a.name && (
+                          <span className="slot-x" title="清空" onClick={(e) => { e.stopPropagation(); clearAdvItem(i); }}>✕</span>
+                        )}
+                      </SmartHover>
                       <input className="lang-input adv-cost-input" type="number" min={0} value={a.cost || ""} placeholder="gp" onChange={(e) => setAdvItem(i, { cost: parseInt(e.target.value, 10) || 0 })} />
                     </>
                   )}
@@ -7506,6 +7744,16 @@ return (
           onClose={() => setEquipPicker(null)}
         />
       )}
+      {advPicker !== null && (
+        <ItemSlotPicker
+          entries={items}
+          slotName="冒险装备"
+          currentId={char.adventureItems[advPicker]?.id}
+          onSelect={pickAdvItem}
+          onClear={() => { clearAdvItem(advPicker); setAdvPicker(null); }}
+          onClose={() => setAdvPicker(null)}
+        />
+      )}
       {swapPicker &&
         createPortal(
           <div className="picker-overlay" onClick={() => setSwapPicker(null)}>
@@ -7540,6 +7788,8 @@ return (
           refMods={refMods}
           willMods={willMods}
           classDefSources={classDefSources}
+          customDefense={char.customBonuses?.defense ?? { ac: [], fort: [], ref: [], will: [] }}
+          onChangeDefense={setDefenseCustom}
           cls={cls}
           raceDefs={raceDefs}
           acKey={activeAcKey}
@@ -7585,6 +7835,8 @@ return (
           speedMods={char.speedMods}
           primalSpeed={primalPredatorSpeed}
           armorSpeed={equippedArmorSpeedPen}
+          custom={char.customBonuses?.speed ?? []}
+          onChangeCustom={setSpeedCustom}
           onClose={() => setSpeedDetailOpen(false)}
         />
       )}
@@ -7592,8 +7844,8 @@ return (
         <InitiativeDetailDialog
           dexMod={stats.mods.dex}
           halfLevel={stats.halfLevel}
-          other={char.initMods.other}
-          total={stats.initiative + char.initMods.other}
+          custom={char.customBonuses?.init ?? []}
+          onChangeCustom={setInitCustom}
           onClose={() => setInitDetailOpen(false)}
         />
       )}
@@ -7601,6 +7853,26 @@ return (
         <SkillDetailDialog
           blocks={skillDetailBlocks}
           onClose={() => setSkillDetailOpen(false)}
+        />
+      )}
+      {skillEditName && (
+        <SkillEditDialog
+          name={skillEditName}
+          block={skillDetailBlocks.find((b) => b.label === skillEditName)}
+          entries={char.customBonuses.skill[skillEditName] ?? []}
+          onChange={(entries) => setSkillCustom(skillEditName, entries)}
+          onClose={() => setSkillEditName(null)}
+        />
+      )}
+      {perceptionDetailOpen && (
+        <PerceptionDetailDialog
+          passiveInsight={perceptionPassive.passiveInsight}
+          passivePerception={perceptionPassive.passivePerception}
+          perceptionSkill={perceptionPassive.perceptionSkill}
+          insightSkill={perceptionPassive.insightSkill}
+          custom={char.customBonuses?.perception ?? { passivePerception: [], passiveInsight: [] }}
+          onChangeCustom={setPerceptionCustom}
+          onClose={() => setPerceptionDetailOpen(false)}
         />
       )}
       {alignmentOpen && (

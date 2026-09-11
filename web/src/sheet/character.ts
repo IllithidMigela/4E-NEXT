@@ -35,6 +35,7 @@ export function armorPenaltyFor(name: string | undefined): number {
   return a ? a.check : 0;
 }
 
+// 技能加值：race 种族 / armor 护甲减值（自动计算）/ other 已弃用——技能「其他」改由 customBonuses.skill 条目列表承载（迁移时归并）
 export type SkillMods = Record<string, { race: number; other: number; armor: number }>;
 
 export function emptySkillMods(): SkillMods {
@@ -70,13 +71,14 @@ function normDefenseMods(m: DefenseMods): DefenseMods {
     out.ref[k] = m.ref?.[k] ?? 0;
     out.will[k] = m.will?.[k] ?? 0;
   }
+  out.ac.other = m.ac?.other ?? 0;
+  out.fort.other = m.fort?.other ?? 0;
+  out.ref.other = m.ref?.other ?? 0;
+  out.will.other = m.will?.other ?? 0;
   return out;
 }
 function normSpeedMods(m: SpeedMods): SpeedMods {
-  return { power: m.power ?? 0, feat: m.feat ?? 0, item: m.item ?? 0, other: m.other ?? 0 };
-}
-function normInitMods(m: InitMods): InitMods {
-  return { other: m.other ?? 0 };
+  return { power: m.power ?? 0, feat: m.feat ?? 0, item: m.item ?? 0 };
 }
 function normSkillMods(m: SkillMods): SkillMods {
   const out = emptySkillMods();
@@ -90,31 +92,69 @@ function normSkillMods(m: SkillMods): SkillMods {
 // 迁移旧存档：补齐新增字段（localStorage 中旧版本保存的角色缺少这些字段）
 export function migrateCharacter(c: Partial<Character>): Character {
   const base = { ...defaultCharacter(), ...(c as Character) };
+  // 旧单值「其他」字段 → 自定义条目列表（迁移后归入 customBonuses，面板「其他」只读显示合计）
+  const mk = (v?: number): CustomEntry[] => (v ? [{ label: "其他", value: v }] : []);
+  const mkDamage = (a?: number, b?: number): CustomEntry[] => {
+    const out: CustomEntry[] = [];
+    if (a) out.push({ label: "其他1", value: a });
+    if (b) out.push({ label: "其他2", value: b });
+    return out;
+  };
+  // 攻击/伤害成对收敛：先按旧结构 trim 空行（blank 判定含旧 other，避免裁掉有加值的行），再补齐成对；
+  // 同时按行抽取旧「其他」生成自定义列表，保证与行 index 一一对应
+  const oldCombat = (base as { combatMods?: { attacks?: (AttackRowData & { other?: number })[]; damages?: (DamageRowData & { otherA?: number; otherB?: number })[] } }).combatMods;
+  const normAttack = (r: AttackRowData & { other?: number }): AttackRowData & { other?: number } => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0, profSlot: (r.profSlot ?? -1) >= 0 ? r.profSlot : 0, profOverride: r.profOverride ?? false });
+  const normDamage = (r: DamageRowData & { otherA?: number; otherB?: number }): DamageRowData & { otherA?: number; otherB?: number } => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
+  const rawAtk = (oldCombat?.attacks ?? []).map(normAttack);
+  const rawDmg = (oldCombat?.damages ?? []).map(normDamage);
+  const blankAtk = (r: AttackRowData & { other?: number }): boolean => r.classBonus === 0 && r.profBonus === 0 && r.feat === 0 && !(r.other ?? 0);
+  const blankDmg = (r: DamageRowData & { otherA?: number; otherB?: number }): boolean => r.feat === 0 && !(r.otherA ?? 0) && !(r.otherB ?? 0);
+  const attacks = trimBlankRows(rawAtk, blankAtk);
+  const damages = trimBlankRows(rawDmg, blankDmg);
+  // 存档中数组为空时，补回各一行的默认计算单元格（否则面板只有表头、无可计算单元格）；默认属性取角色最高属性
+  const fallback = emptyCombatMods(highestAbilityKey(base.abilities ?? {}));
+  const atk: (AttackRowData & { other?: number })[] = attacks.length > 0 ? attacks : fallback.attacks;
+  const dmg: (DamageRowData & { otherA?: number; otherB?: number })[] = damages.length > 0 ? damages : fallback.damages;
+  // 攻击与伤害现在成对增减：旧存档两边行数可能不等，按较多的一边补齐，保证 index 一一对应
+  const pairs = Math.max(atk.length, dmg.length);
+  while (atk.length < pairs) atk.push({ ...fallback.attacks[0] });
+  while (dmg.length < pairs) dmg.push({ ...fallback.damages[0] });
+  const customAtk = atk.map((r) => mk(r.other));
+  const customDmg = dmg.map((r) => mkDamage(r.otherA, r.otherB));
+  // 自定义条目（已有 customBonuses 的存档直接复用，逐键兜底；attack/damage 按行数切片/补齐）
+  const oldCustom = (base as { customBonuses?: Partial<CustomBonuses> }).customBonuses ?? {};
+  const alignRows = (arr?: CustomEntry[][]): CustomEntry[][] => Array.from({ length: pairs }, (_, i) => arr?.[i] ?? []);
+  const customBonuses: CustomBonuses = {
+    init: oldCustom.init ?? mk((base as { initMods?: { other?: number } }).initMods?.other),
+    speed: oldCustom.speed ?? mk((base as { speedMods?: { other?: number } }).speedMods?.other),
+    defense: {
+      ac: oldCustom.defense?.ac ?? mk(base.defenseMods?.ac?.other),
+      fort: oldCustom.defense?.fort ?? mk(base.defenseMods?.fort?.other),
+      ref: oldCustom.defense?.ref ?? mk(base.defenseMods?.ref?.other),
+      will: oldCustom.defense?.will ?? mk(base.defenseMods?.will?.other),
+    },
+    // 感知拆分为被动侦查/被动洞察两套：旧存档是单个列表（两者共享），迁移时复制到两套保持旧数值不变
+    perception: migratePerception(oldCustom.perception),
+    attack: oldCustom.attack?.length ? alignRows(oldCustom.attack) : customAtk,
+    damage: oldCustom.damage?.length ? alignRows(oldCustom.damage) : customDmg,
+    // 技能：优先复用旧 customBonuses.skill；否则把 skillMods[技能].other 单值迁成单条目
+    skill: oldCustom.skill ?? migrateSkills(base.skillMods),
+  };
+  // 旧的 defenseMods[k].other 已迁移至 customBonuses.defense，这里归零（字段保留但不再被读取）
+  const dm = normDefenseMods(base.defenseMods ?? emptyDefenseMods());
+  dm.ac.other = 0;
+  dm.fort.other = 0;
+  dm.ref.other = 0;
+  dm.will.other = 0;
   return {
     ...base,
     portraitOriginal: (base as { portraitOriginal?: string | null }).portraitOriginal ?? null,
     portraitCropped: (base as { portraitCropped?: string | null }).portraitCropped ?? null,
-    defenseMods: normDefenseMods(base.defenseMods ?? emptyDefenseMods()),
+    defenseMods: dm,
     speedMods: normSpeedMods(base.speedMods ?? emptySpeedMods()),
-    initMods: normInitMods(base.initMods ?? emptyInitMods()),
     skillMods: normSkillMods(base.skillMods ?? emptySkillMods()),
-    combatMods: (() => {
-      const c = base.combatMods ?? emptyCombatMods();
-      // 旧存档可能把增强来源存为 -1（手动），现已删除手动，统一按 0（主手）处理
-      const normAttack = (r: AttackRowData): AttackRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0, profSlot: (r.profSlot ?? -1) >= 0 ? r.profSlot : 0, profOverride: r.profOverride ?? false });
-      const normDamage = (r: DamageRowData): DamageRowData => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
-      const attacks = trimBlankRows((c.attacks ?? []).map(normAttack), isBlankAttack);
-      const damages = trimBlankRows((c.damages ?? []).map(normDamage), isBlankDamage);
-      // 存档中数组为空时，补回各一行的默认计算单元格（否则面板只有表头、无可计算单元格）；默认属性取角色最高属性
-      const fallback = emptyCombatMods(highestAbilityKey(base.abilities ?? {}));
-      const atk = attacks.length > 0 ? attacks : fallback.attacks;
-      const dmg = damages.length > 0 ? damages : fallback.damages;
-      // 攻击与伤害现在成对增减：旧存档两边行数可能不等，按较多的一边补齐，保证 index 一一对应
-      const pairs = Math.max(atk.length, dmg.length);
-      while (atk.length < pairs) atk.push({ ...fallback.attacks[0] });
-      while (dmg.length < pairs) dmg.push({ ...fallback.damages[0] });
-      return { attacks: atk, damages: dmg };
-    })(),
+    combatMods: { attacks: atk, damages: dmg },
+    customBonuses,
     baseItems: (base as { baseItems?: Record<number, string> }).baseItems ?? {},
     powerSlots: {
       atWill: base.powerSlots?.atWill ?? [],
@@ -188,7 +228,7 @@ export interface Character {
   abilities: Record<AbilityKey, number>;
   defenseMods: DefenseMods;
   speedMods: SpeedMods;
-  initMods: InitMods;
+  customBonuses: CustomBonuses; // 各面板详情弹窗「自定义」列条目（合计=面板「其他」）
   skillMods: SkillMods;
   combatMods: CombatMods;
   raceId?: string;
@@ -218,7 +258,7 @@ export interface Character {
   featChoices: Record<number, string>; // 选择型专长的具体选择（键 = 专长槽位下标，值 = 所选内容如「长剑 Longsword」或「法珠」）
   classFeatureChoices: Record<string, string | string[]>; // 职业特性「选择一个」的选项（键 = "职业ID::特性标题"，值 = 所选选项名；多选型如戏法为字符串数组）
   equipmentSlots: (string | undefined)[];
-  adventureItems: { name: string; cost: number }[];
+  adventureItems: { id?: string; name: string; cost: number; custom?: boolean }[];
   money: { earned: number; spent: number };
   equipmentEnhance: Record<number, number>;
   baseItems: Record<number, string>;
@@ -333,7 +373,7 @@ export function defaultCharacter(): Character {
     powerSlots: { atWill: [], encounter: [], daily: [], utility: [], special: ["", ""] },
     defenseMods: emptyDefenseMods(),
     speedMods: emptySpeedMods(),
-    initMods: emptyInitMods(),
+    customBonuses: emptyCustomBonuses(),
     skillMods: emptySkillMods(),
     combatMods: emptyCombatMods(highestAbilityKey(abilities)),
     featSlots: [],
@@ -625,10 +665,13 @@ export function parseClassStats(text: string): ClassStats {
 
 export type DefenseKey = "ac" | "fort" | "ref" | "will";
 
-export const DEFENSE_BONUS_SOURCES = ["feat", "enhance", "armor", "shield", "other"] as const;
+// 面板上可直接编辑的防御加值来源（「其他」已移入详情弹窗的自定义列，由 customBonuses.defense 提供）
+export const DEFENSE_BONUS_SOURCES = ["feat", "enhance", "armor", "shield"] as const;
 export type DefenseBonusSource = (typeof DEFENSE_BONUS_SOURCES)[number];
 
-export type DefenseMods = Record<DefenseKey, Record<DefenseBonusSource, number>>;
+// DefenseMods 显式保留 other 键：防御推导时由 defense.ts 注入「自定义列合计 + 职业特性加值」，
+// 但 other 不再出现在 DEFENSE_BONUS_SOURCES（不参与面板内联输入，仅存于数据层）
+export type DefenseMods = Record<DefenseKey, Record<DefenseBonusSource, number> & { other: number }>;
 
 export function emptyDefenseMods(): DefenseMods {
   return {
@@ -658,27 +701,70 @@ export function parseRaceDefenses(text: string): RaceDefenseBonus {
   return out;
 }
 
+// 移动力来源加值（「其他」已移入详情弹窗的自定义列，由 customBonuses.speed 提供）
 export type SpeedMods = {
   power: number;
   feat: number;
   item: number;
-  other: number;
-};
-
-export type InitMods = {
-  other: number;
 };
 
 export function emptySpeedMods(): SpeedMods {
-  return { power: 0, feat: 0, item: 0, other: 0 };
+  return { power: 0, feat: 0, item: 0 };
 }
 
-export function emptyInitMods(): InitMods {
-  return { other: 0 };
+// —— 详情弹窗「自定义」列 ——
+// 每个面板一个 {label, value} 条目列表；列表合计即为该面板的「其他」加值。
+// 用户在详情弹窗右栏增删/编辑条目，面板上的「其他」只读显示合计，点击可重新展开详情。
+export interface CustomEntry {
+  label: string; // 条目名（默认「其他」）
+  value: number; // 数值（可为负）
+}
+
+export interface CustomBonuses {
+  init: CustomEntry[];                        // 先攻
+  speed: CustomEntry[];                       // 移动力
+  defense: Record<DefenseKey, CustomEntry[]>; // 抵御（AC/强韧/反射/意志）
+  perception: { passivePerception: CustomEntry[]; passiveInsight: CustomEntry[] }; // 感知（被动侦查/被动洞察各自一套）
+  attack: CustomEntry[][];                    // 攻击每行一个列表（替代原 other）
+  damage: CustomEntry[][];                    // 伤害每行一个列表（合并替代原 otherA/otherB）
+  skill: Record<string, CustomEntry[]>;       // 技能（技能名 → 条目列表，替代原 skillMods.other 单值）
+}
+
+export const customSum = (e?: CustomEntry[]): number => (e ?? []).reduce((s, x) => s + (x.value ?? 0), 0);
+
+/** 迁移技能自定义数据：新结构为「技能名 → 条目列表」，旧结构是 skillMods[技能名].other 单值——转成单条目保持旧数值不变。 */
+export function migrateSkills(skillMods: SkillMods | undefined): Record<string, CustomEntry[]> {
+  const out: Record<string, CustomEntry[]> = {};
+  if (!skillMods) return out;
+  for (const name of Object.keys(skillMods)) {
+    const v = skillMods[name]?.other;
+    if (v) out[name] = [{ label: "其他", value: v }];
+    else out[name] = [];
+  }
+  return out;
+}
+
+/** 迁移感知自定义数据：新结构为「被动侦查/被动洞察」两套，旧结构是单个共享列表（数组）——复制到两套以保持旧数值不变。 */
+export function migratePerception(p: CustomBonuses["perception"] | undefined): CustomBonuses["perception"] {
+  if (Array.isArray(p)) return { passivePerception: p.slice(), passiveInsight: p.slice() };
+  return { passivePerception: p?.passivePerception ?? [], passiveInsight: p?.passiveInsight ?? [] };
+}
+
+export function emptyCustomBonuses(): CustomBonuses {
+  return {
+    init: [],
+    speed: [],
+    defense: { ac: [], fort: [], ref: [], will: [] },
+    perception: { passivePerception: [], passiveInsight: [] },
+    attack: [[]],
+    damage: [[]],
+    skill: {},
+  };
 }
 
 // —— 攻击/伤害面板 ——
-// 攻击行：½等级与属性调整值自动计算（属性由 ability 指定），其余为手动加值
+// 攻击行：½等级与属性调整值自动计算（属性由 ability 指定），其余为手动加值；
+// 原「其他」字段已迁至 customBonuses.attack（每行一个自定义条目列表）
 export interface AttackRowData {
   label?: string;          // 该「攻击 + 伤害」对的自定义名称（如「长剑·主手」），两张表与速览页共用
   ability: AbilityKey;     // 关联属性（用于自动填充属性调整值）
@@ -688,16 +774,14 @@ export interface AttackRowData {
   profOverride?: boolean;  // 手动视为擅长（覆盖自动擅长判定，用于选择型专长等无法自动判定的情况）
   feat: number;            // 专长加值
   enhanceSlot?: number;    // 增强加值来源装备槽位（0/1 = 主手/副手魔法物品，自动计算；缺省按 0 处理）
-  other: number;           // 其他
 }
 
-// 伤害行：伤害骰由所选槽位（主手/副手）的基础武器自动获取，属性调整值自动计算，其余为手动加值
+// 伤害行：伤害骰由所选槽位（主手/副手）的基础武器自动获取，属性调整值自动计算，其余为手动加值；
+// 原「其他1/其他2」字段已迁至 customBonuses.damage（每行一个自定义条目列表）
 export interface DamageRowData {
   ability: AbilityKey;   // 关联属性（用于自动填充属性调整值）
   feat: number;          // 专长加值
   enhanceSlot?: number;  // 伤害骰/增强加值来源装备槽位（0/1 = 主手/副手，自动计算；缺省按 0 处理）
-  otherA: number;        // 其他 1
-  otherB: number;        // 其他 2
 }
 
 export interface CombatMods {
@@ -719,21 +803,16 @@ export function highestAbilityKey(abilities: Partial<Record<AbilityKey, number>>
 export function emptyCombatMods(ability: AbilityKey = "str"): CombatMods {
   return {
     attacks: [
-      { ability, classBonus: 0, profBonus: 0, profSlot: 0, profOverride: false, feat: 0, enhanceSlot: 0, other: 0 },
+      { ability, classBonus: 0, profBonus: 0, profSlot: 0, profOverride: false, feat: 0, enhanceSlot: 0 },
     ],
     damages: [
-      { ability, feat: 0, enhanceSlot: 0, otherA: 0, otherB: 0 },
+      { ability, feat: 0, enhanceSlot: 0 },
     ],
   };
 }
 
 // 判定空白的攻击/伤害行（全为 0），用于迁移时收敛旧存档的多余空行
-function isBlankAttack(r: AttackRowData): boolean {
-  return r.classBonus === 0 && r.profBonus === 0 && r.feat === 0 && r.other === 0;
-}
-function isBlankDamage(r: DamageRowData): boolean {
-  return r.feat === 0 && r.otherA === 0 && r.otherB === 0;
-}
+// （迁移在 migrateCharacter 内联实现，带旧「其他」字段的版本判定）
 function trimBlankRows<T>(rows: T[], isBlank: (r: T) => boolean): T[] {
   const out = [...rows];
   while (out.length > 1 && isBlank(out[out.length - 1])) out.pop();

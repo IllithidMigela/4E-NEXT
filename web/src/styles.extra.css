@@ -330,6 +330,26 @@
   border-radius: var(--md-sys-shape-corner-extra-small);
   background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container);
 }
+.hb-err {
+  margin: 0 0 8px; padding: 8px 12px; font-size: 13px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container);
+}
+/* 保存前的必填校验红条：列出缺失项，点击可定位到左侧对应填写框 */
+.hb-field-err {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 0 0 8px; padding: 8px 12px; font-size: 13px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container);
+}
+.hb-field-err-title { font-weight: var(--fw-subheading); }
+.hb-field-err-item {
+  padding: 2px 10px; cursor: pointer;
+  border: 1px solid currentColor; border-radius: var(--md-sys-shape-corner-full);
+  background: transparent; color: var(--md-sys-color-on-error-container);
+  font: inherit; font-size: 12px; line-height: 1.6;
+}
+.hb-field-err-item:hover { background: var(--md-sys-color-error); color: var(--md-sys-color-on-error); text-decoration: underline; }
 .hb-move-list { display: flex; flex-direction: column; gap: 6px; }
 .hb-move-opt {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;
@@ -412,14 +432,278 @@
 .hb-editor.double .hb-ed-body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
 .hb-ed-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .hb-ed-card {
-  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface-container-low);
 }
-.hb-ed-card-title { margin: 0; font-size: 14px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary); }
+.hb-ed-card-title { margin: 0; grid-column: 1 / -1; font-size: 14px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary); }
+/* 面板级提示（如标签面板说明其用途） */
+.hb-ed-section-hint { grid-column: 1 / -1; margin: 0 0 4px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.5; }
+.hb-field-full { grid-column: 1 / -1; }
+/* 类型选择卡与分隔线横跨整行 */
+.hb-type-card { grid-column: 1 / -1; display: flex; flex-direction: column; }
+.hb-ed-field-sep { grid-column: 1 / -1; }
 .hb-ed-card md-filled-text-field { width: 100%; }
+
+/* 文本输入框 placeholder 过长的提示词会因内部 <input> overflow:visible 溢出边框：
+   在宿主元素上裁剪到框内，保持框内显示简洁（不影响浮动 label，其位于宿主范围内） */
+.hb-ed-card md-filled-text-field { overflow: hidden; }
+/* 缩小私设编辑器输入框文字（含 placeholder），让长提示词在框内显示更多 */
+.hb-ed-card md-filled-text-field {
+  --md-filled-text-field-input-text-size: 13px;
+  --md-filled-text-field-label-text-size: 12px;
+}
+
+/* 「附加设置」区：未标 core 的面板统一收进底部。面板永久展开，无折叠开关 */
+.hb-extra-section {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+  overflow: hidden;
+}
+.hb-extra-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 16px; width: 100%;
+  font-size: 14px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-surface-container);
+}
+.hb-extra-title .material-symbols-outlined { font-size: 19px; }
+.hb-extra-body {
+  display: block;
+}
+.hb-extra-body-inner {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 16px 16px;
+}
 .hb-ed-chips { display: flex; flex-wrap: wrap; gap: 6px; overflow: visible; padding: 0; }
+/* 分组候选（关键词/射程模板）：组名 + 组内 chips */
+.hb-kw-groups { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; grid-column: 1 / -1; }
+.hb-kw-group { display: flex; flex-direction: column; gap: 4px; }
+.hb-kw-group-head { display: flex; align-items: baseline; gap: 8px; }
+.hb-kw-group-name { font-size: 12px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary); }
+.hb-kw-group-head .hint { margin: 0; font-size: 11px; }
+/* 射程模板：当前模板徽标 + 数字输入行 */
+.hb-range-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  grid-column: 1 / -1;
+  font-size: 12px; color: var(--md-sys-color-primary);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  padding: 4px 8px;
+  width: fit-content;
+}
+.hb-range-clear {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 11px; color: var(--md-sys-color-error);
+  text-decoration: underline; padding: 0;
+}
+.hb-range-nums {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  grid-column: 1 / -1;
+  padding: 8px;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-low);
+}
+.hb-range-nums label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.hb-range-nums md-filled-text-field { width: 110px; }
+/* 卡片头部左侧分组（图标+名称+自制徽标） */
+.pc-left, .fc-left, .gc-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.head-icon { flex: none; font-size: 18px; line-height: 1; color: inherit; }
+
+/* 卡片配色选色器：圆形色板，选中时外圈高亮 */
+.hb-ed-form .hb-ed-chips .hb-color-chip {
+  flex: none; width: 30px; height: 30px; display: grid; place-items: center;
+  padding: 0; box-sizing: border-box; border-radius: 50%;
+}
+.hb-ed-form .hb-ed-chips .hb-color-chip .hb-color-swatch {
+  display: block; width: 20px; height: 20px; border-radius: 50%; background: var(--sw);
+  border: 1px solid var(--md-sys-color-outline-variant); box-sizing: border-box;
+}
+.hb-ed-form .hb-ed-chips .hb-color-chip.active { box-shadow: 0 0 0 2px var(--md-sys-color-primary); }
+/* 头部图标选择：material 符号放大 + 选中高亮 */
+.hb-ed-form .hb-ed-chips .hb-icon-chip {
+  flex: none; width: 34px; height: 32px; display: grid; place-items: center;
+  padding: 0; box-sizing: border-box;
+}
+.hb-ed-form .hb-ed-chips .hb-icon-chip .material-symbols-outlined { font-size: 19px; }
+.hb-ed-form .hb-ed-chips .hb-icon-chip.active { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+
+/* 类型选择卡 + 专属字段分隔线 */
+.hb-type-card .hint { margin: 0; }
+.hb-ed-field-sep {
+  margin: 2px 0 -4px; padding-top: 12px; border-top: 1px dashed var(--md-sys-color-outline-variant);
+  font-size: 12px; color: var(--md-sys-color-on-surface-variant); font-weight: var(--fw-label);
+}
+
+/* 预览的空白板块框架：内容未填时，对应板块以虚线框 + 淡色标注呈现（框架而非实心横条），
+   玩家填入真实内容后框架随之被真实内容替换。有 target 的框架可点击，右侧显示「前往填写」，点击跳回左侧对应填写框 */
+.frame-ghost {
+  min-height: 2.8em;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  border: 1px dashed var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+  font-weight: var(--fw-label);
+  line-height: 1.5;
+  opacity: .75;
+}
+.frame-ghost::before { content: attr(data-ph); }
+.frame-ghost[data-cta] { cursor: pointer; }
+.frame-ghost[data-cta]:hover { border-style: solid; border-color: var(--md-sys-color-primary); background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent); }
+.frame-ghost[data-cta]::after { content: attr(data-cta); margin-left: auto; flex: none; color: var(--md-sys-color-primary); font-size: 11px; }
+.pc-details.frame-ghost { min-height: 9em; align-items: flex-start; }
+
+/* 威能「标签块」编辑器：每块=标签选择+内容；子行缩进；攻击/辅助模板 */
+/* 顶部预设条：按 攻击类/辅助类/特殊类 分组，一键套用官方高频行结构 */
+.hb-pblock-presets {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: color-mix(in srgb, var(--md-sys-color-secondary-container) 6%, transparent);
+}
+.hb-pblock-presets-label {
+  font-size: 11px; font-weight: var(--fw-label);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.hb-pblock-preset-group {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.hb-pblock-preset-group-label {
+  flex: none; font-size: 12px; font-weight: var(--fw-subheading);
+  color: var(--md-sys-color-primary);
+  margin-right: 2px;
+}
+.hb-pblock-presets .chip { height: 26px; padding: 0 10px; font-size: 12px; }
+/* 专长预设：按钮三栏排布（内容互斥，点击整体替换）；提示文案置于字段标题右栏 */
+.hb-field-feat-benefit { flex-direction: column; gap: 8px; }
+.hb-field-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.hb-field-head .hb-label { margin: 0; }
+.hb-feat-hint { flex: none; }
+.hb-feat-presets .chip {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; text-align: center;
+}
+.hb-feat-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.hb-pblock-presets .chip.armed {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+  border-color: transparent;
+  font-weight: var(--fw-subheading);
+}
+.hb-pblock-list { display: flex; flex-direction: column; gap: 8px; }
+.hb-pblock {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* 连续缩进子行聚合为独立的「次攻击组」面板（如 次目标/次攻击/命中/效果）：浅色底+外框+左侧色条整体包裹 */
+.hb-pblock-subgroup {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 10px 10px;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-left: 3px solid var(--md-sys-color-tertiary);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: color-mix(in srgb, var(--md-sys-color-tertiary-container) 10%, transparent);
+}
+.hb-pblock-subgroup-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.hb-pblock-subgroup-title {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: var(--fw-subheading);
+  color: var(--md-sys-color-tertiary);
+}
+.hb-pblock-subgroup-title .material-symbols-outlined { font-size: 16px; }
+.hb-pblock-subgroup-sub {
+  font-size: 11px; color: var(--md-sys-color-on-surface-variant); font-weight: var(--fw-label);
+}
+.hb-pblock-subgroup-del { margin-left: auto; }
+.hb-pblock-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hb-pblock-label {
+  flex: 1 1 150px; max-width: 240px;
+  height: 30px; padding: 0 8px; font-size: 13px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+}
+.hb-pblock-ops { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.hb-pblock-text { width: 100%; resize: vertical; }
+.hb-pblock-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.hb-pblock.empty { border: 1px dashed var(--md-sys-color-outline-variant); background: transparent; }
+.hb-pblock .hb-textarea { min-height: 0; }
+.pc-flavor.frame-ghost, .ic-flavor.frame-ghost, .gc-flavor.frame-ghost { min-height: 2.2em; }
+.kw-frame { min-height: 2em; }
+.fc-content-frame { min-height: 1.8em; }
+
+/* 点击预览虚线框后，左侧对应字段短暂高亮提示 */
+@keyframes hb-focus-flash {
+  0% { box-shadow: 0 0 0 2px var(--md-sys-color-primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.hb-focus-flash { border-radius: var(--md-sys-shape-corner-small); animation: hb-focus-flash 1.6s var(--md-sys-motion-easing-emphasized) both; }
+
+/* 从模板新建：全屏遮罩 + 居中的搜索面板 */
+.hb-tmpl-modal {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-items: center; padding: 20px;
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
+}
+.hb-tmpl-modal-inner {
+  width: min(520px, 100%); max-height: min(72vh, 640px);
+  display: flex; flex-direction: column; gap: 12px; padding: 16px;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-shadow-level3);
+}
+.hb-tmpl-modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 15px; font-weight: var(--fw-heading);
+}
+.hb-tmpl-list {
+  display: flex; flex-direction: column; gap: 2px; overflow: auto; min-height: 0;
+}
+.hb-tmpl-item {
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; cursor: pointer;
+  border-radius: var(--md-sys-shape-corner-small);
+}
+.hb-tmpl-item:hover { background: var(--md-sys-color-surface-container-high); }
+.hb-tmpl-name { font-size: 14px; font-weight: var(--fw-body); color: var(--md-sys-color-on-surface); }
+.hb-tmpl-meta { font-size: 11.5px; color: var(--md-sys-color-on-surface-variant); }
+
+/* 从基础名录选择：分组列表（组标签 + 条目） */
+.hb-gear-group { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+.hb-gear-group + .hb-gear-group { border-top: 1px solid var(--md-sys-color-outline-variant); margin-top: 4px; }
+.hb-gear-group-label {
+  position: sticky; top: 0; z-index: 1; padding: 6px 10px; margin: 0 -10px;
+  font-size: 12px; font-weight: var(--fw-heading); color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-surface-container-high);
+}
+/* 基本信息面板标题右侧的「从基础名录选择」按钮 */
+.hb-gear-pick {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 3px 10px;
+  font: inherit; font-size: 12px; color: var(--md-sys-color-primary); cursor: pointer;
+  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 999px;
+  background: var(--md-sys-color-surface-container-low);
+}
+.hb-gear-pick:hover { background: var(--md-sys-color-surface-container-high); }
+.hb-gear-pick .material-symbols-outlined { font-size: 14px; }
 
 /* 正文：Markdown 工具条 + 文本域 */
 .hb-body-field { gap: 8px; }
@@ -438,6 +722,7 @@
 .hb-md-tool .material-symbols-outlined { font-size: 19px; }
 .hb-body-textarea { min-height: 300px; line-height: 1.65; }
 .hb-body-field .hint { line-height: 1.5; }
+.hb-hint-warn { color: var(--md-sys-color-error); }
 
 .hb-legacy {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 14px; font-size: 13px;
@@ -650,3 +935,125 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
   .combat-table.damage .ct-head,
   .combat-table.damage .ct-row { min-width: 620px; }
 }
+
+/* ===== 私设结构化编辑器通用壳 =====
+   服务于 装备威能段 / 套装增益 / 专长等级表 / 词条对 / 等级特性小节。
+   与威能「次攻击组」同语言：色条 + 分组底 + 行内输入并排。 */
+.hb-itempower, .hb-setbonus, .hb-feattable, .hb-terms, .hb-levelsections {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.hb-itempower-sec, .hb-setbonus-block, .hb-levelsection {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.hb-itempower-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.hb-itempower-headlabel {
+  font-size: 13.5px; font-weight: var(--fw-heading, 600); color: var(--md-sys-color-on-surface);
+}
+.hb-itempower-preview { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.hb-itempower-kwrow, .hb-itempower-freqrow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.hb-levelsection-rows {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end; gap: 8px;
+}
+.hb-levelsection-refs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hb-levelsection-ref { display: inline-flex; align-items: end; gap: 6px; min-width: 260px; flex: 1 1 auto; }
+.hb-feattable-rows, .hb-terms-rows { display: flex; flex-direction: column; gap: 8px; }
+.hb-feattable-row, .hb-terms-row { display: flex; align-items: end; gap: 8px; }
+.hb-feattable-row > * { flex: 1; }
+
+/* —— 装备·「统计数据」横排表：与右侧 ic-stats 同构（标签窄列左对齐 + 输入右），行间分隔线 —— */
+.hb-stat-table { grid-column: 1 / -1; display: flex; flex-direction: column; }
+.hb-stat-row {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 2px 12px;
+  padding: 7px 0; border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.hb-stat-row:first-child { border-top: 0; }
+.hb-stat-row-label { font-size: 13px; font-weight: var(--fw-heading, 600); color: var(--md-sys-color-on-surface); white-space: nowrap; }
+.hb-stat-row md-filled-text-field { grid-column: 2; width: 100%; overflow: hidden; }
+.hb-stat-row .hint { grid-column: 2; margin: 0; }
+.hb-stat-row .hb-ed-chips { grid-column: 2; align-items: center; }
+.hb-stat-row .hb-ed-chips md-filled-text-field { width: 170px; flex: none; }
+/* —— 装备·选择式引导卡（形态+类别前置）与特性段数徽标 —— */
+.hb-equip-guide {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+}
+.hb-guide-chips { margin: 2px 0; }
+.hb-guide-chips .chip { height: 36px; padding: 0 16px; font-size: 13.5px; }
+.hb-count-badge {
+  align-self: flex-start;
+  font-size: 12px; font-weight: var(--fw-heading, 600); color: var(--md-sys-color-primary);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+  border-radius: 999px; padding: 2px 10px;
+}
+.hb-itempower-sec.collapsed { padding: 8px 12px; }
+/* —— 可选区块（装备 物品威能/正文）：收起态「＋ 添加」细条 + 展开态关闭 chip —— */
+.chip.armed {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+  border-color: transparent;
+  font-weight: var(--fw-subheading, 600);
+}
+.hb-opt-strip {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 14px; font-family: inherit; text-align: left; cursor: pointer;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: transparent; color: var(--md-sys-color-on-surface-variant); font-size: 13px;
+}
+.hb-opt-strip:hover { border-color: var(--md-sys-color-primary); color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container-low); }
+.hb-opt-strip .material-symbols-outlined { font-size: 18px; }
+.hb-opt-strip-hint { margin-left: auto; font-size: 12px; opacity: 0.75; }
+.hb-opt-close { margin-left: 6px; }
+
+/* —— 生物·数据块编辑器（分段：头部 / 加工标签 / 数据行 / 行动段）—— */
+.hb-creature { display: flex; flex-direction: column; gap: 12px; }
+.hb-creature-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px;
+}
+.hb-creature-head > * { flex: 1 1 auto; min-width: 140px; }
+.hb-creature-sub {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px;
+}
+.hb-creature-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hb-creature-rows, .hb-creature-acts {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 4px solid var(--md-sys-color-primary-variant, var(--md-sys-color-primary));
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  padding: 12px;
+}
+.hb-creature-row {
+  display: flex; align-items: end; gap: 8px; flex-wrap: wrap;
+}
+.hb-creature-row > * { flex: 1 1 120px; }
+.hb-creature-row md-filled-icon-button { flex: 0 0 auto; }
+.hb-creature-act {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px dashed var(--md-sys-color-outline, #888);
+  border-radius: var(--md-sys-shape-corner-small);
+  padding: 10px;
+}
+.hb-creature-act .hb-pblock-head { justify-content: flex-start; }
+.hb-creature-act-freq {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.hb-creature-act-freq md-filled-text-field { flex: 1 1 160px; }
