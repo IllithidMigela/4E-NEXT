@@ -203,6 +203,8 @@ body {
 .sg-step { width: 22px; height: 22px; border-radius: var(--md-sys-shape-corner-full); border: none; background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); cursor: pointer; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
 .sg-step:hover { background: var(--md-sys-color-surface-container-highest); }
 .sg-custom { font-size: 11px; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); padding: 1px 8px; border-radius: var(--md-sys-shape-corner-small); }
+.sg-custom-btn { height: 26px; min-height: 26px; --md-filled-tonal-button-container-height: 26px; --md-filled-tonal-button-label-text-size: 11px; --md-filled-tonal-button-container-shape: 6px; --md-filled-tonal-button-padding: 0 10px; }
+.sg-custom-btn .md-mat { font-size: 16px; }
 .sg-restore { border: none; background: transparent; color: var(--md-sys-color-primary); cursor: pointer; font-size: 12px; text-decoration: underline; padding: 0; }
 
 /* 职业赠送专长（职业特性赠送、不占用常规专长槽位） */
@@ -252,6 +254,11 @@ body {
 .sf-label { font-size: 12px; color: var(--md-sys-color-on-surface-variant); flex-shrink: 0; }
 .sf-chip { border: none; padding: 5px 12px; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); cursor: pointer; color: var(--md-sys-color-on-surface); font: inherit; font-size: 13px; }
 .sf-chip.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.sf-drill { color: var(--md-sys-color-primary); background: transparent; outline: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent); }
+.sf-crumb { border: none; background: none; padding: 2px 4px; cursor: pointer; color: var(--md-sys-color-primary); font: inherit; font-size: 12px; }
+.sf-crumb-chain { display: inline-flex; align-items: center; color: var(--md-sys-color-on-surface-variant); }
+.sf-crumb-sep { margin: 0 4px; color: var(--md-sys-color-on-surface-variant); }
+.sf-crumb-cur { font-size: 12px; color: var(--md-sys-color-on-surface); font-weight: 500; }
 .sf-range { display: inline-flex; align-items: center; gap: 6px; }
 /* 指定等级区间输入：MD3 紧凑描边文本框（40dp 高度、4px 圆角、描边 hover 加粗、聚焦 2dp 主色环） */
 .sf-range input {
@@ -291,7 +298,7 @@ body {
 .pc-details { padding: 0 12px 10px; font-size: 13px; line-height: 1.55; }
 .pc-details table { width: auto; border-collapse: collapse; margin-top: 4px; max-width: 100%; }
 .pc-details th { text-align: left; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); padding: 3px .5em; vertical-align: top; white-space: nowrap; font-size: 12px; width: 1%; }
-.pc-details td { padding: 3px .5em; vertical-align: top; }
+.pc-details td { padding: 3px .5em; vertical-align: top; white-space: pre-line; }
 .pc-details tr + tr td, .pc-details tr + tr th { border-top: 1px solid var(--md-sys-color-outline-variant); }
 .pc-details .text { margin: 2px 0; }
 .pc-details .bold { font-weight: var(--fw-subheading); }
@@ -299,9 +306,20 @@ body {
 /* 物品橙色卡 */
 .item-card { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); overflow: hidden; background: var(--md-sys-color-surface-container); }
 .ic-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 8px 12px; background: var(--ic); color: #fff; }
+.ic-head .ic-icon { flex: none; font-size: 18px; line-height: 1.2; color: inherit; }
 .ic-name { font-size: 14px; font-weight: var(--fw-subheading); }
 .ic-meta { font-size: 11px; opacity: 0.92; }
 .ic-flavor { font-style: italic; font-size: 13px; color: var(--md-sys-color-on-surface-variant); padding: 8px 12px 2px; }
+
+/* 物品统计数据表：镜像原版物品卡数据表（左标签 th / 右值 td） */
+.ic-stats { width: 100%; border-collapse: collapse; margin: 4px 0 0; font-size: 13px; }
+.ic-stats td, .ic-stats th { padding: 2px 12px; vertical-align: top; }
+.ic-stats th { text-align: left; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); white-space: nowrap; width: 1%; }
+.ic-stats tr + tr th, .ic-stats tr + tr td { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.ic-stat-ghost { min-height: 22px; }
+/* 威能块 */
+.ic-power { padding: 6px 12px; }
+.ic-power-label { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); margin-bottom: 2px; }
 
 /* 魔剑士契约武器：把内嵌的随意威能卡重排为魔法物品（附魔武器）卡样式
    （参考装备面板 .item-card：顶部到头条目色块 + 名称/类别，正文斜体风味 + 数据表） */
@@ -653,7 +671,7 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .layout-double .resource-item .stepper { align-self: center; gap: 12px; }
 .mb-label { font-size: 13px; font-weight: 600; color: var(--md-sys-color-primary); }
 .mb-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.mb-head .buy-badge { margin-left: auto; }
+.ability-actions-row .buy-badge { margin-left: auto; }
 .buy-switch { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); cursor: pointer; }
 .buy-switch md-switch { --md-switch-track-height: 20px; --md-switch-track-width: 36px; --md-switch-selected-icon-size: 12px; --md-switch-unselected-icon-size: 12px; --md-switch-state-layer-size: 28px; }
 .buy-badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: var(--md-sys-shape-corner-full); font-size: 11.5px; font-weight: var(--fw-label); color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
@@ -723,43 +741,89 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .def-bonus-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); white-space: nowrap; }
 .def-bonus-item input { width: 44px; box-sizing: border-box; padding: 3px 6px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font-size: 12px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
 .def-bonus-item input::-webkit-outer-spin-button, .def-bonus-item input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* 只读「其他」输入框（样式与其它加值一致）：显示详情右栏自定义列合计，点击进入详情界面编辑 */
+.def-bonus-item.def-other-item input { cursor: pointer; }
+.def-bonus-item.def-other-item input:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
 /* 双栏：竖着排一排 */
 .layout-double .def-bonus { display: flex; flex-direction: column; gap: 5px; }
 .def-bonus-total { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); margin-top: 2px; }
+/* 面板「其他」只读合计：数据来自详情右栏自定义列，点击展开详情弹窗 */
+.def-bonus-link { align-self: center; border: 1px dashed var(--md-sys-color-outline-variant); background: transparent; padding: 2px 10px; border-radius: var(--md-sys-shape-corner-extra-small); font-size: 11.5px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); font-family: inherit; cursor: pointer; margin-top: 4px; }
+.def-bonus-link:hover { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container); }
+
+/* 详情弹窗右栏「自定义」编辑器：条目名 + 数值 + 删除，列表合计即面板「其他」 */
+.ce-editor { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.ce-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; }
+.ce-sum { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); }
+.ce-list { display: flex; flex-direction: column; gap: 4px; }
+.ce-empty { font-size: 12px; color: var(--md-sys-color-on-surface-variant); padding: 2px 0; }
+.ce-row { display: grid; grid-template-columns: minmax(0, 1fr) 58px 22px; gap: 6px; align-items: center; }
+.ce-row input { box-sizing: border-box; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font-size: 12.5px; font-family: inherit; padding: 3px 6px; }
+.ce-row .ce-label { min-width: 0; }
+.ce-row .ce-value { text-align: center; -moz-appearance: textfield; }
+.ce-row .ce-value::-webkit-outer-spin-button, .ce-row .ce-value::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.ce-del { border: none; background: transparent; color: var(--md-sys-color-error); font-size: 15px; line-height: 1; cursor: pointer; padding: 2px; }
+.ce-add { align-self: flex-start; margin-top: auto; border: 1px dashed var(--md-sys-color-outline-variant); background: transparent; padding: 2px 10px; border-radius: var(--md-sys-shape-corner-full); font-size: 11.5px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); font-family: inherit; cursor: pointer; }
+.ce-add:hover { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container); }
 
 /* 抵御面板「查看详情」按钮（置于 mb-head 标题行右上角，与「简介」按钮风格一致） */
 .def-detail-btn { margin-left: auto; border: none; padding: 2px 10px; border-radius: var(--md-sys-shape-corner-full); font-size: 11.5px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container-high); font-family: inherit; cursor: pointer; }
 .def-detail-btn:hover { background: var(--md-sys-color-surface-container); }
-/* 抵御详情弹窗 */
-.def-detail-dialog { max-width: 720px; width: min(92vw, 720px); }
+/* 抵御详情弹窗：宽度保持适中（不挤四栏），文本靠内部紧凑 */
+.picker-dialog.def-detail-dialog { max-width: min(94vw, 720px); width: fit-content; }
+/* 属性详情：6 个属性块保持 3 列 */
+.def-detail-dialog.def-detail-attr .def-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+/* 双栏结构：左栏算法/数据网格，右栏「自定义」编辑器（合计即面板「其他」） */
+.def-detail-split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(250px, 1fr); gap: 14px; align-items: stretch; }
+.def-detail-custom { display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow: auto; padding: 4px; }
 .def-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; max-height: 70vh; overflow: auto; padding: 4px; }
+/* 左右两栏等高：左栏网格行均分高度、右栏编辑器等高填充，使两侧对应的格子一样高 */
+.def-detail-split .def-detail-grid { grid-auto-rows: 1fr; }
+.def-detail-split .def-detail-custom .ce-editor { flex: 1 1 auto; }
+/* 防御详情四栏排布：每项防御一栏（上方数据块、下方自定义编辑器），栏高随内容自适应；
+   高度限制交由弹窗整体承担，避免添加条目时栏内瞬时出现滚动条 */
+/* 详情多栏：flex 换行 + 居中——一行扇项时整组水平居中，而非靠左留白 */
+.def-detail-cols { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 12px; width: fit-content; align-self: center; }
+/* 每列宽度贴合其内部内容（外框随内框自动调节），不满一行时整组居中 */
+.def-detail-cols > .def-detail-col { flex: 0 0 auto; width: fit-content; min-width: 0; max-width: 100%; }
+/* 感知详情：双栏，列宽各自贴合内容 */
+/* 移动力/先攻详情：单列上下排列；fit-content 下给足最小宽度，避免条目名输入框被压得过窄 */
+.def-detail-cols.def-detail-cols-1 > .def-detail-col { min-width: 260px; }
+/* 防御详情：固定宽度四栏等宽——不随内容自适应换行，始终一行四栏 */
+.picker-dialog.def-detail-dialog.def-detail-cols-dialog { width: min(94vw, 720px); }
+.def-detail-cols-dialog .def-detail-cols { width: 100%; align-self: stretch; }
+.def-detail-cols-dialog .def-detail-cols > .def-detail-col { flex: 1 1 0; width: auto; min-width: 0; }
+/* 技能详情：五栏等宽且可换行（17 个技能按 5 列一行排布，末行不足 5 个也保持等宽）；
+   弹窗加宽到 880px，保证 5 列下长标签（属性调整（力量）等）也能一行放下 */
+.def-detail-cols-dialog .def-detail-cols.def-detail-cols-skill > .def-detail-col { flex: 0 1 calc((100% - 48px) / 5); width: auto; min-width: 0; }
+.picker-dialog.def-detail-dialog.def-detail-skill-dialog { width: min(94vw, 880px); max-width: min(94vw, 880px); }
+.def-detail-col { display: flex; flex-direction: column; gap: 10px; }
 .def-detail-block { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); padding: 10px 12px; }
 .def-detail-title { font-size: 14px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
 .def-detail-total { font-size: 20px; font-weight: 700; color: var(--md-sys-color-primary); }
 .def-detail-rows { display: flex; flex-direction: column; gap: 3px; }
-.def-detail-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--md-sys-color-on-surface-variant); }
+.def-detail-row { display: flex; gap: 8px; font-size: 12.5px; color: var(--md-sys-color-on-surface-variant); }
 .def-detail-row.auto { color: var(--md-sys-color-on-surface); }
 .def-detail-row.total { border-top: 1px solid var(--md-sys-color-outline-variant); margin-top: 6px; padding-top: 6px; font-weight: 700; color: var(--md-sys-color-on-surface); }
-.ddr-label { text-align: left; }
+.ddr-label { text-align: left; white-space: nowrap; }
 .ddr-value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* 属性详情弹窗：调整值徽标（标题右侧，主色小字） */
 .attr-detail-mod { font-size: 12px; font-weight: 700; color: var(--md-sys-color-primary); }
 /* 技能详情弹窗：受训徽标（技能名右侧） */
 .skill-detail-trained { font-size: 11px; font-weight: 700; color: var(--md-sys-color-primary); }
-/* 属性面板操作行（第二行）：左侧放购点开关，右侧放「查看详情」 */
+/* 属性面板操作行（第二行）：左侧放购点开关，右侧放购点/提升徽章 */
 .ability-actions-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; }
 .ability-actions-left { display: inline-flex; align-items: center; gap: 8px; }
-.ability-actions-row .def-detail-btn { margin-left: auto; }
 
 /* 攻击/伤害面板：数据面板下方并排一行（攻击在左、伤害在右），表格式网格（攻击 8 列 / 伤害 7 列） */
 .combat-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
 .combat-panel { margin: 0; }
 .combat-head { display: flex; align-items: center; gap: 8px; }
 .combat-head .combat-actions { display: inline-flex; gap: 4px; }
-.combat-head .mode-chip { margin-left: auto; }
+.combat-head .mode-chip { margin-left: 0; }
 .combat-table { display: flex; flex-direction: column; gap: 6px; }
 .ct-head, .ct-row { display: grid; gap: 6px; align-items: stretch; }
-.combat-table.attack .ct-head, .combat-table.attack .ct-row { grid-template-columns: 1.6fr repeat(5, 1fr) 1.6fr 1fr; }
+.combat-table.attack .ct-head, .combat-table.attack .ct-row { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr 1fr 1fr 1.6fr 1fr; }
 .combat-table.damage .ct-head, .combat-table.damage .ct-row { grid-template-columns: 1.6fr 1fr 1fr 1fr 1.6fr 1fr 1fr; }
 .ct-head span { font-size: 11px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); text-align: center; padding: 2px 0; }
 /* 骰子指令行（显示在对应栏位下方）：.r d20+总加值 / .r 伤害骰+总加值；点击复制 */
@@ -784,6 +848,9 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .ct-cell input { width: 100%; max-width: 46px; padding: 2px 0; border: none; background: transparent; color: var(--md-sys-color-on-surface); font-size: 12.5px; text-align: center; font-family: inherit; -moz-appearance: textfield; }
 .ct-cell input::-webkit-outer-spin-button, .ct-cell input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .ct-cell input:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+/* 「其他」单元格：只读合计（详情右栏自定义列），点击展开详情弹窗 */
+.ct-other-link { border: none; background: transparent; padding: 2px 6px; font-size: 12.5px; font-weight: var(--fw-label); color: var(--md-sys-color-primary); font-family: inherit; cursor: pointer; white-space: nowrap; }
+.ct-other-link:hover { text-decoration: underline; }
 .health-list { display: flex; flex-direction: column; gap: 8px; }
 .health-main { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container); }
 .health-main-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -910,6 +977,7 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .deep-search-switch input:checked + .deep-search-slider::before { transform: translateX(16px); background: var(--md-sys-color-on-primary); }
 .picker-table { display: flex; flex-direction: column; gap: 4px; overflow: auto; flex: 1; min-height: 0; }
 .picker-cards { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: max-content; gap: 10px; align-items: start; align-content: start; padding: 2px; }
+.picker-cards.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .picker-card { border: none; background: transparent; padding: 0; cursor: pointer; text-align: left; border-radius: var(--md-sys-shape-corner-medium); }
 .picker-card:hover { opacity: 0.92; }
 .picker-card.selected { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; border-radius: var(--md-sys-shape-corner-medium); }
@@ -1159,13 +1227,13 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 
 /* ---- 教学页 ---- */
 .learn-view { display: flex; flex-direction: column; gap: 16px; }
-.formula-list { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 2px 16px; }
+.formula-list { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 16px; align-items: start; }
 .formula-row { display: contents; }
-.formula-row dt { font-size: 13px; color: var(--md-sys-color-on-surface-variant); padding: 4px 0; font-weight: var(--fw-label); }
-.formula-row dd { margin: 0; font-size: 13px; padding: 4px 0; }
+.formula-row dt { font-size: 13px; color: var(--md-sys-color-on-surface-variant); padding: 2px 0; font-weight: var(--fw-label); white-space: nowrap; }
+.formula-row dd { margin: 0; font-size: 13px; padding: 2px 0; }
 .level-table-wrap { overflow-x: auto; margin-top: 8px; }
-.level-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.level-table th, .level-table td { padding: 4px 10px; text-align: left; border-bottom: 1px solid var(--md-sys-color-outline-variant); white-space: nowrap; }
+.level-table { width: fit-content; border-collapse: collapse; font-size: 12.5px; }
+.level-table th, .level-table td { padding: 2px 10px; text-align: left; border-bottom: 1px solid var(--md-sys-color-outline-variant); white-space: nowrap; line-height: 1.35; }
 .level-table th { color: var(--md-sys-color-on-surface-variant); font-weight: var(--fw-label); position: sticky; top: 0; background: var(--md-sys-color-surface-container-low); }
 .level-table tbody tr:nth-child(even) { background: var(--md-sys-color-surface-container-low); }
 .level-notes { margin-top: 10px; font-size: 12.5px; color: var(--md-sys-color-on-surface-variant); display: flex; flex-direction: column; gap: 4px; }
@@ -1248,8 +1316,17 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 /* 冒险装备横条 */
 .adv-list { display: flex; flex-direction: column; gap: 6px; }
 .adv-line { display: flex; gap: 6px; align-items: center; }
-.adv-name-input { flex: 1; min-width: 0; width: auto; }
+.adv-name-input { flex: 1; min-width: 0; width: auto; padding: 7px 10px; border: 1px dashed var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); font: inherit; }
+.adv-name-input:focus { border-style: solid; border-color: var(--md-sys-color-primary); outline: none; }
+.adv-name-input::placeholder { color: var(--md-sys-color-on-surface-variant); }
 .adv-cost-input { width: 90px; }
+/* 冒险装备→名录选择按钮（替代手动输入：点击弹选择器） */
+.adv-pick { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 7px 10px; border: 1px dashed var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); cursor: pointer; font: inherit; text-align: left; }
+.adv-pick:hover { border-color: var(--md-sys-color-primary); }
+.adv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.adv-placeholder { color: var(--md-sys-color-on-surface-variant); }
+.adv-pick .slot-x { color: var(--md-sys-color-on-surface-variant); font-size: 13px; padding: 0 2px; }
+.adv-pick .slot-x:hover { color: var(--md-sys-color-error); }
 /* 仪式面板（金钱下方） */
 .ritual-list { display: flex; flex-direction: column; gap: 6px; }
 .ritual-line { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
@@ -2148,6 +2225,14 @@ md-dialog.sheet-dialog-xw .picker-cards {
   .settings.double { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* 防御详情四栏：窄屏先收两栏（1100px 内），更窄（768px）再收单栏 */
+@media (max-width: 1100px) {
+  .def-detail-cols > .def-detail-col { flex-basis: calc(50% - 6px); }
+  .def-detail-cols.def-detail-cols-1 > .def-detail-col { flex-basis: 100%; }
+  /* 技能详情：四栏 → 两栏（同款等高换行） */
+  .def-detail-cols-dialog .def-detail-cols.def-detail-cols-skill > .def-detail-col { flex: 0 1 calc(50% - 6px); }
+}
+
 /* 修复 SheetDialog 内 FilledSelect 下拉菜单被裁剪/错位（md-menu popover 定位） */
 md-dialog md-menu { position: fixed; z-index: 9999; }
 md-dialog .menu-position-anchor { position: relative; }
@@ -2290,6 +2375,11 @@ html[data-font="serif"] {
   .skill-compact .skill-compact-row:nth-child(n+9) { grid-column: auto; }
   .lang-ap-row { grid-template-columns: minmax(0, 1fr); }
   .split { grid-template-columns: minmax(0, 1fr); }
+  /* 详情弹窗双栏在窄屏改为上下堆叠；防御详情四栏同收单栏 */
+  .def-detail-split { grid-template-columns: minmax(0, 1fr); }
+  .def-detail-cols > .def-detail-col { width: 100%; }
+  /* 技能详情：768px 内收单栏（覆盖 1100px 的两栏规则，避免列过窄） */
+  .def-detail-cols-dialog .def-detail-cols.def-detail-cols-skill > .def-detail-col { flex: 0 1 100%; }
   .layout-top-row { grid-template-columns: minmax(0, 1fr); }
 
   /* 战斗表列数多，窄屏横向滚动（保留完整列结构） */
@@ -2309,6 +2399,7 @@ html[data-font="serif"] {
 
   /* 选择弹窗内卡片网格单列 */
   .picker-cards { grid-template-columns: minmax(0, 1fr); }
+  .picker-cards.cols-3 { grid-template-columns: minmax(0, 1fr); }
   md-dialog.sheet-dialog-xw .picker-cards { grid-template-columns: minmax(0, 1fr); }
   .impl-group .picker-cards { grid-template-columns: minmax(0, 1fr); }
 
