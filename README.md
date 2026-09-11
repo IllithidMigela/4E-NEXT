@@ -44,7 +44,7 @@ pnpm rules    # 万律书：4e-rules.html → out/rules/rules.json
 
 ## 致谢
 
-项目数据来源：由现任维护者风之守护维护的[4e Wiki](https://4e-wiki.netlify.app/)
+项目数据来源：由现任维护者风之守护维护的[4e Wiki](https://4e-wiki.netlify.app/)、[4e 万律](https://4e-rules.netlify.app/)
 
 以及所有历代的4e全书维护者、所有的4e中文译者。
 
