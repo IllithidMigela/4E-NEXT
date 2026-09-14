@@ -5,6 +5,7 @@ import { Switch, FilledButton, Slider } from "./components/md";
 import { readFileAsDataUrl } from "./lib/image";
 import { NORD_PRESETS, type SeedMode } from "./theme";
 import { shouldWarnOversize, prepareImageForStore, IMAGE_SIZE_HINT } from "./lib/settings";
+import PanelLayoutEditor from "./components/PanelLayoutEditor";
 
 export default function SettingsView({ layout }: { layout: "single" | "double" }) {
   const { seedMode, seedHex, presetHex, isDark, setSeedMode, setSeedHex, setPresetHex, setDark, bgMode, setBgMode, setBgCustom, bgImage, bgBlur, bgFeather, setBgBlur, setBgFeather, fontMode, setFontMode } = useTheme();
@@ -148,6 +149,12 @@ export default function SettingsView({ layout }: { layout: "single" | "double" }
           </>
         )}
 
+      </section>
+
+      <section className="block">
+        <h3 className="block-title">车卡页面板块</h3>
+        <p className="hint">人物页由下列板块组成。按住板块拖动即可调整它们的先后顺序与所在栏位。</p>
+        <PanelLayoutEditor defaultMode={layout} />
       </section>
       </div>
 

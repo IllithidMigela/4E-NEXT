@@ -106,7 +106,7 @@ const GROUP_LABELS: Record<StorageGroupKey, string> = {
 function groupOf(key: string): StorageGroupKey {
   if (key.startsWith("kcc.homebrew") || key === "kcc.userEntries.v1") return "homebrew";
   if (key === "kcc.cards.v1" || key === "kcc.activeCard.v1") return "cards";
-  if (key === "kcc.settings.v1" || key.startsWith("kcc.bg") || key.startsWith("kcc.portrait") || key === "kcc-layout" || key === "kcc-bg") {
+  if (key === "kcc.settings.v1" || key === "kcc.sheetLayout.v1" || key.startsWith("kcc.bg") || key.startsWith("kcc.portrait") || key === "kcc-layout" || key === "kcc-bg") {
     return "appearance";
   }
   return "other";

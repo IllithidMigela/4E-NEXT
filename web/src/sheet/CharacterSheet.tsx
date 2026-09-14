@@ -18,6 +18,7 @@ import { collectProficiencyTokens, collectProficiencySources, isProficient, feat
 import { SmartHover } from "./SmartHover";
 import { collectClassSources, collectFeatSources } from "./combat-source";
 import { stripWiki } from "../lib/text";
+import { panelMeta, useSheetLayout, type SheetPanelId } from "../lib/sheetLayout";
 import { hybridTalentGroups, resolveHybridOption, isHybridTalentFeat, mergedClassTraitText, originalFeatureInfo, type HybridTalentGroup } from "../lib/hybrid";
 import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitClassLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, parseReplacementPairs, tokenizeWikiBody, parseRaceTraitLines, type FeatureSection } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, BASE_SHIELDS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
@@ -4732,6 +4733,8 @@ export default function CharacterSheet({
   char: Character;
   setChar: React.Dispatch<React.SetStateAction<Character>>;
 }) {
+  // 板块摆放（「设置 → 车卡页面板块」可拖动调整）：配置变化时本组件自动重渲染
+  const sheetLayout = useSheetLayout();
   const [races, setRaces] = useState<Entry[]>([]);
   // 种族选择弹窗展示顺序：按出处系列分组排序（不影响数据存储与逻辑查找）
   const sortedRaces = useMemo(() => sortRaces(races), [races]);
@@ -6928,14 +6931,6 @@ export default function CharacterSheet({
 
     </>
   );
-  const leftCol = (
-    <>
-      {leftTop}
-      {combatRow}
-      {raceClassCol}
-      {skillsCol}
-    </>
-  );
   const powersCol = (
     <>
       <section className="block">
@@ -7037,7 +7032,7 @@ export default function CharacterSheet({
 
           </>
   );
-  const rightRest = (
+  const equipmentCol = (
     <>
 <section className="block">
         <div className="block-head">
@@ -7201,6 +7196,10 @@ export default function CharacterSheet({
 
 
 
+    </>
+  );
+  const moneyCol = (
+    <>
       <section className="block">
         <div className="block-head">
           <h3 className="block-title">金钱</h3>
@@ -7233,6 +7232,10 @@ export default function CharacterSheet({
         </div>
       </section>
 
+    </>
+  );
+  const ritualsCol = (
+    <>
       <section className="block ritual-block">
         <div className="block-head">
           <h3 className="block-title">{ritualKind === "practice" ? "武术奥义" : "仪式"}</h3>
@@ -7349,6 +7352,10 @@ export default function CharacterSheet({
           </div>
         )}
       </section>
+    </>
+  );
+  const themeCol = (
+    <>
       <section className="block theme-block">
         <div className="block-head">
           <h3 className="block-title">主题</h3>
@@ -7519,36 +7526,42 @@ export default function CharacterSheet({
       </section>
     </>
   );
-const rightCol = (
-    <>
-      {powersCol}
-      {rightRest}
-    </>
-  );
+  // 板块节点表：顺序与栏位由「设置 → 车卡页面板块」决定（lib/sheetLayout），此处只做 id → 节点映射
+  const panelNodes: Record<SheetPanelId, ReactNode> = {
+    info: topCol,
+    stats: leftTop,
+    combat: combatRow,
+    powers: powersCol,
+    feats: featsCol,
+    skills: skillsCol,
+    raceClass: raceClassCol,
+    equipment: equipmentCol,
+    money: moneyCol,
+    rituals: ritualsCol,
+    theme: themeCol,
+  };
+  const panelNode = (id: SheetPanelId) => <Fragment key={id}>{panelNodes[id]}</Fragment>;
 
 return (
     <div className="sheet">
       {layout === "double" ? (
         <div className="layout-double">
-          <div className="layout-top-row">
-            <div className="lt-cell">{topCol}</div>
-            <div className="lt-cell">{leftTop}</div>
-          </div>
-          {combatRow}
-          <div className="col-left">
-            {powersCol}
-            {featsCol}
-            {skillsCol}
-            {raceClassCol}
-          </div>
-          <div className="col-right">{rightRest}</div>
+          {sheetLayout.double.top.length > 0 && (
+            <div className="layout-top-row">
+              {sheetLayout.double.top.map((id) => (
+                // 顶部区自身两列并排；「战斗数值」这类通栏板块占满整行
+                <div key={id} className={panelMeta(id).wide ? "lt-cell lt-cell-wide" : "lt-cell"}>
+                  {panelNodes[id]}
+                </div>
+              ))}
+            </div>
+          )}
+          {/* 两列始终保留：某一栏被搬空时，另一栏的板块仍留在原来那一侧 */}
+          <div className="col-left">{sheetLayout.double.left.map(panelNode)}</div>
+          <div className="col-right">{sheetLayout.double.right.map(panelNode)}</div>
         </div>
       ) : (
-        <>
-          {topCol}
-          {leftCol}
-          {rightCol}
-        </>
+        <>{sheetLayout.single.map(panelNode)}</>
       )}
 
       {picker === "class" && (

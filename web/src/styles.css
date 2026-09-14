@@ -2425,3 +2425,92 @@ html[data-font="serif"] {
   .subrace-chooser,
   .subrace-benefits { width: 100%; box-sizing: border-box; }
 }
+
+/* ====================================================================
+   车卡页板块摆放（设置 → 车卡页面板块）
+   - .lt-cell-wide：双栏顶部区里的通栏板块（战斗数值）占满整行
+   - 板块被搬到左右栏时，内部宽表收成单列，避免半栏里挤成两列
+   - .ple-*：设置页「车卡页面板块」的拖动编辑器
+   ==================================================================== */
+.lt-cell-wide { grid-column: 1 / -1; }
+.col-left .combat-row,
+.col-right .combat-row { grid-template-columns: minmax(0, 1fr); }
+.col-left .stat-layout,
+.col-right .stat-layout { grid-template-columns: minmax(0, 1fr); }
+
+.ple { margin-top: 4px; }
+.ple-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.ple-tabs { height: 32px; }
+.ple-tabs .md3-seg-btn { min-width: 56px; padding: 0 12px; font-size: 13px; }
+
+.ple-board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.ple-board-double { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ple-zone-top { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.ple-zone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+  transition: border-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard), background var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+.ple-zone.drag-over { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-primary-container); }
+.ple-zone-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ple-zone-name { font-size: 12px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
+.ple-zone-hint { font-size: 11px; color: var(--md-sys-color-on-surface-variant); opacity: .8; }
+.ple-empty { color: var(--md-sys-color-on-surface-variant); font-size: 12px; padding: 8px 4px; text-align: center; }
+
+.ple-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 6px 0 4px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  cursor: grab;
+  user-select: none;
+  transition: background var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard), border-color var(--md-sys-motion-duration-short2);
+}
+.ple-row:hover { background: var(--md-sys-color-surface-container-highest); }
+.ple-row:active { cursor: grabbing; }
+.ple-row.dragging { opacity: .45; }
+.ple-row.drag-over { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.ple-row-wide { grid-column: 1 / -1; }
+.ple-grip { font-size: 18px; color: var(--md-sys-color-on-surface-variant); cursor: grab; }
+.ple-ic { font-size: 18px; color: var(--md-sys-color-primary); }
+.ple-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ple-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.ple-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+.ple-btn .material-symbols-outlined { font-size: 18px; }
+.ple-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent); }
+.ple-btn:disabled { opacity: .3; cursor: default; }
+
+@media (max-width: 768px) {
+  /* 设置页窄屏：双栏预览塌成单列，顶部区不再并排 */
+  .ple-board-double { grid-template-columns: minmax(0, 1fr); }
+  .ple-zone-top { grid-template-columns: minmax(0, 1fr); }
+  .ple-row-wide { grid-column: auto; }
+  .ple-zone-hint { display: none; }
+}
+
