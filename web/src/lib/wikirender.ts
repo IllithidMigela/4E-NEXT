@@ -18,6 +18,17 @@ export function wikiToHtml(text: string, fields: Record<string, string>): string
     .replace(/^\s*-{3,}\s*$/gm, "");
 }
 
+/**
+ * 生物数据块（<div class=creature>）渲染用的宏字段。
+ *
+ * 官方生物正文的标题行写作 `{{!!title}}`，WiKi 里由页面标题代入；而生物条目的 fields 里
+ * 没有 title 字段，于是宏展开成空串，卡片顶部就只剩档位标签（如「魔宠」）而没有名字。
+ * 这里用条目名兜底——怪物词条的正文由管线渲染，本来就把名字写进去了，两边自此一致。
+ */
+export function creatureBlockFields(name: string, fields?: Record<string, string>): Record<string, string> {
+  return { ...(fields ?? {}), title: fields?.title || name };
+}
+
 // @@.classTrait """...""" 引言块
 export function classTraitHtml(text: string): string | undefined {
   const m = text.match(/@@\.classTrait\s+"""([\s\S]*?)"""/);

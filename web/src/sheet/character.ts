@@ -103,7 +103,7 @@ export function migrateCharacter(c: Partial<Character>): Character {
   // 攻击/伤害成对收敛：先按旧结构 trim 空行（blank 判定含旧 other，避免裁掉有加值的行），再补齐成对；
   // 同时按行抽取旧「其他」生成自定义列表，保证与行 index 一一对应
   const oldCombat = (base as { combatMods?: { attacks?: (AttackRowData & { other?: number })[]; damages?: (DamageRowData & { otherA?: number; otherB?: number })[] } }).combatMods;
-  const normAttack = (r: AttackRowData & { other?: number }): AttackRowData & { other?: number } => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0, profSlot: (r.profSlot ?? -1) >= 0 ? r.profSlot : 0, profOverride: r.profOverride ?? false });
+  const normAttack = (r: AttackRowData & { other?: number }): AttackRowData & { other?: number } => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0, profSlot: (r.profSlot ?? -1) >= 0 ? r.profSlot : 0, profOverride: r.profOverride ?? false, profImplement: r.profImplement ?? false });
   const normDamage = (r: DamageRowData & { otherA?: number; otherB?: number }): DamageRowData & { otherA?: number; otherB?: number } => ({ ...r, enhanceSlot: (r.enhanceSlot ?? -1) >= 0 ? r.enhanceSlot : 0 });
   const rawAtk = (oldCombat?.attacks ?? []).map(normAttack);
   const rawDmg = (oldCombat?.damages ?? []).map(normDamage);
@@ -178,6 +178,10 @@ export function migrateCharacter(c: Partial<Character>): Character {
       const old = (base.equipmentSlots ?? [])[12];
       return old ? [old] : [];
     })(),
+    // 魔宠与坐骑：新字段。只在旧存档完全没有该字段时给默认 2 格；
+    // 用户手动减到 0 格（[]）时保持为空，不顶回默认值（与奇物/其他/消耗品一致）。
+    companionBeastSlots: base.companionBeastSlots ?? [undefined, undefined],
+    companionSlots: base.companionSlots ?? [undefined, undefined],
     trainedSkills: base.trainedSkills ?? [],
   classTrainedSkills: (base as { classTrainedSkills?: string[] }).classTrainedSkills ?? [],
     // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除）
@@ -265,6 +269,10 @@ export interface Character {
   otherSlots: (string | undefined)[];
   consumableSlots: (string | undefined)[];
   wondrousSlots: (string | undefined)[];
+  // 魔宠与坐骑 · 本体：生物库里的魔宠/坐骑/伙伴（存 creature 条目 id，展示其生物数据卡）
+  companionBeastSlots: (string | undefined)[];
+  // 魔宠与坐骑 · 装备：符咒、缰绳、马蹄铁、坐骑甲之类（类别不限，但选择器把魔宠/坐骑/伙伴排在最前）
+  companionSlots: (string | undefined)[];
   trainedSkills: string[];
   classTrainedSkills: string[]; // 职业选择型受训技能（用户从职业技能列表点选，更换职业时清除）
   // 职业特性授予、已加入威能面板的威能 id（更换职业时据此从威能面板移除，实现威能随职业走）
@@ -297,7 +305,7 @@ export interface Character {
   // 储备页：法术书（威能槽）与背包（装备槽）
   spellbook: string[];
   backpack: string[];
-  // 使用标记：斜线遮罩（键 = "atWill-0" / "e-5" / "o-1" / "c-2"）
+  // 使用标记：斜线遮罩（键 = "atWill-0" / "e-5" / "o-1" / "c-2" / "w-0" / "m-0"）
   powerUsed: Record<string, boolean>;
   equipmentUsed: Record<string, boolean>;
   // 专长使用标记（速览页，键 = 专长槽位下标 / 职业赠送专长 "g-<id>"）
@@ -387,6 +395,8 @@ export function defaultCharacter(): Character {
     otherSlots: [],
     consumableSlots: [],
     wondrousSlots: [],
+    companionBeastSlots: [undefined, undefined],
+    companionSlots: [undefined, undefined],
     trainedSkills: [],
     classTrainedSkills: [],
     classGrantedPowerIds: [],
@@ -509,6 +519,16 @@ export function clearFeatSlot(feats: string[], index: number): string[] {
 
 // 装备槽位（13 格，与 EQUIPMENT_SLOTS 下标对应）
 export const EQUIPMENT_SLOTS: string[] = ["主手", "副手", "佩戴", "头部", "颈部", "护甲", "腰部", "臂部", "手部", "戒指", "戒指", "足部", "奇物"];
+
+// 可增减槽位组的标识：固定 13 格（fixed）/ 其他 / 消耗品 / 奇物 / 魔宠与坐骑。
+// 使用标记（equipmentUsed）的键前缀由这里派生，人物页与速览页共用同一份映射。
+export type EquipSlotKind = "fixed" | "other" | "consumable" | "wondrous" | "companion";
+
+const EQUIP_USED_PREFIX: Record<EquipSlotKind, string> = { fixed: "e", other: "o", consumable: "c", wondrous: "w", companion: "m" };
+
+export function equipUsedKey(kind: EquipSlotKind, index: number): string {
+  return EQUIP_USED_PREFIX[kind] + "-" + index;
+}
 
 export function setEquipmentSlot(slots: (string | undefined)[], index: number, id: string): (string | undefined)[] {
   const arr = [...slots];
@@ -772,6 +792,7 @@ export interface AttackRowData {
   profBonus: number;       // 熟练加值（兼容旧存档的纯手动值，新版本由 profSlot 自动计算）
   profSlot?: number;       // 熟练加值来源装备槽位（0/1 = 主手/副手基础武器，自动取擅长加值；缺省按 0 处理）
   profOverride?: boolean;  // 手动视为擅长（覆盖自动擅长判定，用于选择型专长等无法自动判定的情况）
+  profImplement?: boolean; // 以法器施展（含「武器作为法器使用」）：按规则不获得擅长加值，熟练加值恒为 0
   feat: number;            // 专长加值
   enhanceSlot?: number;    // 增强加值来源装备槽位（0/1 = 主手/副手魔法物品，自动计算；缺省按 0 处理）
 }
@@ -803,7 +824,7 @@ export function highestAbilityKey(abilities: Partial<Record<AbilityKey, number>>
 export function emptyCombatMods(ability: AbilityKey = "str"): CombatMods {
   return {
     attacks: [
-      { ability, classBonus: 0, profBonus: 0, profSlot: 0, profOverride: false, feat: 0, enhanceSlot: 0 },
+      { ability, classBonus: 0, profBonus: 0, profSlot: 0, profOverride: false, profImplement: false, feat: 0, enhanceSlot: 0 },
     ],
     damages: [
       { ability, feat: 0, enhanceSlot: 0 },

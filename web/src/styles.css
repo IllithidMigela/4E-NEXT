@@ -1290,13 +1290,17 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 /* 网格布局下移除旧的外边距，间距统一由 gap 控制 */
 .equip-layout:not(.base-dialog-layout) .equip-groups > .selected-group,
 .equip-layout:not(.base-dialog-layout) .equip-groups > .equip-sub { margin: 0; }
-/* 武器组（主手/副手）、戒指组与冒险装备整行铺满：双槽并排（戒指同武器 300px 槽位） */
+/* 武器组（主手/副手）、戒指组、冒险装备与魔宠坐骑整行铺满：双槽并排（戒指同武器 300px 槽位） */
 .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-武器,
 .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-戒指,
-.equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-冒险装备 { grid-column: 1 / -1; }
+.equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-冒险装备,
+.equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-魔宠与坐骑 { grid-column: 1 / -1; }
 /* 非武器/非戒指组占半栏，组内选择框改单列占满半栏，宽度与武器组（主手/副手）一致 */
 .equip-layout:not(.base-dialog-layout) .equip-groups > .selected-group:not(#equip-g-武器):not(#equip-g-戒指) .power-grid,
 .equip-layout:not(.base-dialog-layout) .equip-groups > .equip-sub .power-grid { grid-template-columns: minmax(0, 1fr); }
+/* 魔宠与坐骑整行铺满后内部再分栏：本体是生物数据卡，单列铺开；装备是小卡片，按可用宽度自动分栏 */
+.equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-魔宠与坐骑 .companion-sec-beast .power-grid { grid-template-columns: minmax(0, 1fr); }
+.equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-魔宠与坐骑 .companion-sec-gear .power-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
 
 /* 基础弹窗布局与精制品开关（滚动交给原生 md-dialog 内容区） */
 .base-dialog-layout { min-height: 0; }
@@ -1304,6 +1308,12 @@ md-filled-text-field, md-filled-select { min-width: 0; }
 .base-mw-toggle md-switch { --md-switch-track-height: 20px; --md-switch-track-width: 36px; --md-switch-selected-icon-size: 12px; --md-switch-unselected-icon-size: 12px; --md-switch-state-layer-size: 28px; }
 .adv-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .adv-input { width: 140px; }
+
+/* 魔宠与坐骑：组内分「本体 / 装备」两段。
+   段标题比组标题低一级（组标题用 .sg-title），计数与增减沿用 .sg-count / .sg-step。
+   本体卡片不另加外壳——生物数据块本身就是一张完整卡片（同怪物卡，见 components/MonsterCard）。 */
+.companion-sec { margin-top: 10px; }
+.companion-sec-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12.5px; font-weight: var(--fw-label); color: var(--md-sys-color-on-surface-variant); }
 
 /* 金钱板块 */
 .money-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -2381,7 +2391,8 @@ html[data-font="serif"] {
   .equip-layout:not(.base-dialog-layout) .equip-groups { grid-template-columns: minmax(0, 1fr); }
   .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-武器,
   .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-戒指,
-  .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-冒险装备 { grid-column: auto; }
+  .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-冒险装备,
+  .equip-layout:not(.base-dialog-layout) .equip-groups > #equip-g-魔宠与坐骑 { grid-column: auto; }
   .card-grid { grid-template-columns: minmax(0, 1fr); }
   /* 金钱面板：手机端由 4 列收为 2 列，输入+按钮竖排占满 */
   .money-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -73,10 +73,15 @@ class MainActivity : AppCompatActivity() {
         container.addView(webView)
         setContentView(container)
 
+        // 文件选择器接管 <input type="file">（导入存档 / 导入资源包 / 立绘 / 背景图……）。
+        // 必须在 onCreate 里构造：registerForActivityResult 要求 Activity STARTED 之前注册。
+        val filePicker = NativeFilePicker(this)
+
         WebViewSetup.configure(
             webView,
             this,
             WebViewSetup.assetLoader(this),
+            filePicker,
         ) {
             // onPageFinished 一定在主线程，这里读 url 是安全的。
             // 把「当前页面确实是自家页面」这一判断固定下来给桥用——

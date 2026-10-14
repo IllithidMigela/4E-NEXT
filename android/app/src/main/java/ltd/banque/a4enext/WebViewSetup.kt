@@ -3,10 +3,13 @@ package ltd.banque.a4enext
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebChromeClient.FileChooserParams
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -139,6 +142,7 @@ object WebViewSetup {
         view: WebView,
         context: Context,
         assetLoader: WebViewAssetLoader,
+        filePicker: NativeFilePicker,
         onPageFinished: (() -> Unit)? = null,
     ) {
         val settings = view.settings
@@ -158,8 +162,15 @@ object WebViewSetup {
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
 
         settings.cacheMode = WebSettings.LOAD_DEFAULT
+        // file:// 一律不许：页面只从自家 assets 与网络加载，没有读本地文件的正当理由。
         settings.allowFileAccess = false
-        settings.allowContentAccess = false
+        // 但 content:// **必须放行**，而且这条不是安全偏好问题：
+        // 系统文件选择器交回来的是 content:// URI，WebView 之后要自己按这个 URI 去读内容。
+        // 关掉它，用户挑完文件也读不出字节 —— 表现是「选了文件但没有任何反应」，
+        // 比按钮点不动更隐蔽（见 NativeFilePicker 的类注释）。
+        // 暴露面可控：页面只从 https://appassets.androidplatform.net 加载，外部导航已在
+        // shouldOverrideUrlLoading 里拦下，而 content:// 对页面是跨源，fetch / 画布读取都过不去。
+        settings.allowContentAccess = true
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // 强制暗色会让网页端自己的主题失效——主题由应用内的 MD3 取色控制。
@@ -174,6 +185,20 @@ object WebViewSetup {
         view.overScrollMode = WebView.OVER_SCROLL_IF_CONTENT_SCROLLS
 
         view.webChromeClient = object : WebChromeClient() {
+            /**
+             * `<input type="file">` 必须由宿主接管。
+             *
+             * WebChromeClient 的默认实现直接 `return false`，WebView 于是什么都不做：
+             * 网页端「导入存档」按下之后毫无反应，根因就在这一条。
+             * 安卓 WebView 不自己弹文件选择器，宿主不接就没有 —— 具体实现与三条规则
+             * 见 [NativeFilePicker]。
+             */
+            override fun onShowFileChooser(
+                v: WebView,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: FileChooserParams,
+            ): Boolean = filePicker.open(filePathCallback, fileChooserParams)
+
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
                 val text = msg.message()
                 // 冒烟自检的结果混在普通日志里不容易看，单独成段打到专属 tag，

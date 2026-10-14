@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { FilledTextField, FilledSelect, SelectOption, TextButton, IconButton, FilledTonalButton, Switch, Tabs, PrimaryTab } from "../components/md";
 import { loadCategory, loadRelations } from "../data/loaders";
 import type { Entry } from "../data/types";
-import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, isHeavyArmor, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, armorPenaltyFor, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot, customSum, emptyCustomBonuses, type CustomBonuses, type CustomEntry } from "./character";
+import { type AbilityKey, type Character, ABILITY_LABELS, deriveStats, isHeavyArmor, parseClassStats, parseRaceAbilities, racialBonus, applyAbilityBonus, parseTrainedSkillCount, parseClassSkills, parseBuiltinTrainedSkills, cleanDisplayName, setPowerSlot, clearPowerSlot, setFeatSlot, clearFeatSlot, setEquipmentSlot, clearEquipmentSlot, EQUIPMENT_SLOTS, equipUsedKey, type EquipSlotKind, buyPointsUsed, BUY_POINTS, DEFENSE_BONUS_SOURCES, parseRaceDefenses, baseClassName, SKILL_TABLE, ARMOR_PENALTY_SKILLS, armorPenaltyFor, zhName, type DefenseKey, type DefenseBonusSource, type SpeedMods, type SkillMods, type PowerSlots, grantedPowerCategory, grantedPowerSlot, type SlotLevel, type ClassStats, type RaceDefenseBonus, type DerivedStats, setRitualSlot, clearRitualSlot, customSum, emptyCustomBonuses, type CustomBonuses, type CustomEntry } from "./character";
 import { LEVELS, levelFromXp, xpForLevel } from "./leveling";
 import { powerSlotLevels } from "./candidates";
 import { featGrantedPowers, featReplacementInfo, featPrereqClassFeature } from "./featEffects";
@@ -14,6 +14,8 @@ import FeatChoiceDialog from "./FeatChoiceDialog";
 import PowerReplacementDialog, { type ReplSlotGroup } from "./PowerReplacementDialog";
 import WeaponPalette, { type WeapInfo, implGroup } from "./WeaponPalette";
 import ItemSlotPicker from "./ItemSlotPicker";
+import CompanionBeastPicker from "./CompanionBeastPicker";
+import { companionBeastKind } from "./companionBeast";
 import EntryCard from "./EntryCard";
 import PortraitFrame from "./PortraitFrame";
 import CombatPanels from "./CombatPanel";
@@ -25,7 +27,7 @@ import { stripWiki } from "../lib/text";
 import { safeHtml } from "../lib/sanitize";
 import { panelMeta, useSheetLayout, panelsInGroup, defaultPanelGroup, SHEET_PANEL_GROUPS, type SheetPanelId } from "../lib/sheetLayout";
 import { hybridTalentGroups, resolveHybridOption, isHybridTalentFeat, mergedClassTraitText, originalFeatureInfo, type HybridTalentGroup } from "../lib/hybrid";
-import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitClassLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, parseReplacementPairs, parseRaceTraitLines, RACE_HEADER_NAMES, type FeatureSection } from "../lib/wikirender";
+import { wikiToHtml, classTraitHtml, classFeaturesHtml, classSummary, raceTraitHtml, raceBodyHtml, splitRaceLore, splitClassLore, splitAuxPowers, parseSubraceInfo, parseFeatureSections, parseClassFeatureOptions, parseReplacementPairs, parseRaceTraitLines, RACE_HEADER_NAMES, creatureBlockFields, type FeatureSection } from "../lib/wikirender";
 import { BASE_WEAPONS, BASE_ARMORS, BASE_IMPLEMENTS, BASE_SHIELDS, findBaseItem, baseItemId, traitsText, type BaseWeapon, type BaseImplement } from "../lib/baseitems";
 import { priceForLevel, itemLevels, enhancementBonusForLevel } from "../lib/levelprices";
 import { POWER_CATEGORIES, POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
@@ -345,6 +347,22 @@ const EQUIP_GROUPS: { label: string; kind?: "weapon" | "armor" | "shield"; slots
   { label: "戒指", slots: [{ index: 9, name: "戒指 1" }, { index: 10, name: "戒指 2" }] },
 ];
 
+// 槽位组标识 → 面板标题（固定 13 格用 EQUIPMENT_SLOTS 的部位名，其余用组名）
+const EQUIP_KIND_LABEL: Record<Exclude<EquipSlotKind, "fixed">, string> = {
+  other: "其他", consumable: "消耗品", wondrous: "奇物", companion: "魔宠与坐骑",
+};
+
+// 槽位组 → 人物卡字段。新增一组可增减槽位时，只需要动这两个映射：
+//   equipSlotsOf   读当前数组；
+//   equipKindPatch 生成「只改这一组」的补丁（其余字段原样保留）。
+function equipSlotsOf(c: Character, kind: EquipSlotKind): (string | undefined)[] {
+  return kind === "fixed" ? c.equipmentSlots : kind === "other" ? c.otherSlots : kind === "consumable" ? c.consumableSlots : kind === "wondrous" ? c.wondrousSlots : c.companionSlots;
+}
+
+function equipKindPatch(kind: EquipSlotKind, arr: (string | undefined)[]): Partial<Character> {
+  return kind === "fixed" ? { equipmentSlots: arr } : kind === "other" ? { otherSlots: arr } : kind === "consumable" ? { consumableSlots: arr } : kind === "wondrous" ? { wondrousSlots: arr } : { companionSlots: arr };
+}
+
 // 基础物品块：名称 + 大字伤害骰/AC + 简名特性；特性完整定义悬浮显示（同威能简洁模式）。
 // 走 SmartHover：桌面上悬停出浮层，触屏上长按出底部卡片 —— 原来写死 :hover 的话，
 // 手机上不仅看不到完整特性，轻点还会直接跳去「更换基础物品」。
@@ -544,6 +562,8 @@ function EquipGroupSlots(props: {
   levelsOf?: (i: number) => number[];
   enhanceOf?: (i: number) => number;
   onEnhance?: (i: number, tier: number) => void;
+  // 简洁模式下副标题的替代文案（物品默认显示稀有度+等级，生物没有这两项）
+  subOf?: (i: number, item: Entry) => string;
 }) {
   if (!props.detail) {
     return (
@@ -562,7 +582,7 @@ function EquipGroupSlots(props: {
                 <span className="cr-dot" style={{ background: ITEM_COLOR }} />
                 {baseName && <span className="compact-base" onClick={(e) => { e.stopPropagation(); props.onBaseClick?.(i); }}>{baseName}</span>}
                 <span className="cr-name">{item.name}{item.nameEn ? " " + item.nameEn : ""}</span>
-                <span className="cr-sub">{item.rarity}{item.itemLevel ? " · L" + item.itemLevel : ""}</span>
+                <span className="cr-sub">{props.subOf ? props.subOf(i, item) : <>{item.rarity}{item.itemLevel ? " · L" + item.itemLevel : ""}</>}</span>
                 <IconButton className="slot-x" title={used ? "已标记使用（锁定）" : "清空槽位"} aria-label="清空槽位" onClick={(e) => { e.stopPropagation(); if (used) return; props.clear(i); }}><span className="material-symbols-outlined">close</span></IconButton>
               </SmartHover>
             );
@@ -869,7 +889,7 @@ function OptionOrSubChoice({ label, desc, innerKey, innerChosen, onChoose, field
           <summary>魔宠数据</summary>
           <div className="beast-sub-body">
             <div className="pf-body">
-              <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={safeHtml(wikiToHtml(creature.sourceText, fields))} />
+              <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={safeHtml(wikiToHtml(creature.sourceText, creatureBlockFields(creature.name, fields)))} />
             </div>
           </div>
         </details>
@@ -1517,7 +1537,7 @@ function SummonedSteedData({ section, detail, fields, lookup }: {
       <summary>{cleanDisplayName(creature.name)}数据</summary>
       <div className="beast-sub-body">
         <div className="pf-body">
-          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={safeHtml(wikiToHtml(creature.sourceText, fields))} />
+          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={safeHtml(wikiToHtml(creature.sourceText, creatureBlockFields(creature.name, fields)))} />
         </div>
       </div>
     </details>
@@ -1547,7 +1567,7 @@ function AnimalCompanionData({ creature, detail, fields }: {
       <summary>{cleanDisplayName(creature.name)}数据</summary>
       <div className="beast-sub-body">
         <div className="pf-body">
-          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={safeHtml(wikiToHtml(creature.sourceText, fields))} />
+          <div className="pf-rest gen-creature-card" dangerouslySetInnerHTML={safeHtml(wikiToHtml(creature.sourceText, creatureBlockFields(creature.name, fields)))} />
         </div>
       </div>
     </details>
@@ -4732,9 +4752,11 @@ export default function CharacterSheet({
   // 替换型专长（如「威能替换你的N级辅助威能」）：选择后弹面板询问将新威能填入哪个格子。
   // targetCat：被替换威能所在的槽位类别，弹窗只显示该类别相关栏位（无关栏位不出现）。
   const [replacementPicker, setReplacementPicker] = useState<null | { index: number; newPowerId: string; hint: string; targetCat?: keyof PowerSlots }>(null);
-  const [equipPicker, setEquipPicker] = useState<null | { kind: "fixed" | "other" | "consumable" | "wondrous"; index: number }>(null);
+  const [equipPicker, setEquipPicker] = useState<null | { kind: EquipSlotKind; index: number }>(null);
   // 冒险装备槽选择器：从数据库(冒险装备目录)挑选，选中后回填名称 + 价格
   const [advPicker, setAdvPicker] = useState<number | null>(null);
+  // 魔宠与坐骑「本体」选择器：从生物库挑魔宠/坐骑/伙伴
+  const [beastPicker, setBeastPicker] = useState<number | null>(null);
   const [blockDetail, setBlockDetail] = useState<{ powers: boolean; feats: boolean; equipment: boolean; rituals: boolean }>({ powers: true, feats: true, equipment: true, rituals: true });
 
   const [abilityMode, setAbilityMode] = useState<"free" | "buy">("free");
@@ -4758,7 +4780,7 @@ export default function CharacterSheet({
   const [skillEditName, setSkillEditName] = useState<null | string>(null);
   const [perceptionDetailOpen, setPerceptionDetailOpen] = useState(false);
   const [slotMode, setSlotMode] = useState<null | "mark" | "swap">(null);
-  const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: "fixed" | "other" | "consumable" | "wondrous"; index: number }>(null);
+  const [swapPicker, setSwapPicker] = useState<null | { kind: "power"; cat: keyof PowerSlots; index: number } | { kind: "equip"; ekind: EquipSlotKind; index: number }>(null);
   const [basePicker, setBasePicker] = useState<null | { kind: "weapon" | "armor" | "shield"; index: number }>(null);
   const [skillDetail, setSkillDetail] = useState(true);
   const [raceDetail, setRaceDetail] = useState(false);
@@ -4801,14 +4823,13 @@ export default function CharacterSheet({
   function openFeatPicker(index: number) {
     setSlotPicker({ kind: "feat", index });
   }
-  function openEquipPicker(kind: "fixed" | "other" | "consumable" | "wondrous", index: number) {
+  function openEquipPicker(kind: EquipSlotKind, index: number) {
     setEquipPicker({ kind, index });
   }
   // —— 使用标记（斜线遮罩）与储备交换 ——
   const powerUsedKey = (cat: keyof PowerSlots, index: number) => cat + "-" + index;
-  const equipUsedKey = (kind: "fixed" | "other" | "consumable" | "wondrous", index: number) => (kind === "fixed" ? "e" : kind === "other" ? "o" : kind === "consumable" ? "c" : "w") + "-" + index;
   const isPowerUsed = (cat: keyof PowerSlots, index: number) => !!char.powerUsed?.[powerUsedKey(cat, index)];
-  const isEquipUsed = (kind: "fixed" | "other" | "consumable" | "wondrous", index: number) => !!char.equipmentUsed?.[equipUsedKey(kind, index)];
+  const isEquipUsed = (kind: EquipSlotKind, index: number) => !!char.equipmentUsed?.[equipUsedKey(kind, index)];
   function togglePowerUsed(cat: keyof PowerSlots, index: number) {
     const key = powerUsedKey(cat, index);
     setChar((p) => {
@@ -4817,7 +4838,7 @@ export default function CharacterSheet({
       return { ...p, powerUsed: used };
     });
   }
-  function toggleEquipUsed(kind: "fixed" | "other" | "consumable" | "wondrous", index: number) {
+  function toggleEquipUsed(kind: EquipSlotKind, index: number) {
     const key = equipUsedKey(kind, index);
     setChar((p) => {
       const used = { ...(p.equipmentUsed ?? {}) };
@@ -4833,25 +4854,18 @@ export default function CharacterSheet({
       if (!old) return p;
       let slotOld: string | undefined;
       let powerSlots = p.powerSlots;
-      let equipmentSlots = p.equipmentSlots;
-      let otherSlots = p.otherSlots;
-      let consumableSlots = p.consumableSlots;
-      let wondrousSlots = p.wondrousSlots;
+      let equipPatch: Partial<Character> = {};
       if (pick.kind === "power") {
         slotOld = p.powerSlots[pick.cat][pick.index];
         powerSlots = setPowerSlot(powerSlots, pick.cat, pick.index, old);
       } else {
-        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : pick.ekind === "consumable" ? p.consumableSlots : p.wondrousSlots;
+        const arr = equipSlotsOf(p, pick.ekind);
         slotOld = arr[pick.index];
-        const nextArr = setEquipmentSlot(arr, pick.index, old);
-        if (pick.ekind === "fixed") equipmentSlots = nextArr;
-        else if (pick.ekind === "other") otherSlots = nextArr;
-        else if (pick.ekind === "consumable") consumableSlots = nextArr;
-        else wondrousSlots = nextArr;
+        equipPatch = equipKindPatch(pick.ekind, setEquipmentSlot(arr, pick.index, old));
       }
       const nextReserve = reserve.map((s, i) => (i === reserveIndex ? (slotOld ?? "") : s));
       const ppRec = pick.kind === "power" && pick.cat === "atWill" ? hybridPowerPoints({ classId: p.classId, classId2: p.classId2, powerSlots }, resolveClassId, resolvePowerId) : undefined;
-      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots, wondrousSlots, ...(ppRec !== undefined ? { powerPoints: ppRec } : {}) };
+      return { ...p, ...equipPatch, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, ...(ppRec !== undefined ? { powerPoints: ppRec } : {}) };
     });
     setSwapPicker(null);
   }
@@ -4860,27 +4874,20 @@ export default function CharacterSheet({
     setChar((p) => {
       let slotOld: string | undefined;
       let powerSlots = p.powerSlots;
-      let equipmentSlots = p.equipmentSlots;
-      let otherSlots = p.otherSlots;
-      let consumableSlots = p.consumableSlots;
-      let wondrousSlots = p.wondrousSlots;
+      let equipPatch: Partial<Character> = {};
       if (pick.kind === "power") {
         slotOld = p.powerSlots[pick.cat][pick.index];
         powerSlots = clearPowerSlot(powerSlots, pick.cat, pick.index);
       } else {
-        const arr = pick.ekind === "fixed" ? p.equipmentSlots : pick.ekind === "other" ? p.otherSlots : pick.ekind === "consumable" ? p.consumableSlots : p.wondrousSlots;
+        const arr = equipSlotsOf(p, pick.ekind);
         slotOld = arr[pick.index];
-        const nextArr = clearEquipmentSlot(arr, pick.index);
-        if (pick.ekind === "fixed") equipmentSlots = nextArr;
-        else if (pick.ekind === "other") otherSlots = nextArr;
-        else if (pick.ekind === "consumable") consumableSlots = nextArr;
-        else wondrousSlots = nextArr;
+        equipPatch = equipKindPatch(pick.ekind, clearEquipmentSlot(arr, pick.index));
       }
       if (!slotOld) return p;
       const reserve = pick.kind === "power" ? p.spellbook : p.backpack;
       const emptyIdx = reserve.findIndex((s) => !s);
       const nextReserve = emptyIdx >= 0 ? reserve.map((s, i) => (i === emptyIdx ? slotOld : s)) : [...reserve, slotOld];
-      return { ...p, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots, equipmentSlots, otherSlots, consumableSlots, wondrousSlots };
+      return { ...p, ...equipPatch, spellbook: pick.kind === "power" ? nextReserve : p.spellbook, backpack: pick.kind === "equip" ? nextReserve : p.backpack, powerSlots };
     });
     setSwapPicker(null);
   }
@@ -4896,8 +4903,8 @@ export default function CharacterSheet({
     if (char.powerUsed?.[powerUsedKey(cat, index)]) return;
     openPowerPicker(cat, index);
   }
-  function onEquipSlotClick(kind: "fixed" | "other" | "consumable" | "wondrous", index: number) {
-    const arr = kind === "fixed" ? char.equipmentSlots : kind === "other" ? char.otherSlots : kind === "consumable" ? char.consumableSlots : char.wondrousSlots;
+  function onEquipSlotClick(kind: EquipSlotKind, index: number) {
+    const arr = equipSlotsOf(char, kind);
     const id = arr[index];
     if (slotMode === "mark") { if (id) toggleEquipUsed(kind, index); return; }
     if (slotMode === "swap") {
@@ -5290,7 +5297,7 @@ export default function CharacterSheet({
       })()
     : [];
   const swapCurId = swapPicker
-    ? (swapPicker.kind === "power" ? char.powerSlots[swapPicker.cat][swapPicker.index] ?? "" : ((swapPicker.ekind === "fixed" ? char.equipmentSlots : swapPicker.ekind === "other" ? char.otherSlots : swapPicker.ekind === "consumable" ? char.consumableSlots : char.wondrousSlots)[swapPicker.index] ?? ""))
+    ? (swapPicker.kind === "power" ? char.powerSlots[swapPicker.cat][swapPicker.index] ?? "" : (equipSlotsOf(char, swapPicker.ekind)[swapPicker.index] ?? ""))
     : "";
   const swapCurName = swapCurId ? ((swapPicker?.kind === "power" ? powerMap.get(swapCurId)?.name : itemMap.get(swapCurId)?.name) ?? swapCurId) : "";
   // 自动花销：基础物品 + 魔法装备（增强档位对应等级价格）+ 冒险装备手动价格
@@ -6347,8 +6354,10 @@ export default function CharacterSheet({
     return base?.kind === "weapon" ? (base.weapon?.dice ?? "") : "";
   };
   // 擅长加值：所选槽位基础武器的擅长加值；未装备武器/非武器为 0。
-  // override=true 时视为擅长（忽略自动判定，用于选择型专长等无法自动判定的情况）
-  const profOf = (slot: number, override: boolean): number => {
+  // override=true 时视为擅长（忽略自动判定，用于选择型专长等无法自动判定的情况）；
+  // asImplement=true 表示以法器施展（含「武器作为法器使用」）——法器不提供擅长加值，故恒为 0。
+  const profOf = (slot: number, override: boolean, asImplement = false): number => {
+    if (asImplement) return 0;
     const baseId = char.baseItems[slot];
     const base = baseId ? findBaseItem(baseId) : undefined;
     if (base?.kind !== "weapon" || !base.weapon) return 0;
@@ -7049,6 +7058,7 @@ export default function CharacterSheet({
             <button type="button" className="equip-nav-btn" title="消耗品" onClick={() => document.getElementById("equip-g-消耗品")?.scrollIntoView({ behavior: "smooth", block: "start" })}>耗</button>
             <button type="button" className="equip-nav-btn" title="冒险装备" onClick={() => document.getElementById("equip-g-冒险装备")?.scrollIntoView({ behavior: "smooth", block: "start" })}>冒</button>
             <button type="button" className="equip-nav-btn" title="奇物" onClick={() => document.getElementById("equip-g-奇物")?.scrollIntoView({ behavior: "smooth", block: "start" })}>奇</button>
+            <button type="button" className="equip-nav-btn" title="魔宠与坐骑" onClick={() => document.getElementById("equip-g-魔宠与坐骑")?.scrollIntoView({ behavior: "smooth", block: "start" })}>宠</button>
           </nav>
           <div className="equip-groups">
         {EQUIP_GROUPS.map((g) => {
@@ -7170,6 +7180,50 @@ export default function CharacterSheet({
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+          <div id="equip-g-魔宠与坐骑" className="equip-sub">
+            <div className="sg-title">
+              魔宠与坐骑
+              <span className="sg-count">（本体 {char.companionBeastSlots.filter(Boolean).length}/{char.companionBeastSlots.length} · 装备 {char.companionSlots.filter(Boolean).length}/{char.companionSlots.length}）</span>
+            </div>
+            {/* 本体：生物库里的魔宠/坐骑/伙伴。卡片就是该生物的数据块本身（与主持页/词条页的怪物卡同一渲染：
+                数据块已是完整卡片，不再另加外壳），条目名由数据块标题栏呈现。
+                生物没有魔法物品的每日威能，也不进背包储备，因此不参与「标记使用 / 与储备交换」两种模式。 */}
+            <div className="companion-sec companion-sec-beast">
+              <div className="companion-sec-head" title="本体是生物库里的魔宠/坐骑/伙伴，卡片即它的生物数据；本体没有魔法物品的每日威能，也不进背包储备，因此不参与「标记使用 / 与储备交换」">
+                本体
+                <span className="sg-count">（{char.companionBeastSlots.filter(Boolean).length}/{char.companionBeastSlots.length}）</span>
+                <button type="button" className="sg-step" title="减少槽位" onClick={() => setChar((p) => ({ ...p, companionBeastSlots: resizeSlots(p.companionBeastSlots, p.companionBeastSlots.length - 1) }))}>−</button>
+                <button type="button" className="sg-step" title="增加槽位" onClick={() => setChar((p) => ({ ...p, companionBeastSlots: resizeSlots(p.companionBeastSlots, p.companionBeastSlots.length + 1) }))}>+</button>
+              </div>
+              <EquipGroupSlots
+                slots={char.companionBeastSlots}
+                detail={blockDetail.equipment}
+                names={(i) => "魔宠/坐骑 " + (i + 1)}
+                items={(i) => { const id = char.companionBeastSlots[i]; return id ? creatureMap.get(id) : undefined; }}
+                picker={(i) => setBeastPicker(i)}
+                clear={(i) => setChar((c) => ({ ...c, companionBeastSlots: clearEquipmentSlot(c.companionBeastSlots, i) }))}
+                subOf={(_i, item) => companionBeastKind(item) ?? "生物"}
+              />
+            </div>
+            {/* 装备：符咒、缰绳、马蹄铁、坐骑甲之类，沿用原有物品槽（可标记使用、可与储备交换） */}
+            <div className="companion-sec companion-sec-gear">
+              <div className="companion-sec-head">
+                装备
+                <span className="sg-count">（{char.companionSlots.filter(Boolean).length}/{char.companionSlots.length}）</span>
+                <button type="button" className="sg-step" disabled={!!slotMode} title="减少槽位" onClick={() => setChar((p) => ({ ...p, companionSlots: resizeSlots(p.companionSlots, p.companionSlots.length - 1) }))}>−</button>
+                <button type="button" className="sg-step" disabled={!!slotMode} title="增加槽位" onClick={() => setChar((p) => ({ ...p, companionSlots: resizeSlots(p.companionSlots, p.companionSlots.length + 1) }))}>+</button>
+              </div>
+              <EquipGroupSlots
+                slots={char.companionSlots}
+                detail={blockDetail.equipment}
+                names={(i) => "魔宠/坐骑装备 " + (i + 1)}
+                items={(i) => { const id = char.companionSlots[i]; return id ? itemMap.get(id) : undefined; }}
+                picker={(i) => onEquipSlotClick("companion", i)}
+                clear={(i) => { if (slotMode) return; setChar((c) => ({ ...c, companionSlots: clearEquipmentSlot(c.companionSlots, i) })); }}
+                usedOf={(i) => isEquipUsed("companion", i)}
+              />
             </div>
           </div>
         </div>
@@ -7739,23 +7793,11 @@ return (
       {equipPicker && (
         <ItemSlotPicker
           entries={items}
-          slotName={equipPicker.kind === "fixed" ? EQUIPMENT_SLOTS[equipPicker.index] ?? "" : equipPicker.kind === "other" ? "其他" : equipPicker.kind === "consumable" ? "消耗品" : "奇物"}
+          slotName={equipPicker.kind === "fixed" ? EQUIPMENT_SLOTS[equipPicker.index] ?? "" : EQUIP_KIND_LABEL[equipPicker.kind]}
           currentLevel={char.level}
-          currentId={equipPicker.kind === "fixed" ? char.equipmentSlots[equipPicker.index] : equipPicker.kind === "other" ? char.otherSlots[equipPicker.index] : equipPicker.kind === "consumable" ? char.consumableSlots[equipPicker.index] : char.wondrousSlots[equipPicker.index]}
-          onSelect={(id) => setChar((p) => ({
-            ...p,
-            equipmentSlots: equipPicker.kind === "fixed" ? setEquipmentSlot(p.equipmentSlots, equipPicker.index, id) : p.equipmentSlots,
-            otherSlots: equipPicker.kind === "other" ? setEquipmentSlot(p.otherSlots, equipPicker.index, id) : p.otherSlots,
-            consumableSlots: equipPicker.kind === "consumable" ? setEquipmentSlot(p.consumableSlots, equipPicker.index, id) : p.consumableSlots,
-            wondrousSlots: equipPicker.kind === "wondrous" ? setEquipmentSlot(p.wondrousSlots, equipPicker.index, id) : p.wondrousSlots,
-          }))}
-          onClear={() => setChar((p) => ({
-            ...p,
-            equipmentSlots: equipPicker.kind === "fixed" ? clearEquipmentSlot(p.equipmentSlots, equipPicker.index) : p.equipmentSlots,
-            otherSlots: equipPicker.kind === "other" ? clearEquipmentSlot(p.otherSlots, equipPicker.index) : p.otherSlots,
-            consumableSlots: equipPicker.kind === "consumable" ? clearEquipmentSlot(p.consumableSlots, equipPicker.index) : p.consumableSlots,
-            wondrousSlots: equipPicker.kind === "wondrous" ? clearEquipmentSlot(p.wondrousSlots, equipPicker.index) : p.wondrousSlots,
-          }))}
+          currentId={equipSlotsOf(char, equipPicker.kind)[equipPicker.index]}
+          onSelect={(id) => setChar((p) => ({ ...p, ...equipKindPatch(equipPicker.kind, setEquipmentSlot(equipSlotsOf(p, equipPicker.kind), equipPicker.index, id)) }))}
+          onClear={() => setChar((p) => ({ ...p, ...equipKindPatch(equipPicker.kind, clearEquipmentSlot(equipSlotsOf(p, equipPicker.kind), equipPicker.index)) }))}
           onClose={() => setEquipPicker(null)}
         />
       )}
@@ -7768,6 +7810,16 @@ return (
           onSelect={pickAdvItem}
           onClear={() => { clearAdvItem(advPicker); setAdvPicker(null); }}
           onClose={() => setAdvPicker(null)}
+        />
+      )}
+      {beastPicker !== null && (
+        <CompanionBeastPicker
+          entries={creatures}
+          slotName={"魔宠/坐骑 " + (beastPicker + 1)}
+          currentId={char.companionBeastSlots[beastPicker]}
+          onSelect={(id) => setChar((p) => ({ ...p, companionBeastSlots: setEquipmentSlot(p.companionBeastSlots, beastPicker, id) }))}
+          onClear={() => setChar((p) => ({ ...p, companionBeastSlots: clearEquipmentSlot(p.companionBeastSlots, beastPicker) }))}
+          onClose={() => setBeastPicker(null)}
         />
       )}
       {swapPicker &&

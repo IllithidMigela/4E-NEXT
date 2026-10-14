@@ -71,10 +71,11 @@ android/
 | 存储 | `localStorage`（约 5MB） | 应用数据目录 `storage.json` | 应用私有目录 `storage.json` |
 | 字体 | CDN 分片按需下载 | 内置，完全离线 | **同一套内置分片，完全离线** |
 | 另存为 | `<a download>` | 系统保存对话框 | **系统分享面板**（见下） |
+| 选文件 | `<input type="file">` | 同上（Chromium 自带） | **宿主接管**（见下） |
 | HTTP | `fetch` + CORS | 主进程 `net.fetch` | **原生 OkHttp**（见下） |
 | 证书 | 浏览器警告页 | 按指纹询问信任 | `network_security_config`（见下） |
 
-三条与桌面端**同形但实现不同**的：
+下面几条与桌面端**同形但实现不同**（选文件那条更彻底：网页端做不到，只能由壳补上）：
 
 ### 存储：为什么不能用 localStorage
 
@@ -129,6 +130,36 @@ localStorage**——把人物卡放在那儿是在赌运气。
 > 所以 `saveText`/`saveBlob` 返回的 `ok` 含义是"文件已生成并交给系统"，
 > **不是**桌面端那种"用户点了保存"。调用方不要据此提示"已保存到 X"。
 > 另外 `cache/` 可能被系统清理，所以每次导出都会重写一份，不依赖历史文件。
+
+### 选文件（导入）：为什么必须由宿主接管
+
+**WebView 不自己弹文件选择器。** `WebChromeClient.onShowFileChooser` 的默认实现
+直接 `return false` —— 于是 `<input type="file">` 的点击**完全没有反应**：
+不弹选择器、不报错、控制台也不说话。这不是"选错了文件"，是宿主根本没接这一手。
+
+网页端有六个入口建在 `<input type="file">` 上，在壳里会**一起**失灵：
+存档导入（`SavePanel`）、.d4e 资源包导入（`HomebrewView`）、词条 JSON 导入
+（`EntryEditor`）、备份恢复（`StorageSettings`）、立绘（`PortraitFrame`）、
+背景图（`SettingsView`）。0.3.6 的用户反馈「点导入存档毫无反应」就是这个。
+
+实现见 `NativeFilePicker`，三条规则不能省：
+
+1. **每次请求都要回话**：选中回 `Uri[]`，取消回 `null`。少回一次，这个 `<input>`
+   就永远停在"上一次的选择还没结束"，之后**再点一次也没有反应**；
+2. **同一时刻只留一个回调**：真收到第二次就把上一次作废，否则 WebView 卡在旧回调上；
+3. 用 `FileChooserParams.parseResult` 解析结果（单选/多选结构与"取消"都由平台判定）。
+
+> **不用 `FileChooserParams.createIntent()`**：它把网页端的 `accept` 原样塞进
+> `EXTRA_MIME_TYPES`，而这里的 accept 带的是**扩展名**（`.json` / `.d4e`）。
+> 扩展名不是合法 MIME，部分文件管理器会据此把列表整个滤空 ——
+> 「选择器打开了但一个文件都点不了」，比本来的 bug 更难排查。
+> 现在只在 accept **全部**是合法 MIME 时才过滤（如立绘的 `image/*`），
+> 否则退回 `*/*`：文件内容对不对由网页端自己校验，选不到文件才是硬故障。
+
+**`allowContentAccess` 必须为 `true`**（`WebViewSetup.configure`）。系统选择器交回来的是
+`content://` URI，WebView 之后要自己按它去读字节；关掉这一条，用户挑完文件也读不出内容，
+表现是"选了文件但没有任何反应"——比按钮点不动更隐蔽。
+`allowFileAccess` 仍然保持 `false`：页面没有读 `file://` 的正当理由。
 
 ## 安全区与系统栏（状态栏 / 刘海 / 手势条）
 

@@ -3,7 +3,7 @@
 // 因此在这里点掉的威能，在人物页对应槽位上同样是划斜线的「已使用」状态。
 import type { Dispatch, SetStateAction } from "react";
 import type { Entry } from "../data/types";
-import { EQUIPMENT_SLOTS, type Character, type PowerSlots } from "../sheet/character";
+import { EQUIPMENT_SLOTS, equipUsedKey, type Character, type PowerSlots } from "../sheet/character";
 import { magicItemDailyUses } from "../sheet/powerpoints";
 import { POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import EntryCard from "../sheet/EntryCard";
@@ -27,8 +27,8 @@ const SLOT_CATS: { key: keyof PowerSlots; label: string; color: string; track: b
 ];
 
 export const powerUsedKey = (cat: keyof PowerSlots, index: number) => cat + "-" + index;
-export const equipUsedKey = (kind: "fixed" | "other" | "consumable" | "wondrous", index: number) =>
-  (kind === "fixed" ? "e" : kind === "other" ? "o" : kind === "consumable" ? "c" : "w") + "-" + index;
+// 装备使用标记键与人物页共用一份映射（见 sheet/character.ts），这里再导出，保持原有引用路径可用
+export { equipUsedKey };
 
 /** 专长的可用频率：从增益/特殊正文里识别「每次遭遇 / 每日」，用于短休、长休恢复与标签展示。 */
 export function featUsageTag(f: Entry | undefined): "encounter" | "daily" | undefined {
@@ -185,7 +185,9 @@ export function GlanceItems({ char, setChar, d }: Props) {
     .map((x) => ({ key: equipUsedKey("other", x.i), id: x.id, slot: "其他", enhance: 0, kind: "other" as const }));
   const consumable = char.consumableSlots.map((id, i) => ({ id, i })).filter((x): x is { id: string; i: number } => !!x.id)
     .map((x) => ({ key: equipUsedKey("consumable", x.i), id: x.id, slot: "消耗品", enhance: 0, kind: "consumable" as const }));
-  const rows = [...fixed, ...wondrous, ...other, ...consumable];
+  const companion = (char.companionSlots ?? []).map((id, i) => ({ id, i })).filter((x): x is { id: string; i: number } => !!x.id)
+    .map((x) => ({ key: equipUsedKey("companion", x.i), id: x.id, slot: "魔宠与坐骑", enhance: 0, kind: "companion" as const }));
+  const rows = [...fixed, ...wondrous, ...other, ...consumable, ...companion];
   const used = rows.filter((r) => char.equipmentUsed?.[r.key]).length;
 
   const dailyMax = magicItemDailyUses(char.level, char.milestones ?? 0);

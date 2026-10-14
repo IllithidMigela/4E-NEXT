@@ -42,6 +42,8 @@ const SLOT_CATEGORY: Record<string, string[]> = {
   手部: ["手部"], 戒指: ["戒指"], 足部: ["足部"], 奇物: ["奇物"],
   消耗品: ["消耗品", "炼金物品", "弹药", "刺客毒药"],
   其他: [], 冒险装备: ["冒险装备"],
+  // 魔宠与坐骑：不限类别（魔宠/坐骑/伙伴的魔法物品排在最前，其余物品也能放进来）
+  魔宠与坐骑: [],
 };
 
 // 武器「分类」依据全书兵种组（近战13组 / 远程4组）
@@ -113,6 +115,11 @@ const CAT_DRILL: Record<string, DrillItem[]> = {
   炼金物品: ["其他", "爆弹", "油膏", "药物", "毒药"].map((t) => leaf(t, [t])),
 };
 
+// 单个类别的根节点：有细分子树（武器/护甲/…）就下钻，否则作为纯类别叶子。
+function catNode(cat: string): DrillItem {
+  return CAT_DRILL[cat] ? { label: cat, children: CAT_DRILL[cat] } : { label: cat, cats: [cat] };
+}
+
 // 槽位 → 根子树（一级 chips）。
 function slotRoot(slotName: string, presentCats: string[]): DrillItem[] {
   switch (slotName) {
@@ -141,7 +148,12 @@ function slotRoot(slotName: string, presentCats: string[]): DrillItem[] {
         { label: "机关附件", cats: ["机关附件"] },
       ];
     case "其他":
-      return presentCats.map((cat) => (CAT_DRILL[cat] ? { label: cat, children: CAT_DRILL[cat] } : { label: cat, cats: [cat] }));
+      return presentCats.map(catNode);
+    case "魔宠与坐骑": {
+      // 不限类别：魔宠 / 坐骑 / 伙伴排在最前（这三类的魔法物品就是本槽位的主力），其余类别照常可选
+      const pinned = ["魔宠", "坐骑", "伙伴"];
+      return [...pinned.map((cat) => ({ label: cat, cats: [cat] })), ...presentCats.filter((cat) => !pinned.includes(cat)).map(catNode)];
+    }
     default:
       return []; // 头部/颈部/腰部/手部/戒指/足部/冒险装备：无细分 → 无筛选行
   }

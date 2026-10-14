@@ -4,6 +4,7 @@ import { POWER_COLORS, ITEM_COLOR, FEAT_COLOR } from "../lib/colors";
 import { CATEGORY_LABELS } from "../data/labels";
 import { tokenizeWikiBody, wikiToHtml, raceTraitHtml, raceBodyHtml, parseRaceTraitLines, splitRaceLore, splitAuxPowers, RACE_HEADER_NAMES } from "../lib/wikirender";
 import { safeHtml } from "../lib/sanitize";
+import MonsterCard from "../components/MonsterCard";
 import { SmartHover } from "./SmartHover";
 import { WikiBody } from "./WikiBody";
 import { equipFamilyOf, equipmentStatRows, MUNDANE_STAT_ROWS, isMundaneEntry, suitRowFor, parseItemPropertiesHtml } from "../lib/homebrewSchema";
@@ -92,7 +93,9 @@ export function PowerCard({ entry, frame, jump }: { entry: Entry; frame?: boolea
           <span className="pc-name">{entry.name}{entry.nameEn ? " " + entry.nameEn : ""}</span>
           {entry.origin === "user" && <span className="origin-badge">自制</span>}
         </span>
-        <span className="pc-meta">{`${entry.grantedBy ?? ""}${entry.powerType ?? ""}`.trim()}{entry.level ? " " + entry.level : ""}</span>
+        <span className="pc-meta">{((entry.grantedBy && (entry.powerType ?? "").startsWith(entry.grantedBy))
+          ? entry.powerType
+          : `${entry.grantedBy ?? ""}${entry.powerType ?? ""}`.trim())}{entry.level ? " " + entry.level : ""}</span>
       </div>
       {frame && !entry.flavorText ? (
         <Ghost label="风味文本（威能数据）" className="pc-flavor" target="flavorText" jump={jump} />
@@ -697,5 +700,11 @@ export default function EntryCard({ entry, lookup, frame, jump, optionalOn }: {
   if (entry.category === "equipment") return <ItemCard entry={entry} frame={frame} jump={jump} lookup={lookup} optionalOn={optionalOn} />;
   if (entry.category === "feat") return <FeatCard entry={entry} lookup={lookup} frame={frame} jump={jump} />;
   if (entry.category === "race") return <RaceCard entry={entry} lookup={lookup} frame={frame} jump={jump} />;
+  // 生物（词条页的怪物与生物库条目）：数据块本身就是一张完整卡片，与主持页的 MonsterCard 同一渲染，
+  // 不再套 generic-card 外壳（否则卡片里再套一张卡片）。标题宏 {{!!title}} 由 MonsterCard 兜底成条目名。
+  // 正文为空（新建条目/编辑预览）仍交给 GenericCard，保留编辑态的结构占位。
+  if (entry.category === "creature" && entry.sourceText && !frame) {
+    return <MonsterCard text={entry.sourceText} title={entry.name} fields={entry.fields} />;
+  }
   return <GenericCard entry={entry} frame={frame} jump={jump} />;
 }

@@ -55,7 +55,7 @@ export default function PowerReplacementDialog({ newPower, hint, groups, powerOf
                   const p = it.id ? powerOf(it.id) : undefined;
                   // 已有威能的槽位：悬停预览威能卡片，显示中文名 + 右侧类型（如【牧师攻击1】），不显示英文名
                   if (p) {
-                    const typeLabel = (p.powerType ?? "") + (p.level ?? "");
+                    const typeLabel = ((p.grantedBy ?? "") + (p.powerType ?? "")) + (p.level ?? "");
                     return (
                       <SmartHover key={i} className="repl-slot" popClass="repl-slot-pop" portal pop={<EntryCard entry={p} />} onClick={() => onPick(g.key, i)} title="点击填入此槽位">
                         <span className="repl-slot-name">{p.name}</span>

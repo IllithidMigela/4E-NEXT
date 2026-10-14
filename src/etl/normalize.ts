@@ -36,18 +36,24 @@ export interface Normalized {
   [key: string]: unknown;
 }
 
-// power-type 形如「来源+后缀」，后缀有 攻击/辅助/特性/种族威能/专长威能/套装威能
-function parsePowerType(raw: string | undefined): { grantedBy?: string; powerKind?: string } {
+// power-type 形如「来源+后缀」，后缀有 攻击/辅助/特性/种族威能/专长威能/套装威能。
+// 返回拆解后的 grantedBy / powerKind，以及去掉来源前缀的 powerType（攻击/辅助/特性/种族威能…），
+// 使前端卡头 `grantedBy + powerType` 拼接时不会重复来源前缀（如「法师攻击」不会显示成「法师法师攻击」）。
+function parsePowerType(raw: string | undefined): { grantedBy?: string; powerKind?: string; powerType?: string } {
   if (!raw) return {};
-  if (raw.endsWith("种族威能")) return { grantedBy: raw.slice(0, -4).trim(), powerKind: "racial" };
-  if (raw.endsWith("种族辅助")) return { grantedBy: raw.slice(0, -4).trim(), powerKind: "racial" };
-  if (raw.endsWith("种族攻击")) return { grantedBy: raw.slice(0, -4).trim(), powerKind: "racial" };
-  if (raw.endsWith("专长威能")) return { grantedBy: raw.slice(0, -4).trim(), powerKind: "feat" };
-  if (raw.endsWith("套装威能")) return { grantedBy: raw.slice(0, -4).trim(), powerKind: "item-set" };
-  if (raw.endsWith("特性")) return { grantedBy: raw.slice(0, -2).trim(), powerKind: "feature" };
-  if (raw.endsWith("攻击")) return { grantedBy: raw.slice(0, -2).trim(), powerKind: "attack" };
-  if (raw.endsWith("辅助")) return { grantedBy: raw.slice(0, -2).trim(), powerKind: "utility" };
-  return {};
+  const r = raw.trim();
+  let grantedBy: string | undefined;
+  let powerKind: string | undefined;
+  if (r.endsWith("种族威能")) { grantedBy = r.slice(0, -4).trim(); powerKind = "racial"; }
+  else if (r.endsWith("种族辅助")) { grantedBy = r.slice(0, -4).trim(); powerKind = "racial"; }
+  else if (r.endsWith("种族攻击")) { grantedBy = r.slice(0, -4).trim(); powerKind = "racial"; }
+  else if (r.endsWith("专长威能")) { grantedBy = r.slice(0, -4).trim(); powerKind = "feat"; }
+  else if (r.endsWith("套装威能")) { grantedBy = r.slice(0, -4).trim(); powerKind = "item-set"; }
+  else if (r.endsWith("特性")) { grantedBy = r.slice(0, -2).trim(); powerKind = "feature"; }
+  else if (r.endsWith("攻击")) { grantedBy = r.slice(0, -2).trim(); powerKind = "attack"; }
+  else if (r.endsWith("辅助")) { grantedBy = r.slice(0, -2).trim(); powerKind = "utility"; }
+  if (!grantedBy) return { powerKind, powerType: r };
+  return { grantedBy, powerKind, powerType: r.slice(grantedBy.length).trim() };
 }
 
 // 译名数据字典："英文: 中文" 逐行解析为 { en: zh }
@@ -114,6 +120,8 @@ function normalizeOne(t: RawTiddler): Normalized {
       const pt = parsePowerType(t.fields["power-type"]);
       if (pt.grantedBy) out.grantedBy = pt.grantedBy;
       if (pt.powerKind) out.powerKind = pt.powerKind;
+      // 用去掉来源前缀的 powerType 覆盖原值，避免卡头 `grantedBy + powerType` 重复来源
+      if (pt.powerType !== undefined) out.powerType = pt.powerType;
       pick(out, t, "flavorText", "flavorText");
       pick(out, t, "details", "details");
       pick(out, t, "skill", "skill");

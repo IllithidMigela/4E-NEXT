@@ -266,7 +266,9 @@ export function useGlance(char: Character): GlanceData {
       ],
       featChoiceTokens: Object.values(char.featChoices ?? {}).map((v) => String(v).split(/\s/)[0]),
     });
-    const profOf = (slot: number, override: boolean): number => {
+    // asImplement：以法器施展（含武器作为法器使用）→ 不获得擅长加值（法器无擅长加值）
+    const profOf = (slot: number, override: boolean, asImplement = false): number => {
+      if (asImplement) return 0;
       const baseId = char.baseItems[slot];
       const base = baseId ? findBaseItem(baseId) : undefined;
       if (base?.kind !== "weapon" || !base.weapon) return 0;
@@ -283,7 +285,7 @@ export function useGlance(char: Character): GlanceData {
           stats.halfLevel +
           stats.mods[r.ability] +
           r.classBonus +
-          profOf(profSlot, !!r.profOverride) +
+          profOf(profSlot, !!r.profOverride, !!r.profImplement) +
           r.feat +
           enhanceOf(slot) +
           customSum(char.customBonuses.attack[i]),

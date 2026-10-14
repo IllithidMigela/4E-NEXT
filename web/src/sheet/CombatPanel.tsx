@@ -15,6 +15,11 @@ const ENHANCE_SOURCES: { slot: number; label: string }[] = [
 ];
 const enhanceSlotLabel = (slot: number): string => ENHANCE_SOURCES.find((o) => o.slot === slot)?.label ?? "手动";
 
+// 熟练加值来源多一档「法器」：法器不提供擅长加值；「武器作为法器使用」时也不获得该武器的擅长加值
+// （万律·擅长 / 边栏·武器作为法器，法器作为武器）。因此以法器施展的命中，熟练加值恒为 0（面板显示「—」）。
+const PROF_IMPLEMENT_LABEL = "法器";
+const PROF_IMPLEMENT_HINT = "以法器施展：法器不提供擅长加值，武器作为法器使用时也不获得该武器的擅长加值";
+
 const MAX_ROWS = 6;
 
 function fmtMod(n: number): string {
@@ -38,7 +43,7 @@ function AttackDetailDialog(props: {
   mods: Record<AbilityKey, number>;
   halfLevel: number;
   enhanceOf: (slot: number) => number;
-  profOf: (slot: number, override: boolean) => number;
+  profOf: (slot: number, override: boolean, asImplement?: boolean) => number;
   custom: CustomEntry[][];
   onChangeCustom: (i: number, entries: CustomEntry[]) => void;
   onClose: () => void;
@@ -47,7 +52,8 @@ function AttackDetailDialog(props: {
   type Row = { label: string; value: string; auto?: boolean };
   const blocks: { label: string; value: number; rows: Row[] }[] = attacks.map((r, i) => {
     const ability = r.ability;
-    const prof = profOf((r.profSlot ?? 0) >= 0 ? r.profSlot! : 0, !!r.profOverride);
+    const asImplement = !!r.profImplement;
+    const prof = profOf((r.profSlot ?? 0) >= 0 ? r.profSlot! : 0, !!r.profOverride, asImplement);
     const enhance = enhanceOf(r.enhanceSlot ?? 0);
     const entries = custom[i] ?? [];
     const otherSum = customSum(entries);
@@ -55,7 +61,9 @@ function AttackDetailDialog(props: {
     if (halfLevel !== 0) rows.push({ label: "½等级", value: "+" + halfLevel, auto: true });
     if (mods[ability] !== 0) rows.push({ label: "属性调整值（" + ABILITY_LABELS[ability].zh + "）", value: fmtMod(mods[ability]), auto: true });
     if (r.classBonus !== 0) rows.push({ label: "职业加值", value: fmtMod(r.classBonus) });
-    if (prof !== 0) rows.push({ label: "熟练加值", value: fmtMod(prof), auto: true });
+    // 法器：把「为什么这一行是 0」写在构成里，免得看到 +0 以为是漏算
+    if (asImplement) rows.push({ label: "熟练加值（" + PROF_IMPLEMENT_LABEL + "不提供）", value: "—", auto: true });
+    else if (prof !== 0) rows.push({ label: "熟练加值", value: fmtMod(prof), auto: true });
     if (r.feat !== 0) rows.push({ label: "专长加值", value: fmtMod(r.feat) });
     if (enhance !== 0) rows.push({ label: "增强加值", value: fmtMod(enhance), auto: true });
     for (const e of entries) if (e.value !== 0) rows.push({ label: e.label || "其他", value: fmtMod(e.value) });
@@ -180,7 +188,7 @@ export default function CombatPanels(props: {
   halfLevel: number;               // ½ 等级（自动）
   enhanceOf: (slot: number) => number; // 某装备槽位的增强加值（无魔法物品则 0）
   diceOf: (slot: number) => string;    // 某装备槽位基础武器的伤害骰（无则空串）
-  profOf: (slot: number, override: boolean) => number; // 某槽位基础武器的擅长加值（未擅长/无武器则 0；override=true 视为擅长）
+  profOf: (slot: number, override: boolean, asImplement?: boolean) => number; // 某槽位基础武器的擅长加值（未擅长/无武器/以法器施展则 0；override=true 视为擅长）
   classAttackSources: CombatSource[]; // 职业特性中提及「攻击骰」的条目（职业加值来源）
   featAttackSources: CombatSource[];  // 已选专长中提及「攻击骰」的（攻击面板专长加值来源）
   featDamageSources: CombatSource[];  // 已选专长中提及「伤害骰」的（伤害面板专长加值来源）
@@ -299,7 +307,8 @@ export default function CombatPanels(props: {
           value={label}
           placeholder={"攻击 " + (i + 1)}
           maxLength={12}
-          title="给这一对攻击/伤害起个名字，便于分辨它服务于哪件武器或哪个威能"
+          // 列宽有限（双栏顶部区里一栏要放 9 列），超长名字输入框内会截断，title 里带上全名方便核对
+          title={(label ? "名称：" + label + "。\n" : "") + "给这一对攻击/伤害起个名字，最多 12 字，便于分辨它服务于哪件武器或哪个威能"}
           onChange={(e) => setPairLabel(i, e.target.value)}
         />
       </div>
@@ -350,27 +359,49 @@ export default function CombatPanels(props: {
   };
 
   // 熟练加值单元格：来源（主手/副手）自动取该槽位基础武器的擅长加值（未擅长则 0），点击单元格弹出菜单；
-  // 菜单内可切换来源，并提供「视为擅长」手动覆盖（用于选择型专长等无法自动判定的情况）
-  const profCell = (slot: number | undefined, override: boolean | undefined, onSlot: (s: number) => void, onToggleOverride: (v: boolean) => void, uid: string) => {
+  // 菜单内可切换来源、可标注「法器」（法器施展不获得擅长加值，含武器作为法器使用），
+  // 并提供「视为擅长」手动覆盖（用于选择型专长等无法自动判定的情况；法器档位下无意义，置灰）
+  const profCell = (
+    slot: number | undefined,
+    override: boolean | undefined,
+    implement: boolean | undefined,
+    onSlot: (s: number) => void,
+    onToggleOverride: (v: boolean) => void,
+    onToggleImplement: (v: boolean) => void,
+    uid: string
+  ) => {
     const s = (slot ?? 0) >= 0 ? slot! : 0;
     const ov = !!override;
+    const impl = !!implement;
     const pickable = mode === "edit";
+    const hint = impl
+      ? PROF_IMPLEMENT_HINT
+      : profOf(s, false) > 0
+        ? "已擅长该武器，熟练加值自动计算"
+        : "未擅长该武器（可在菜单中「视为擅长」手动覆盖）";
     return (
-      <div className="ct-cell ct-pick" id={uid} onClick={() => pickable && setActiveMenu(uid)} title={profOf(s, false) > 0 ? "已擅长该武器，熟练加值自动计算" : "未擅长该武器（可在菜单中「视为擅长」手动覆盖）"}>
-        <span className="ct-ability-name">{enhanceSlotLabel(s)}</span>
-        <span className="ct-auto" title={ov ? "已手动视为擅长" : undefined}>{fmtMod(profOf(s, ov))}</span>
+      <div className="ct-cell ct-pick" id={uid} onClick={() => pickable && setActiveMenu(uid)} title={hint}>
+        <span className="ct-ability-name">{impl ? PROF_IMPLEMENT_LABEL : enhanceSlotLabel(s)}</span>
+        <span className="ct-auto" title={!impl && ov ? "已手动视为擅长" : undefined}>{impl ? "—" : fmtMod(profOf(s, ov))}</span>
         {pickable && (
           <Menu anchor={uid} positioning="popover" quick open={activeMenu === uid} onClosed={() => setActiveMenu(null)}>
             {ENHANCE_SOURCES.map((o) => (
-              <MenuItem key={o.slot} onClick={() => { onSlot(o.slot); setActiveMenu(null); }}>
+              <MenuItem key={o.slot} onClick={() => { onToggleImplement(false); onSlot(o.slot); setActiveMenu(null); }}>
                 <span slot="headline">{o.label}</span>
                 <span slot="supporting-text">{fmtMod(profOf(o.slot, ov))}</span>
+                {!impl && o.slot === s && <span slot="start" className="material-symbols-outlined">check</span>}
               </MenuItem>
             ))}
+            <MenuItem onClick={() => { onToggleImplement(true); setActiveMenu(null); }}>
+              <span slot="headline">{PROF_IMPLEMENT_LABEL}</span>
+              <span slot="supporting-text">无擅长加值</span>
+              {impl && <span slot="start" className="material-symbols-outlined">check</span>}
+            </MenuItem>
             <Divider />
-            <MenuItem onClick={() => { onToggleOverride(!ov); setActiveMenu(null); }}>
+            <MenuItem disabled={impl} onClick={() => { onToggleOverride(!ov); setActiveMenu(null); }}>
               <span slot="headline">视为擅长</span>
-              {ov && <span slot="start" className="material-symbols-outlined">check</span>}
+              {impl && <span slot="supporting-text">法器本无擅长加值</span>}
+              {!impl && ov && <span slot="start" className="material-symbols-outlined">check</span>}
             </MenuItem>
           </Menu>
         )}
@@ -463,7 +494,7 @@ export default function CombatPanels(props: {
             <div className="ct-head">{ATTACK_HEAD.map((h) => <span key={h}>{h}</span>)}</div>
             {attacks.map((row, i) => {
               const enhance = enhanceOf(row.enhanceSlot ?? 0);
-              const prof = profOf((row.profSlot ?? 0) >= 0 ? row.profSlot! : 0, !!row.profOverride);
+              const prof = profOf((row.profSlot ?? 0) >= 0 ? row.profSlot! : 0, !!row.profOverride, !!row.profImplement);
               const otherSum = customSum(char.customBonuses?.attack?.[i]);
               const total = halfLevel + mods[row.ability] + row.classBonus + prof + row.feat + enhance + otherSum;
               return (
@@ -474,7 +505,7 @@ export default function CombatPanels(props: {
                     <div className="ct-cell" key="half"><span className="ct-auto">{halfLevel}</span></div>
                     {abilityCell(row.ability, (k) => setAttack(i, { ability: k }), `ct-ab-a-${i}`)}
                     {sourceCell(row.classBonus, (n) => setAttack(i, { classBonus: n }), classAttackSources, `ct-cl-a-${i}`, "点击选择职业特性中提及攻击骰的加值来源")}
-                    {profCell(row.profSlot, row.profOverride, (s) => setAttack(i, { profSlot: s }), (v) => setAttack(i, { profOverride: v }), `ct-pr-a-${i}`)}
+                    {profCell(row.profSlot, row.profOverride, row.profImplement, (s) => setAttack(i, { profSlot: s }), (v) => setAttack(i, { profOverride: v }), (v) => setAttack(i, { profImplement: v }), `ct-pr-a-${i}`)}
                     {sourceCell(row.feat, (n) => setAttack(i, { feat: n }), featAttackSources, `ct-fe-a-${i}`, "点击选择已选专长中提及攻击骰的加值来源")}
                     {enhanceCell(row.enhanceSlot, (s) => setAttack(i, { enhanceSlot: s }), `ct-en-a-${i}`)}
                     {otherCell(otherSum, () => setAtkDetailOpen(true), "other")}

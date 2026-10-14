@@ -939,16 +939,25 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
 
 /* ===== ⑦ 攻击/伤害面板：新增「名称」列（成对命名） =====
    攻击与伤害现在成对增减，第一列放这一对的自定义名称；
-   列模板在此覆盖 styles.css 中的原定义（本文件在其后导入）。 */
+   列模板在此覆盖 styles.css 中的原定义（本文件在其后导入）。
+   名称最长 12 字，宽度只从「有余量」的列里挪：总加值/增强加值/½等级本来只放
+   两三个字（73/73/45px 足够），其余数字列维持原份额，免得属性调整值这类格子
+   被挤到换行。首列由此从 14% 加到 22%（1512px 下约 130px，可显示 10 个汉字），
+   再加上放开 .ct-cell input 的 40px 上限，「长剑·主手斩」这类名字才显示得全。 */
 .combat-table.attack .ct-head,
-.combat-table.attack .ct-row { grid-template-columns: 1.5fr 1.6fr repeat(5, 1fr) 1.6fr 1fr; }
+.combat-table.attack .ct-row { grid-template-columns: minmax(5em, 2.35fr) 1.3fr 0.8fr repeat(4, 1fr) 1.3fr 1fr; }
+/* 伤害表列数少两张（无职业/熟练列），首列用 1.85fr 才能与攻击表同宽（两边都约 22%），并排时名称列左右对齐 */
 .combat-table.damage .ct-head,
-.combat-table.damage .ct-row { grid-template-columns: 1.5fr 1.6fr 1fr 1fr 1fr 1.6fr 1fr 1fr; }
-.ct-label-cell { padding: 2px 4px; }
+.combat-table.damage .ct-row { grid-template-columns: minmax(5em, 1.85fr) 1.3fr 1fr 1fr 1fr 1.3fr 1fr; }
+.ct-label-cell { padding: 2px 4px; min-width: 0; }
 .ct-label-input {
-  width: 100%; padding: 2px 4px; border: none; background: transparent;
+  width: 100%; min-width: 0; max-width: none; padding: 2px 4px; border: none; background: transparent;
   color: var(--md-sys-color-on-surface); font: inherit; font-size: 12px; text-align: center;
 }
+/* 名称列必须放开宽度：.ct-cell input 的 max-width（40/46px，约三个汉字）本来是为
+   数字框收窄用的，套在名称输入框上会把长名字直接截掉。这里用更具体的选择器压回去。 */
+.ct-cell input.ct-label-input,
+.layout-double .ct-cell input.ct-label-input { max-width: none; }
 .ct-label-input::placeholder { color: var(--md-sys-color-on-surface-variant); opacity: .7; }
 
 /* ===== ⑨ 数据与同步（WebDAV） =====
@@ -982,7 +991,8 @@ md-dialog.sheet-dialog.sheet-dialog-store { max-width: min(520px, calc(100% - 48
   font-size: 12px;
 }
 .ct-label-input:focus { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; border-radius: var(--md-sys-shape-corner-extra-small); }
-.ct-label-text { font-size: 12px; font-weight: var(--fw-body); text-align: center; }
+/* 只读（导出/渲染）态的名称：长名字允许折行，不要撑破格子 */
+.ct-label-text { font-size: 12px; font-weight: var(--fw-body); text-align: center; line-height: 1.35; overflow-wrap: anywhere; }
 @media (max-width: 960px) {
   .combat-table.attack .ct-head,
   .combat-table.attack .ct-row { min-width: 680px; }
